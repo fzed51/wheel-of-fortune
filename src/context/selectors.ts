@@ -31,6 +31,8 @@ export interface GameCommands {
   readonly nextRound: () => void
   /** Lance la roue : tire le segment ici, l'animation ne fera que l'exécuter. */
   readonly spin: () => void
+  /** Clôt la rotation en cours : appelée par l'animation de la roue quand elle atteint le segment. */
+  readonly settleSpin: () => void
   /** Joue une lettre : consonne devinée ou voyelle achetée, selon la lettre et la phase. */
   readonly playLetter: (letter: Letter) => void
   /** Passe la main quand plus aucune action n'est possible. */

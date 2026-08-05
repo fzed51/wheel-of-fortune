@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it } from 'vitest'
-import { fireEvent, screen } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { clearAllData, saveGame } from '../storage/persist'
 import { avecPhase, cash, demarrer, jeu, joueur, resoudre } from '../test/game'
@@ -64,15 +64,33 @@ describe('GameRoute', () => {
   })
 
   it('« Tourner » fait sortir la phase de spinning et ne fige pas la partie', async () => {
-    saveGame(jeu(demarrer({ players: [joueur('Alice')] })))
-    const user = userEvent.setup()
-    monterApp('/jeu')
+    // jsdom n'implémente pas `Element.prototype.animate` : `useWheelSpin`
+    // dégrade alors vers un règlement différé d'environ 300 ms (bien avant le
+    // chien de garde de `useGameEffects`, qui n'intervient qu'à `SPIN_MS + 500`).
+    // Sans timers factices, `findByRole` verrait l'élément déjà monté et
+    // résoudrait avant les 300 ms, sans jamais prouver la sortie de `spinning`.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true })
+    try {
+      saveGame(jeu(demarrer({ players: [joueur('Alice')] })))
+      const user = userEvent.setup({ delay: null })
+      monterApp('/jeu')
 
-    await user.click(screen.getByRole('button', { name: 'Tourner' }))
+      await user.click(screen.getByRole('button', { name: 'Tourner' }))
+      expect(screen.getByRole('status')).toHaveTextContent('La roue tourne…')
 
-    // Sans le chien de garde provisoire de `useGameEffects`, le statut resterait
-    // bloqué sur l'annonce de lancement : la phase serait toujours `spinning`.
-    expect(await screen.findByRole('status')).not.toHaveTextContent('La roue tourne…')
+      // Confortablement au-delà du règlement dégradé de la roue, et très en
+      // dessous du chien de garde : ce qu'on observe est donc bien la roue qui
+      // rend la main, pas le filet de sécurité.
+      act(() => {
+        vi.advanceTimersByTime(500)
+      })
+
+      // Sans le règlement de la roue, le statut resterait bloqué sur l'annonce
+      // de lancement : la phase serait toujours `spinning`.
+      expect(screen.getByRole('status')).not.toHaveTextContent('La roue tourne…')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('affiche le panneau de fin de manche et enchaîne sur la manche suivante', async () => {

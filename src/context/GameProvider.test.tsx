@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it } from 'vitest'
-import { screen } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { CONSONANTS } from '../game/puzzle'
 import { HUMAN_ID } from '../game/setup'
+import { SPIN_MS } from '../game/wheel'
 import { useAnnouncements } from '../hooks/useAnnouncer'
 import { clearAllData, loadGame, saveGame, saveMistralKey, saveSettings } from '../storage/persist'
 import { STORAGE_KEYS } from '../storage/keys'
@@ -54,7 +55,7 @@ function Annonces() {
 
 function Sonde() {
   const state = useGameState()
-  const { startGame, nextRound, playLetter, pass, dispatch } = useGameCommands()
+  const { startGame, nextRound, spin, playLetter, pass, dispatch } = useGameCommands()
   rendus.push(state.kind)
 
   const partie = state.kind === 'playing' ? state.game : null
@@ -84,19 +85,39 @@ function Sonde() {
   return (
     <div>
       <Annonces />
-      <span data-testid="kind">{state.kind}</span>
-      <span data-testid="progress">{partie?.progress.kind ?? ''}</span>
-      <span data-testid="phase">{manche?.phase.kind ?? ''}</span>
-      <span data-testid="resolve">{partie === null ? '' : String(partie.config.resolveEnabled)}</span>
-      <span data-testid="manches">{partie === null ? '' : String(partie.config.roundCount)}</span>
-      <span data-testid="joueurs">{partie === null ? '' : String(partie.players.length)}</span>
-      <span data-testid="siege0">
+      <div role="group" aria-label="Nature de l’état">
+        {state.kind}
+      </div>
+      <div role="group" aria-label="Type de progression">
+        {partie?.progress.kind ?? ''}
+      </div>
+      <div role="group" aria-label="Phase de la manche">
+        {manche?.phase.kind ?? ''}
+      </div>
+      <div role="group" aria-label="Résolution activée">
+        {partie === null ? '' : String(partie.config.resolveEnabled)}
+      </div>
+      <div role="group" aria-label="Nombre de manches">
+        {partie === null ? '' : String(partie.config.roundCount)}
+      </div>
+      <div role="group" aria-label="Nombre de joueurs">
+        {partie === null ? '' : String(partie.players.length)}
+      </div>
+      <div role="group" aria-label="Premier siège">
         {siege0 === undefined ? '' : `${siege0.id} ${siege0.kind.type}`}
-      </span>
-      <span data-testid="pot0">{siege0 === undefined ? '' : String(siege0.pot)}</span>
-      <span data-testid="guessed">{manche === null ? '' : manche.guessed.join(' ')}</span>
-      <span data-testid="enigme">{manche?.puzzle.id ?? ''}</span>
-      <span data-testid="jouees">{partie === null ? '' : partie.playedPuzzleIds.join(' ')}</span>
+      </div>
+      <div role="group" aria-label="Cagnotte du premier siège">
+        {siege0 === undefined ? '' : String(siege0.pot)}
+      </div>
+      <div role="group" aria-label="Lettres jouées">
+        {manche === null ? '' : manche.guessed.join(' ')}
+      </div>
+      <div role="group" aria-label="Identifiant de l’énigme">
+        {manche?.puzzle.id ?? ''}
+      </div>
+      <div role="group" aria-label="Énigmes déjà jouées">
+        {partie === null ? '' : partie.playedPuzzleIds.join(' ')}
+      </div>
       <button
         type="button"
         onClick={() => {
@@ -164,12 +185,21 @@ function Sonde() {
       >
         Manche suivante
       </button>
+      <button
+        type="button"
+        onClick={() => {
+          spin()
+        }}
+      >
+        Tourner
+      </button>
     </div>
   )
 }
 
-function texte(id: string): string {
-  return screen.getByTestId(id).textContent ?? ''
+/** Lit la valeur d'un champ de la sonde par son libellé accessible, jamais par un `data-testid`. */
+function champ(nom: string): string {
+  return screen.getByRole('group', { name: nom }).textContent ?? ''
 }
 
 beforeEach(() => {
@@ -186,7 +216,7 @@ describe('GameProvider', () => {
 
     monter(<Sonde />)
 
-    expect(texte('kind')).toBe('playing')
+    expect(champ('Nature de l’état')).toBe('playing')
     // Le nombre de rendus n'est pas la question — React peut en faire plusieurs.
     // C'est la présence de `no-game` qui signalerait une hydratation dans un effet.
     expect(rendus.length).toBeGreaterThan(0)
@@ -198,7 +228,7 @@ describe('GameProvider', () => {
 
     monter(<Sonde />)
 
-    expect(texte('kind')).toBe('no-game')
+    expect(champ('Nature de l’état')).toBe('no-game')
   })
 
   it('persiste la partie qui vient d’être démarrée', async () => {
@@ -221,9 +251,9 @@ describe('GameProvider', () => {
 
     await user.click(screen.getByRole('button', { name: 'Jouer' }))
 
-    expect(texte('manches')).toBe('5')
-    expect(texte('joueurs')).toBe('3')
-    expect(texte('siege0')).toBe(`${HUMAN_ID} human`)
+    expect(champ('Nombre de manches')).toBe('5')
+    expect(champ('Nombre de joueurs')).toBe('3')
+    expect(champ('Premier siège')).toBe(`${HUMAN_ID} human`)
   })
 
   it('démarre sans résolution quand aucune clé n’est enregistrée', async () => {
@@ -232,7 +262,7 @@ describe('GameProvider', () => {
 
     await user.click(screen.getByRole('button', { name: 'Jouer' }))
 
-    expect(texte('resolve')).toBe('false')
+    expect(champ('Résolution activée')).toBe('false')
   })
 
   it('démarre avec la résolution quand une clé est enregistrée', async () => {
@@ -242,7 +272,7 @@ describe('GameProvider', () => {
 
     await user.click(screen.getByRole('button', { name: 'Jouer' }))
 
-    expect(texte('resolve')).toBe('true')
+    expect(champ('Résolution activée')).toBe('true')
   })
 
   it('tire une énigme jamais jouée pour la manche suivante', async () => {
@@ -253,18 +283,18 @@ describe('GameProvider', () => {
     monter(<Sonde />)
 
     await user.click(screen.getByRole('button', { name: 'Jouer' }))
-    const premiere = texte('enigme')
+    const premiere = champ('Identifiant de l’énigme')
     expect(premiere).not.toBe('')
 
     await user.click(screen.getByRole('button', { name: 'Résoudre' }))
-    expect(texte('progress')).toBe('round-over')
+    expect(champ('Type de progression')).toBe('round-over')
 
     await user.click(screen.getByRole('button', { name: 'Manche suivante' }))
 
-    expect(texte('progress')).toBe('round')
-    const seconde = texte('enigme')
+    expect(champ('Type de progression')).toBe('round')
+    const seconde = champ('Identifiant de l’énigme')
     expect(seconde).not.toBe(premiere)
-    expect(texte('jouees').split(' ')).toEqual([premiere, seconde])
+    expect(champ('Énigmes déjà jouées').split(' ')).toEqual([premiere, seconde])
   })
 
   /**
@@ -286,9 +316,9 @@ describe('GameProvider', () => {
 
       await user.click(screen.getByRole('button', { name: 'Consonne T' }))
 
-      expect(texte('guessed')).toBe('T')
-      expect(texte('pot0')).toBe('300')
-      expect(texte('phase')).toBe('awaiting-action')
+      expect(champ('Lettres jouées')).toBe('T')
+      expect(champ('Cagnotte du premier siège')).toBe('300')
+      expect(champ('Phase de la manche')).toBe('awaiting-action')
       expect(await screen.findByRole('status')).toHaveTextContent('T, une fois. Cagnotte : 300 euros.')
     })
 
@@ -304,8 +334,8 @@ describe('GameProvider', () => {
 
       await user.click(screen.getByRole('button', { name: 'Consonne Z' }))
 
-      expect(texte('guessed')).toBe('Z')
-      expect(texte('pot0')).toBe('0')
+      expect(champ('Lettres jouées')).toBe('Z')
+      expect(champ('Cagnotte du premier siège')).toBe('0')
       expect(await screen.findByRole('status')).toHaveTextContent('Pas de Z.')
     })
 
@@ -317,8 +347,8 @@ describe('GameProvider', () => {
       await user.click(screen.getByRole('button', { name: 'Voyelle A' }))
 
       // « LE VENT » ne contient pas de A : la voyelle est débitée quand même.
-      expect(texte('guessed')).toBe('A')
-      expect(texte('pot0')).toBe('50')
+      expect(champ('Lettres jouées')).toBe('A')
+      expect(champ('Cagnotte du premier siège')).toBe('50')
     })
 
     it('ignore une voyelle quand la cagnotte est insuffisante', async () => {
@@ -328,8 +358,8 @@ describe('GameProvider', () => {
 
       await user.click(screen.getByRole('button', { name: 'Voyelle A' }))
 
-      expect(texte('guessed')).toBe('')
-      expect(texte('pot0')).toBe('0')
+      expect(champ('Lettres jouées')).toBe('')
+      expect(champ('Cagnotte du premier siège')).toBe('0')
     })
 
     it('ignore une lettre déjà jouée', async () => {
@@ -341,8 +371,8 @@ describe('GameProvider', () => {
 
       // `avecLettres` fixe `guessed` à `['T']` sans repasser par le reducer : si la
       // commande dispatchait quand même, on verrait un doublon ou un changement de phase.
-      expect(texte('guessed')).toBe('T')
-      expect(texte('pot0')).toBe('0')
+      expect(champ('Lettres jouées')).toBe('T')
+      expect(champ('Cagnotte du premier siège')).toBe('0')
     })
   })
 
@@ -355,13 +385,13 @@ describe('GameProvider', () => {
       saveGame(jeu(bloquee))
       const user = userEvent.setup()
       monter(<Sonde />)
-      expect(texte('phase')).toBe('awaiting-action')
+      expect(champ('Phase de la manche')).toBe('awaiting-action')
 
       await user.click(screen.getByRole('button', { name: 'Passer' }))
 
       // Seule issue pour un joueur bloqué sans consonne ni voyelle achetable ni
       // juge : la manche passe en `blocked`, pas de partenaire à qui redonner la main.
-      expect(texte('phase')).toBe('blocked')
+      expect(champ('Phase de la manche')).toBe('blocked')
     })
 
     it("n'a aucun effet quand le joueur courant peut encore agir", async () => {
@@ -371,8 +401,8 @@ describe('GameProvider', () => {
 
       await user.click(screen.getByRole('button', { name: 'Passer' }))
 
-      expect(texte('phase')).toBe('awaiting-action')
-      expect(texte('guessed')).toBe('')
+      expect(champ('Phase de la manche')).toBe('awaiting-action')
+      expect(champ('Lettres jouées')).toBe('')
     })
   })
 
@@ -409,6 +439,39 @@ describe('GameProvider', () => {
       // Le statut garde sa dernière valeur (« Proposition envoyée au juge. »),
       // qu'un échec technique ne doit pas écraser par une phrase de verdict.
       expect(screen.getByRole('status')).toHaveTextContent('Proposition envoyée au juge.')
+    })
+  })
+
+  describe('chien de garde de la roue', () => {
+    it('fait sortir la partie de la phase « spinning » même si personne ne rend la main', async () => {
+      // `saveGame` résoudrait une phase `spinning` avant écriture (`toPersisted`) :
+      // il faut atteindre la phase par une vraie rotation, pas par une fixture
+      // rechargée. Seuls `setTimeout`/`clearTimeout` sont truqués, et
+      // `shouldAdvanceTime` laisse le clic de user-event se résoudre : sans lui,
+      // les micro-attentes internes de user-event (basées sur des timers non
+      // truqués comme `requestAnimationFrame`) ne se résolvent jamais.
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true })
+      try {
+        const user = userEvent.setup({ delay: null })
+        saveGame(jeu(demarrer({ players: [fixtureJoueur('Alice')] })))
+        monter(<Sonde />)
+
+        await user.click(screen.getByRole('button', { name: 'Tourner' }))
+        expect(champ('Phase de la manche')).toBe('spinning')
+
+        // Moins que le délai : le filet ne doit pas encore s'être déclenché.
+        act(() => {
+          vi.advanceTimersByTime(SPIN_MS)
+        })
+        expect(champ('Phase de la manche')).toBe('spinning')
+
+        act(() => {
+          vi.advanceTimersByTime(500 + 1)
+        })
+        expect(champ('Phase de la manche')).not.toBe('spinning')
+      } finally {
+        vi.useRealTimers()
+      }
     })
   })
 })

@@ -3,6 +3,7 @@ import Controls from '../components/Controls'
 import Keyboard from '../components/Keyboard'
 import PuzzleBoard from '../components/PuzzleBoard'
 import Scoreboard from '../components/Scoreboard'
+import Wheel from '../components/Wheel'
 import { BUTTON_PRIMARY, CARD } from '../components/classes'
 import { useCurrentPlayer, useGame, useGameCommands, useRound } from '../context/selectors'
 import { announcePuzzle, formatEuros } from '../game/announce'
@@ -38,7 +39,7 @@ export default function GameRoute() {
   const game = useGame()
   const round = useRound()
   const player = useCurrentPlayer()
-  const { playLetter, spin, pass, nextRound } = useGameCommands()
+  const { playLetter, spin, pass, nextRound, settleSpin } = useGameCommands()
 
   // Clavier physique et clavier virtuel appellent la même commande `playLetter` :
   // c'est ce qui garantit qu'une touche allumée à l'écran reflète exactement ce
@@ -72,6 +73,17 @@ export default function GameRoute() {
           </p>
         )}
       </section>
+
+      {round !== null && (
+        <Wheel
+          // Lu directement sur `round.phase`, jamais via une variable
+          // intermédiaire : TypeScript ne transporte pas le rétrécissement de
+          // `phase.kind` à travers un alias.
+          spin={round.phase.kind === 'spinning' ? round.phase.spin : null}
+          highlighted={round.phase.kind === 'awaiting-consonant' ? round.phase.segment.index : null}
+          onSettled={settleSpin}
+        />
+      )}
 
       {round !== null && (
         <PuzzleBoard

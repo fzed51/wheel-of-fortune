@@ -159,6 +159,25 @@ export function GameProvider({ children }: { readonly children: ReactNode }) {
   }, [dispatch, rng])
 
   /**
+   * Trouver le `spinId` et le joueur courant, c'est lire l'état de la partie :
+   * ça vit ici, pas dans la roue ni dans une route. L'animation n'a besoin que
+   * d'appeler cette commande une fois arrivée sur le segment.
+   */
+  const settleSpin = useCallback(() => {
+    const current = stateRef.current
+    if (current.kind !== 'playing' || current.game.progress.kind !== 'round') return
+    // Tout est relu sur `current.game`, sans jamais passer par une variable
+    // intermédiaire : TypeScript ne transporte pas le rétrécissement de
+    // `progress.kind` à travers un alias, et le contourner demanderait de
+    // retester la même chose une seconde fois.
+    const round = current.game.progress.round
+    if (round.phase.kind !== 'spinning') return
+    const player = current.game.players[current.game.progress.currentPlayer]
+    if (player === undefined) return
+    dispatch({ type: 'wheel/settled', by: player.id, spinId: round.phase.spin.spinId })
+  }, [dispatch])
+
+  /**
    * Route vers l'une des deux actions de lettre sans réimplémenter la moindre
    * règle : `canBuyVowel`/`canGuess` de `rules.ts` tranchent, cette commande ne
    * fait que remplir `by`. C'est la source unique du clavier virtuel et du
@@ -193,8 +212,8 @@ export function GameProvider({ children }: { readonly children: ReactNode }) {
   }, [dispatch])
 
   const commands = useMemo<GameCommands>(
-    () => ({ startGame, nextRound, spin, playLetter, pass, dispatch }),
-    [startGame, nextRound, spin, playLetter, pass, dispatch],
+    () => ({ startGame, nextRound, spin, settleSpin, playLetter, pass, dispatch }),
+    [startGame, nextRound, spin, settleSpin, playLetter, pass, dispatch],
   )
 
   useGameEffects(state, dispatch)

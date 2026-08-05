@@ -28,6 +28,14 @@
   --color-danger: var(--wof-danger);
   --color-success: var(--wof-success);
   --color-ring: var(--wof-ring);
+  --color-wheel-1: var(--wof-wheel-1);
+  --color-wheel-2: var(--wof-wheel-2);
+  --color-wheel-3: var(--wof-wheel-3);
+  --color-wheel-4: var(--wof-wheel-4);
+  --color-wheel-bankrupt: var(--wof-wheel-bankrupt);
+  --color-wheel-pass: var(--wof-wheel-pass);
+  --color-wheel-ink: var(--wof-wheel-ink);
+  --color-wheel-edge: var(--wof-wheel-edge);
 }
 
 @theme {
@@ -53,6 +61,24 @@
   --wof-danger: #b91c1c;
   --wof-success: #15803d;
   --wof-ring: #7c3aed;
+
+  /*
+   * Palette de la roue, volontairement non redéclarée dans les blocs sombres :
+   * la roue est un objet coloré, pas une surface d'interface, et inverser ses
+   * teintes selon le thème casserait le seul contraste qui compte ici — celui
+   * du libellé sur l'arc. Les six remplissages sont choisis pour qu'une seule
+   * encre, `--wof-wheel-ink`, tienne au moins 4,5:1 sur chacun d'eux ; le
+   * rapport mesuré est en réalité d'au moins 9:1 sur les six, ce qui laisse de
+   * la marge pour un futur ajustement de teinte.
+   */
+  --wof-wheel-1: #fcd34d;
+  --wof-wheel-2: #6ee7b7;
+  --wof-wheel-3: #7dd3fc;
+  --wof-wheel-4: #c4b5fd;
+  --wof-wheel-bankrupt: #fda4af;
+  --wof-wheel-pass: #e5e7eb;
+  --wof-wheel-ink: #1b1033;
+  --wof-wheel-edge: #ffffff;
 }
 
 /**
@@ -128,5 +154,97 @@
   select,
   textarea {
     font-size: max(1rem, 16px);
+  }
+}
+
+@layer components {
+  /* Trait de séparation entre secteurs : viewBox 0 0 100 100, donc épaisseur en centièmes. */
+  .wheel-arc {
+    stroke: var(--wof-wheel-ink);
+    stroke-opacity: 0.15;
+    stroke-width: 0.3;
+  }
+
+  /*
+   * Secteur sur lequel la roue s'est arrêtée. Le cerne est opaque et plus épais,
+   * pas seulement plus épais : à 15 % d'opacité un trait large ne serait qu'un
+   * flou pâle. Il ne repose pas sur la couleur, que le contraste forcé remplace
+   * de toute façon — c'est le même sélecteur que le bloc `forced-colors` cible.
+   */
+  .wheel-arc[data-highlighted='true'] {
+    stroke-opacity: 1;
+    stroke-width: 1;
+  }
+
+  /*
+   * Pas de `paint-order: stroke fill` ici : un contour sur le libellé échouerait
+   * aux audits de contraste. Seule l'encre unique du texte, sans halo, garantit
+   * le rapport mesuré sur les six couleurs de secteur.
+   */
+  .wheel-label {
+    text-anchor: middle;
+    dominant-baseline: middle;
+  }
+
+  /*
+   * `.wheel-pointer` n'est déclarée nulle part hors du bloc `forced-colors` plus
+   * bas : en mode normal l'aiguille tient dans ses utilitaires Tailwind, et un
+   * sélecteur n'a pas besoin d'exister ailleurs pour qu'une requête média le
+   * cible.
+   */
+
+  /*
+   * `transform-origin` seulement. La rotation est écrite par la Web Animations
+   * API : un `transform` ou une `transition` déclarés ici entreraient en
+   * concurrence avec elle et produiraient un saut visuel à chaque relance.
+   * `will-change` et `contain` sont posés et retirés en JavaScript, le temps de
+   * la rotation seulement.
+   */
+  .wheel-rotor {
+    transform-origin: 50% 50%;
+  }
+}
+
+/*
+ * Contraste forcé Windows : les `fill` SVG ne sont pas ajustés automatiquement,
+ * la roue deviendrait un disque uniforme sans ce bloc. Le contour de `.wheel-arc`
+ * redonne les 24 secteurs, le secteur actif ressort via `Highlight`.
+ */
+@media (forced-colors: active) {
+  .wheel-arc {
+    fill: Canvas;
+    stroke: CanvasText;
+  }
+
+  .wheel-arc[data-highlighted='true'] {
+    fill: Highlight;
+  }
+
+  .wheel-label {
+    fill: CanvasText;
+  }
+
+  .wheel-pointer {
+    fill: Highlight;
+    stroke: CanvasText;
+  }
+}
+
+/*
+ * Garde global de mouvement réduit : ne neutralise que les animations et
+ * transitions CSS. La rotation de la roue passe par la Web Animations API, qui
+ * ignore les propriétés `animation-*` — ce garde ne l'arrête donc pas. La roue
+ * traite `prefers-reduced-motion` une seconde fois en JavaScript, en posant
+ * directement la rotation finale plutôt qu'en la raccourcissant. Les deux
+ * gardes sont nécessaires, l'un ne recouvre pas l'autre.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
