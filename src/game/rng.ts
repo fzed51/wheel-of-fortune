@@ -6,7 +6,9 @@
  * l'identique un fuzz qui a trouvé un bug, et donne au bot un comportement
  * testable.
  */
-export function createRng(seed: number): () => number {
+export type Rng = () => number
+
+export function createRng(seed: number): Rng {
   let state = seed >>> 0
   return () => {
     state = (state + 0x6d2b79f5) >>> 0
