@@ -1,111 +1,132 @@
+@import 'tailwindcss';
+
+/**
+ * Bascule manuelle du thème.
+ *
+ * Le variant `dark:` doit suivre `data-theme`, pas seulement `prefers-color-scheme` :
+ * sans ce `@custom-variant`, forcer « sombre » sur un système clair ne changerait
+ * rien aux utilitaires `dark:`.
+ */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+/**
+ * Tokens de couleur, déclarés `inline` : c'est ce qui fait émettre
+ * `color: var(--wof-fg)` dans les utilitaires plutôt que la valeur résolue au
+ * niveau de `:root`. Sans `inline`, la palette serait figée sur le thème clair et
+ * la bascule n'aurait aucun effet.
+ */
+@theme inline {
+  --color-bg: var(--wof-bg);
+  --color-bg-soft: var(--wof-bg-soft);
+  --color-surface: var(--wof-surface);
+  --color-border: var(--wof-border);
+  --color-fg: var(--wof-fg);
+  --color-fg-muted: var(--wof-fg-muted);
+  --color-primary: var(--wof-primary);
+  --color-on-primary: var(--wof-on-primary);
+  --color-accent: var(--wof-accent);
+  --color-danger: var(--wof-danger);
+  --color-success: var(--wof-success);
+  --color-ring: var(--wof-ring);
+}
+
+@theme {
+  /* La rangée basse du clavier ne doit pas passer sous l'indicateur d'accueil iOS. */
+  --spacing-safe-b: env(safe-area-inset-bottom);
+}
+
+/**
+ * Palette claire. Le fond `--wof-bg` est repris à l'identique dans
+ * `public/theme-init.js` et dans `src/theme/theme.ts`, pour la barre d'état du
+ * navigateur : `theme.test.ts` vérifie que les copies concordent.
+ */
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
-
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
-
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
+  --wof-bg: #faf7ff;
+  --wof-bg-soft: #f1ebfd;
+  --wof-surface: #ffffff;
+  --wof-border: #d9cdf2;
+  --wof-fg: #1b1033;
+  --wof-fg-muted: #4b3f6b;
+  --wof-primary: #6d28d9;
+  --wof-on-primary: #ffffff;
+  --wof-accent: #b45309;
+  --wof-danger: #b91c1c;
+  --wof-success: #15803d;
+  --wof-ring: #7c3aed;
 }
 
+/**
+ * Valeurs sombres déclarées **sous les deux sélecteurs**. Le média seul ne
+ * suffirait pas : forcer « sombre » sur un système clair ne changerait que les
+ * variants `dark:` et laisserait les variables en clair. Le
+ * `:not([data-theme='light'])` traite l'inverse — sans lui, forcer « clair » sur
+ * un système sombre serait ignoré.
+ */
 @media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
-
-  #social .button-icon {
-    filter: invert(1) brightness(2);
+  :root:not([data-theme='light']) {
+    --wof-bg: #1b1033;
+    --wof-bg-soft: #241645;
+    --wof-surface: #2f1d59;
+    --wof-border: #4b3583;
+    --wof-fg: #f4efff;
+    --wof-fg-muted: #c3b5e6;
+    --wof-primary: #c4b5fd;
+    --wof-on-primary: #1b1033;
+    --wof-accent: #fbbf24;
+    --wof-danger: #fca5a5;
+    --wof-success: #86efac;
+    --wof-ring: #c4b5fd;
   }
 }
 
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
+[data-theme='dark'] {
+  --wof-bg: #1b1033;
+  --wof-bg-soft: #241645;
+  --wof-surface: #2f1d59;
+  --wof-border: #4b3583;
+  --wof-fg: #f4efff;
+  --wof-fg-muted: #c3b5e6;
+  --wof-primary: #c4b5fd;
+  --wof-on-primary: #1b1033;
+  --wof-accent: #fbbf24;
+  --wof-danger: #fca5a5;
+  --wof-success: #86efac;
+  --wof-ring: #c4b5fd;
 }
 
-body {
-  margin: 0;
-}
-
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
-}
-
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
+@layer base {
+  html {
+    /* Le pull-to-refresh rechargerait la partie en cours. */
+    overscroll-behavior: none;
+    -webkit-text-size-adjust: 100%;
   }
-}
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
+
+  body {
+    overscroll-behavior: none;
+    /* `dvh` et non `vh` : la barre d'URL mobile fausse `vh`. */
+    min-height: 100dvh;
+    background-color: var(--wof-bg);
+    color: var(--wof-fg);
+    font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   }
-}
-p {
-  margin: 0;
-}
 
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
-}
+  /* Anneau de focus maison : celui de Tailwind ne tient pas 3:1 sur les deux fonds. */
+  :focus-visible {
+    outline: 3px solid var(--wof-ring);
+    outline-offset: 2px;
+  }
 
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
+  button,
+  [role='button'] {
+    /* Supprime le délai de 300 ms et le flash au tap, sans bloquer le zoom. */
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Un champ sous 16 px fait zoomer iOS, ce qui décadre le plateau. */
+  input,
+  select,
+  textarea {
+    font-size: max(1rem, 16px);
+  }
 }
