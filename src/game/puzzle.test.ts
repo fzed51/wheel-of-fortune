@@ -68,6 +68,15 @@ describe('normalizeAnswer', () => {
     expect(normalizeAnswer('  bord  ')).toBe('BORD')
   })
 
+  it('recompose les accents décomposés, pour qu’une lettre tienne en une case', () => {
+    // Construite par code : un « é » précomposé collé ici ne prouverait rien,
+    // c’est la forme décomposée qu’il faut éprouver.
+    const decompose = `cle${String.fromCodePoint(0x301)}`
+    expect(decompose).toHaveLength(4)
+    expect(normalizeAnswer(decompose)).toBe('CLÉ')
+    expect(cellsOf(normalizeAnswer(decompose))).toHaveLength(3)
+  })
+
   it('est idempotente', () => {
     const once = normalizeAnswer('l’œuf à la coque')
     expect(normalizeAnswer(once)).toBe(once)

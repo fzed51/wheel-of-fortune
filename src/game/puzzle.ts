@@ -36,7 +36,9 @@ const EXPANSIONS: readonly (readonly [RegExp, string])[] = [
  * **Les accents sont conservés** — c'est le texte que voit le joueur.
  */
 export function normalizeAnswer(text: string): string {
-  let out = text.toUpperCase()
+  // `NFC` d'abord : une énigme saisie en forme décomposée (« E » + accent
+  // combinant) compterait sinon deux cases de grille pour une seule lettre.
+  let out = text.normalize('NFC').toUpperCase()
   for (const [pattern, replacement] of EXPANSIONS) {
     out = out.replace(pattern, replacement)
   }
