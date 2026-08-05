@@ -1,5 +1,6 @@
 import { createContext, useContext } from 'react'
 import type { GameAction } from '../game/actions'
+import type { JudgeErrorReason } from '../llm/judge'
 import type { Setup } from '../game/setup'
 import type { Game, GameState, Letter, Phase, Player, RoundState } from '../game/types'
 
@@ -37,11 +38,32 @@ export interface GameCommands {
   readonly playLetter: (letter: Letter) => void
   /** Passe la main quand plus aucune action n'est possible. */
   readonly pass: () => void
+  /** Envoie une proposition au juge. Le verdict arrive par le driver, jamais d'ici. */
+  readonly resolve: (attempt: string) => void
   /** Sortie de secours pour les actions qui n'ont besoin d'aucune impureté. */
   readonly dispatch: (action: GameAction) => void
 }
 
 export const GameCommandsContext = createContext<GameCommands | null>(null)
+
+/**
+ * Dernier échec technique du juge (réseau, clé révoquée, réponse illisible), ou
+ * `null` si la dernière tentative a abouti — verdict rendu ou aucune tentative
+ * encore lancée. Écart au plan initial : le reducer ne conserve pas la raison
+ * d'un `resolve/failed`, il se contente de ramener la phase à
+ * `awaiting-action` sans pénalité, et les live regions du projet sont
+ * `sr-only`. Sans ce contexte, un échec technique du juge n'a donc **aucun
+ * chemin vers l'écran** : le joueur verrait sa boîte de dialogue se vider sans
+ * explication. Valeur primitive, pas d'objet enveloppant : aucune
+ * mémoïsation à faire, et `null` par défaut est déjà la bonne réponse hors
+ * provider — contrairement à `useGameState`, ce lecteur n'a aucune raison de
+ * lever pour « aucun échec ».
+ */
+export const JudgeFailureContext = createContext<JudgeErrorReason | null>(null)
+
+export function useJudgeFailure(): JudgeErrorReason | null {
+  return useContext(JudgeFailureContext)
+}
 
 export function useGameState(): GameState {
   const state = useContext(GameStateContext)

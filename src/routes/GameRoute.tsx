@@ -1,11 +1,19 @@
+import { useState } from 'react'
 import { Navigate } from 'react-router'
 import Controls from '../components/Controls'
 import Keyboard from '../components/Keyboard'
 import PuzzleBoard from '../components/PuzzleBoard'
+import ResolveDialog from '../components/ResolveDialog'
 import Scoreboard from '../components/Scoreboard'
 import Wheel from '../components/Wheel'
 import { BUTTON_PRIMARY, CARD } from '../components/classes'
-import { useCurrentPlayer, useGame, useGameCommands, useRound } from '../context/selectors'
+import {
+  useCurrentPlayer,
+  useGame,
+  useGameCommands,
+  useJudgeFailure,
+  useRound,
+} from '../context/selectors'
 import { announcePuzzle, formatEuros } from '../game/announce'
 import {
   canResolve,
@@ -47,18 +55,50 @@ export default function GameRoute() {
   const game = useGame()
   const round = useRound()
   const player = useCurrentPlayer()
-  const { playLetter, spin, pass, nextRound, settleSpin } = useGameCommands()
+  const { playLetter, spin, pass, nextRound, settleSpin, resolve } = useGameCommands()
+  const judgeFailure = useJudgeFailure()
 
-  // Clavier physique et clavier virtuel appellent la même commande `playLetter` :
-  // c'est ce qui garantit qu'une touche allumée à l'écran reflète exactement ce
-  // que le joueur vient de taper, quel que soit le chemin emprunté.
+  // La boîte est un élément d'interface, pas un état de partie : le reducer
+  // n'a aucune raison de savoir qu'un dialogue est affiché.
+  const [resolveOpen, setResolveOpen] = useState(false)
+
+  // Lu directement sur `round.phase`, jamais via une variable intermédiaire :
+  // TypeScript ne transporte pas le rétrécissement de `phase.kind` à travers
+  // un alias (déjà commenté ainsi plus bas dans ce fichier).
+  const pending = round !== null && round.phase.kind === 'resolving'
+
+  // Repli sur la valeur précédente comparée pendant le rendu — même motif que
+  // `PuzzleForm`/`ResolveDialog` — plutôt qu'un effet, qui coûterait un rendu
+  // de plus pendant lequel la boîte afficherait encore l'attente alors que la
+  // manche est déjà finie. On ne ferme qu'à la transition attente -> repos,
+  // et seulement si aucun échec technique n'a été posé : `GameProvider` pose
+  // `judgeFailure` et dispatche `resolve/failed` dans le même lot, les deux
+  // arrivent donc ensemble. Si le joueur ferme la boîte après un échec puis
+  // la rouvre, l'ancien message reste affiché jusqu'au prochain envoi — c'est
+  // assumé, le message reste vrai : le dernier essai a bien échoué.
+  const [prevPending, setPrevPending] = useState(pending)
+  if (pending !== prevPending) {
+    setPrevPending(pending)
+    if (prevPending && judgeFailure === null) setResolveOpen(false)
+  }
+
+  // Refusée en silence si l'action est illégale : partie non nulle,
+  // `canResolve(game)`, et pas le tour d'un bot. Nécessaire ici et pas
+  // seulement dans `Controls`, parce que le clavier physique appelle cette
+  // fonction sans connaître la légalité — un `aria-disabled` n'empêche rien
+  // côté clavier physique.
+  function openResolve(): void {
+    if (game === null || isBotTurn(game) || !canResolve(game)) return
+    setResolveOpen(true)
+  }
+
+  // Clavier physique et clavier virtuel appellent les mêmes commandes : c'est
+  // ce qui garantit qu'une touche allumée à l'écran reflète exactement ce que
+  // le joueur vient de taper, quel que soit le chemin emprunté.
   const pressed = usePhysicalKeyboard({
     onLetter: playLetter,
     onSpin: spin,
-    // La boîte de dialogue et le juge arrivent à l'étape 16 : `SettingsRoute`
-    // est encore une coquille, aucune clé d'API n'est saisissable aujourd'hui,
-    // donc aucun juge n'est joignable. Pas de repli local.
-    onResolve: () => {},
+    onResolve: openResolve,
   })
 
   if (game === null) return null
@@ -118,14 +158,25 @@ export default function GameRoute() {
           canSpin={canSpin(game) && !botTurn}
           canResolve={canResolve(game) && !botTurn}
           canPass={isStuck(game) && !botTurn}
-          // Forcé à `false` (voir `onResolve` ci-dessus) : le bouton reste visible
-          // mais inactif tant qu'aucun juge n'est joignable.
-          resolveEnabled={false}
+          resolveEnabled={game.config.resolveEnabled}
           vowelCost={game.config.vowelCost}
           spinning={round.phase.kind === 'spinning'}
           onSpin={spin}
-          onResolve={() => {}}
+          onResolve={openResolve}
           onPass={pass}
+        />
+      )}
+
+      {round !== null && (
+        <ResolveDialog
+          open={resolveOpen}
+          pending={pending}
+          failure={judgeFailure}
+          // Le dialogue modal masque le plateau : la catégorie est le seul
+          // indice qui reste au joueur.
+          category={round.puzzle.category}
+          onSubmit={resolve}
+          onClose={() => setResolveOpen(false)}
         />
       )}
 

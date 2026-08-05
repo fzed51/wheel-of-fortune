@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { pickPuzzle } from '../data/puzzles'
 import type { GameAction } from '../game/actions'
@@ -7,7 +7,7 @@ import { initialState, reduce } from '../game/engine'
 import { isVowel } from '../game/puzzle'
 import { createRng } from '../game/rng'
 import type { Rng } from '../game/rng'
-import { canBuyVowel, canGuess, currentPlayerOf, isBotTurn } from '../game/rules'
+import { canBuyVowel, canGuess, canResolve, currentPlayerOf, isBotTurn } from '../game/rules'
 import { configFrom, playersFrom } from '../game/setup'
 import type { Setup } from '../game/setup'
 import type { GameState, Letter } from '../game/types'
@@ -16,8 +16,10 @@ import { useAnnouncer } from '../hooks/useAnnouncer'
 import { useGameEffects } from '../hooks/useGameEffects'
 import { usePuzzles } from '../hooks/usePuzzles'
 import { useSettings } from '../hooks/useSettings'
-import { loadGame } from '../storage/persist'
-import { GameCommandsContext, GameStateContext } from './selectors'
+import { createJudge } from '../llm'
+import type { JudgeErrorReason } from '../llm/judge'
+import { loadGame, loadMistralKey } from '../storage/persist'
+import { GameCommandsContext, GameStateContext, JudgeFailureContext } from './selectors'
 import type { GameCommands } from './selectors'
 
 /**
@@ -48,6 +50,9 @@ export function GameProvider({ children }: { readonly children: ReactNode }) {
     resolveEnabled: hasMistralKey,
   })
   const poolRef = useRef(pool)
+  // Réglages courants pour la fabrique du juge : seul le nom du modèle nous
+  // intéresse ici, la clé elle-même n'est jamais mise en ref, voir `getJudge`.
+  const settingsRef = useRef(settings)
 
   useEffect(() => {
     stateRef.current = state
@@ -65,6 +70,10 @@ export function GameProvider({ children }: { readonly children: ReactNode }) {
   useEffect(() => {
     poolRef.current = pool
   }, [pool])
+
+  useEffect(() => {
+    settingsRef.current = settings
+  }, [settings])
 
   /**
    * Dispatch enveloppé : seul point du provider où `prev`, `action` et `next`
@@ -131,6 +140,29 @@ export function GameProvider({ children }: { readonly children: ReactNode }) {
   const newRequestId = useCallback(() => {
     requestIdRef.current += 1
     return `req-${requestIdRef.current}`
+  }, [])
+
+  /**
+   * Fabrique du juge, appelée au dernier moment plutôt que conservée dans un
+   * state ou une ref longue durée : la clé ne survit alors que le temps d'un
+   * appel, dans la closure d'un juge éphémère, au lieu de rester à demeure
+   * dans un objet que les outils de développement affichent. `hasMistralKey`
+   * a déjà tranché sur la présence de la clé pour le reste de l'application ;
+   * `createJudge` retranche indépendamment, et renvoie `null` sans repli local
+   * si la clé a disparu entre-temps (effacée dans les Réglages, par exemple).
+   */
+  const getJudge = useCallback(
+    () => createJudge({ apiKey: loadMistralKey(), model: settingsRef.current.mistralModel }),
+    [],
+  )
+
+  // Dernier échec technique du juge, pour le seul consommateur qui doit
+  // l'afficher : voir la documentation de `JudgeFailureContext`. Remis à
+  // `null` par `resolve` avant chaque nouvelle tentative, pour qu'une
+  // ancienne panne ne reste pas affichée par-dessus un nouvel essai.
+  const [judgeFailure, setJudgeFailure] = useState<JudgeErrorReason | null>(null)
+  const onJudgeFailure = useCallback((reason: JudgeErrorReason) => {
+    setJudgeFailure(reason)
   }, [])
 
   const startGame = useCallback(
@@ -236,16 +268,43 @@ export function GameProvider({ children }: { readonly children: ReactNode }) {
     dispatch({ type: 'turn/pass', by: player.id })
   }, [dispatch])
 
-  const commands = useMemo<GameCommands>(
-    () => ({ startGame, nextRound, spin, settleSpin, playLetter, pass, dispatch }),
-    [startGame, nextRound, spin, settleSpin, playLetter, pass, dispatch],
+  /**
+   * Envoie une tentative de résolution au juge. Mêmes gardes que `spin` et pour
+   * les mêmes raisons : le clavier physique n'a pas d'attribut à griser, et un
+   * humain ne résout pas à la place d'un bot. `canResolve` de `rules.ts`
+   * tranche la légalité, cette commande ne fait que relayer la demande —
+   * `useGameEffects` s'occupe d'appeler le juge et de dispatcher le verdict.
+   */
+  const resolve = useCallback(
+    (attempt: string) => {
+      const current = stateRef.current
+      if (current.kind !== 'playing' || current.game.progress.kind !== 'round') return
+      if (isBotTurn(current.game)) return
+      if (!canResolve(current.game)) return
+      // Le joueur est lu sur `current.game` et non sur un alias : voir le
+      // commentaire de `settleSpin`.
+      const player = current.game.players[current.game.progress.currentPlayer]
+      if (player === undefined) return
+      // Une ancienne panne réseau ne doit pas rester affichée par-dessus ce
+      // nouvel essai.
+      setJudgeFailure(null)
+      dispatch({ type: 'resolve/start', by: player.id, attempt, requestId: newRequestId() })
+    },
+    [dispatch, newRequestId],
   )
 
-  useGameEffects(state, dispatch, { rng, nextSpinId, newRequestId })
+  const commands = useMemo<GameCommands>(
+    () => ({ startGame, nextRound, spin, settleSpin, playLetter, pass, resolve, dispatch }),
+    [startGame, nextRound, spin, settleSpin, playLetter, pass, resolve, dispatch],
+  )
+
+  useGameEffects(state, dispatch, { rng, nextSpinId, newRequestId, getJudge, onJudgeFailure })
 
   return (
     <GameCommandsContext value={commands}>
-      <GameStateContext value={state}>{children}</GameStateContext>
+      <GameStateContext value={state}>
+        <JudgeFailureContext value={judgeFailure}>{children}</JudgeFailureContext>
+      </GameStateContext>
     </GameCommandsContext>
   )
 }
