@@ -35,7 +35,7 @@
     for (var i = 0; i < metas.length; i += 1) {
       metas[i].setAttribute('content', color)
     }
-  } catch (error) {
+  } catch {
     // Stockage inaccessible ou JSON abîmé : le thème du système s'applique seul,
     // via `prefers-color-scheme`. Rien à signaler, et surtout rien à journaliser.
   }

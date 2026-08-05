@@ -5,6 +5,9 @@ import tailwindcss from '@tailwindcss/vite'
 
 // https://vite.dev/config/
 export default defineConfig({
+  // Déploiement sur un sous-chemin GitHub Pages. Source unique : `basename` du
+  // routeur et le chemin de `theme-init.js` en dérivent via `BASE_URL`.
+  base: '/wheel-of-fortune/',
   plugins: [
     react(),
     babel({ presets: [reactCompilerPreset()] }),
