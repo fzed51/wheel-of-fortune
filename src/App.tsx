@@ -1,19 +1,21 @@
 import { Link, Outlet } from 'react-router'
+import LiveRegions from './components/LiveRegions'
 import ThemeToggle from './components/ThemeToggle'
 import { useApplyTheme } from './hooks/useTheme'
 
 /**
- * Layout racine. Il ne contient que l'ossature : en-tête, contenu, et bientôt les
- * live regions et l'invite de mise à jour. Aucune règle de jeu ici.
+ * Layout racine. Il ne contient que l'ossature : en-tête, contenu, les live regions
+ * et bientôt l'invite de mise à jour. Aucune règle de jeu ici.
  *
  * C'est le seul composant garanti monté en permanence : c'est donc lui qui applique
- * le thème au document.
+ * le thème au document, et qui monte les live regions une fois pour toute la partie.
  */
 export default function App() {
   useApplyTheme()
 
   return (
     <div className="min-h-dvh bg-bg">
+      <LiveRegions />
       <a
         href="#contenu"
         className="sr-only focus:not-sr-only focus:absolute focus:m-2 focus:rounded-md focus:bg-primary focus:px-3 focus:py-2 focus:text-on-primary"

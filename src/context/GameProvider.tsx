@@ -1,13 +1,18 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react'
 import type { ReactNode } from 'react'
 import { pickPuzzle } from '../data/puzzles'
+import type { GameAction } from '../game/actions'
+import { announceTransition } from '../game/announce'
 import { initialState, reduce } from '../game/engine'
+import { isVowel } from '../game/puzzle'
 import { createRng } from '../game/rng'
 import type { Rng } from '../game/rng'
+import { canBuyVowel, canGuess, currentPlayerOf } from '../game/rules'
 import { configFrom, playersFrom } from '../game/setup'
 import type { Setup } from '../game/setup'
-import type { GameState } from '../game/types'
+import type { GameState, Letter } from '../game/types'
 import { pickSpinOutcome } from '../game/wheel'
+import { useAnnouncer } from '../hooks/useAnnouncer'
 import { useGameEffects } from '../hooks/useGameEffects'
 import { usePuzzles } from '../hooks/usePuzzles'
 import { useSettings } from '../hooks/useSettings'
@@ -27,9 +32,10 @@ function initGameState(): GameState {
 }
 
 export function GameProvider({ children }: { readonly children: ReactNode }) {
-  const [state, dispatch] = useReducer(reduce, undefined, initGameState)
+  const [state, rawDispatch] = useReducer(reduce, undefined, initGameState)
   const { settings, hasMistralKey } = useSettings()
   const { pool } = usePuzzles()
+  const announcer = useAnnouncer()
 
   // Refs de dernière valeur connue : les commandes doivent rester stables à vie,
   // donc elles ne peuvent pas dépendre de ces objets. La lecture n'a lieu que dans
@@ -60,11 +66,44 @@ export function GameProvider({ children }: { readonly children: ReactNode }) {
     poolRef.current = pool
   }, [pool])
 
+  /**
+   * Dispatch enveloppé : seul point du provider où `prev`, `action` et `next`
+   * coexistent, donc seul endroit capable de produire les annonces. Un diff à
+   * deux états ne suffit pas : `resolve/failed` (juge en panne, la main ne
+   * bouge pas) et un verdict négatif en solo (la main « passe » au même siège,
+   * `settle` la lui rend aussitôt) produisent des états `prev`/`next`
+   * identiques mais des annonces opposées — d'où l'écart avec le plan initial,
+   * qui prévoyait ce calcul dans `useGameEffects`, lequel ne voit jamais
+   * l'action. Toute commande qui touche l'état doit passer par lui, jamais
+   * par `rawDispatch` en direct, sous peine de transitions muettes pour le
+   * lecteur d'écran.
+   */
+  const dispatch = useCallback(
+    (action: GameAction) => {
+      const prev = stateRef.current
+      const next = reduce(prev, action) // le reducer est pur, un second appel est gratuit
+      if (next !== prev) {
+        // Assignation synchrone : si un gestionnaire dispatche deux actions à la
+        // suite (le juge, par exemple, enchaîne `resolve/start` puis
+        // `resolve/verdict`), la seconde doit voir l'état intermédiaire, pas celui
+        // du dernier rendu commité. L'effet sur `state` réassigne la même valeur
+        // une fois le rendu passé ; c'est sans effet, gardé pour ne pas dupliquer
+        // ce point unique de vérité qu'est `stateRef`.
+        stateRef.current = next
+        const { status, alert } = announceTransition(prev, next, action)
+        if (status !== '') announcer.say(status)
+        if (alert !== '') announcer.warn(alert)
+      }
+      rawDispatch(action)
+    },
+    [announcer],
+  )
+
   // Le juge peut apparaître ou disparaître en pleine partie, quand l'utilisateur
   // saisit ou efface sa clé dans les Réglages. Le reducer no-ope si rien ne change.
   useEffect(() => {
     dispatch({ type: 'config/set-resolve-enabled', enabled: hasMistralKey })
-  }, [hasMistralKey])
+  }, [dispatch, hasMistralKey])
 
   // Créé à la première utilisation : `createRng(Date.now())` à chaque rendu serait
   // du travail perdu, et la graine n'a de sens qu'une fois par partie.
@@ -91,7 +130,7 @@ export function GameProvider({ children }: { readonly children: ReactNode }) {
         firstPlayer: 0,
       })
     },
-    [rng],
+    [dispatch, rng],
   )
 
   const nextRound = useCallback(() => {
@@ -108,7 +147,7 @@ export function GameProvider({ children }: { readonly children: ReactNode }) {
       puzzle,
       firstPlayer: game.players.length === 0 ? 0 : (played + 1) % game.players.length,
     })
-  }, [rng])
+  }, [dispatch, rng])
 
   const spin = useCallback(() => {
     const current = stateRef.current
@@ -117,14 +156,48 @@ export function GameProvider({ children }: { readonly children: ReactNode }) {
     if (player === undefined) return
     spinIdRef.current += 1
     dispatch({ type: 'wheel/spin', by: player.id, spin: pickSpinOutcome(rng, spinIdRef.current) })
-  }, [rng])
+  }, [dispatch, rng])
 
-  const commands = useMemo<GameCommands>(
-    () => ({ startGame, nextRound, spin, dispatch }),
-    [startGame, nextRound, spin],
+  /**
+   * Route vers l'une des deux actions de lettre sans réimplémenter la moindre
+   * règle : `canBuyVowel`/`canGuess` de `rules.ts` tranchent, cette commande ne
+   * fait que remplir `by`. C'est la source unique du clavier virtuel et du
+   * clavier physique.
+   */
+  const playLetter = useCallback(
+    (letter: Letter) => {
+      const current = stateRef.current
+      if (current.kind !== 'playing' || current.game.progress.kind !== 'round') return
+      // Le joueur est lu sur `current.game` et non sur un alias : TypeScript ne
+      // transporte pas le rétrécissement de `progress.kind` à travers une copie.
+      const player = current.game.players[current.game.progress.currentPlayer]
+      if (player === undefined) return
+      const game = current.game
+      if (isVowel(letter)) {
+        if (!canBuyVowel(game)) return
+        dispatch({ type: 'letter/buy-vowel', by: player.id, letter })
+        return
+      }
+      if (canGuess(game, letter)) {
+        dispatch({ type: 'letter/consonant', by: player.id, letter })
+      }
+    },
+    [dispatch],
   )
 
-  useGameEffects(state)
+  const pass = useCallback(() => {
+    const current = stateRef.current
+    if (current.kind !== 'playing' || current.game.progress.kind !== 'round') return
+    const player = currentPlayerOf(current.game)
+    dispatch({ type: 'turn/pass', by: player.id })
+  }, [dispatch])
+
+  const commands = useMemo<GameCommands>(
+    () => ({ startGame, nextRound, spin, playLetter, pass, dispatch }),
+    [startGame, nextRound, spin, playLetter, pass, dispatch],
+  )
+
+  useGameEffects(state, dispatch)
 
   return (
     <GameCommandsContext value={commands}>

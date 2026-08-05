@@ -1,7 +1,7 @@
 import { createContext, useContext } from 'react'
 import type { GameAction } from '../game/actions'
 import type { Setup } from '../game/setup'
-import type { Game, GameState, Phase, Player, RoundState } from '../game/types'
+import type { Game, GameState, Letter, Phase, Player, RoundState } from '../game/types'
 
 /**
  * Contextes et sélecteurs de la partie.
@@ -31,6 +31,10 @@ export interface GameCommands {
   readonly nextRound: () => void
   /** Lance la roue : tire le segment ici, l'animation ne fera que l'exécuter. */
   readonly spin: () => void
+  /** Joue une lettre : consonne devinée ou voyelle achetée, selon la lettre et la phase. */
+  readonly playLetter: (letter: Letter) => void
+  /** Passe la main quand plus aucune action n'est possible. */
+  readonly pass: () => void
   /** Sortie de secours pour les actions qui n'ont besoin d'aucune impureté. */
   readonly dispatch: (action: GameAction) => void
 }
