@@ -136,6 +136,20 @@ export function resoudre(state: GameState, correct: boolean, requestId = 'req-1'
   )
 }
 
+/** Partie menée jusqu'à `game-over` : chaque manche gagnée par résolution. */
+export function partieTerminee(state: GameState = demarrer()): GameState {
+  let current = state
+  for (let round = 0; round < jeu(current).config.roundCount; round += 1) {
+    current = resoudre(current, true, `req-${round}`)
+    current = jouer(current, {
+      type: 'round/next',
+      puzzle: enigme('la mer', `suite-${round}`),
+      firstPlayer: 0,
+    })
+  }
+  return current
+}
+
 /**
  * Raccourcis vers des états limites. Ils fabriquent des états que le reducer
  * n'aurait pas forcément produits, ce qui est légitime pour éprouver des
