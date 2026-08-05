@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest'
+import { asPuzzleId } from '../game/types'
 import { cash, demarrer, jeu, partieTerminee, proposer, tourner } from '../test/game'
-import { decodeGame, decodePuzzles, decodeRecord, decodeSettings, encodeRecord } from './codec'
+import {
+  decodeGame,
+  decodePuzzleFile,
+  decodePuzzles,
+  decodeRecord,
+  decodeSettings,
+  encodePuzzleFile,
+  encodeRecord,
+} from './codec'
 import { DEFAULT_SETTINGS } from './settings'
 import { toPersisted } from './snapshot'
 
@@ -171,5 +180,84 @@ describe('decodePuzzles', () => {
 
   it('refuse ce qui n’est pas un tableau', () => {
     expect(decodePuzzles(enveloppe({}))).toEqual({ ok: false, reason: 'invalid' })
+  })
+})
+
+describe('fichier d’énigmes', () => {
+  it('fait l’aller-retour en conservant identifiant, énoncé et catégorie', () => {
+    const puzzles = [
+      {
+        id: asPuzzleId('user-1'),
+        answer: 'LA CLÉ EST SOUS LE PAILLASSON',
+        category: 'Expression',
+        source: 'custom' as const,
+      },
+    ]
+    const decoded = decodePuzzleFile(encodePuzzleFile(puzzles))
+    expect(decoded).toEqual({
+      ok: true,
+      value: {
+        entries: [{ id: 'user-1', answer: 'LA CLÉ EST SOUS LE PAILLASSON', category: 'Expression' }],
+        rejected: 0,
+      },
+    })
+  })
+
+  it('n’exporte jamais le champ `source`', () => {
+    const json = encodePuzzleFile([
+      { id: asPuzzleId('user-1'), answer: 'LE VENT', category: 'Nature', source: 'custom' },
+    ])
+    expect(json).not.toContain('source')
+  })
+
+  it('accepte un tableau nu écrit à la main, identifiants à `null`', () => {
+    const decoded = decodePuzzleFile(
+      JSON.stringify([{ answer: 'SANS IDENTIFIANT', category: 'Test' }]),
+    )
+    expect(decoded).toEqual({
+      ok: true,
+      value: { entries: [{ id: null, answer: 'SANS IDENTIFIANT', category: 'Test' }], rejected: 0 },
+    })
+  })
+
+  it('refuse une version d’enveloppe inconnue', () => {
+    expect(decodePuzzleFile(JSON.stringify({ version: 2, value: [] }))).toEqual({
+      ok: false,
+      reason: 'version',
+    })
+  })
+
+  it('distingue un JSON illisible d’un JSON valide mais non exploitable', () => {
+    expect(decodePuzzleFile('{ceci n’est pas du JSON')).toEqual({
+      ok: false,
+      reason: 'unreadable',
+    })
+    expect(decodePuzzleFile(JSON.stringify({ foo: 'bar' }))).toEqual({
+      ok: false,
+      reason: 'invalid',
+    })
+  })
+
+  it('écarte une entrée sans `answer` et compte le rejet sans perdre les autres', () => {
+    const decoded = decodePuzzleFile(
+      JSON.stringify([
+        { id: 'user-1', answer: 'VALIDE', category: 'Test' },
+        { id: 'user-2', category: 'Sans énoncé' },
+        'pas un objet',
+      ]),
+    )
+    expect(decoded).toEqual({
+      ok: true,
+      value: {
+        entries: [{ id: 'user-1', answer: 'VALIDE', category: 'Test' }],
+        rejected: 2,
+      },
+    })
+  })
+
+  it('normalise un énoncé en forme décomposée ou avec apostrophe typographique', () => {
+    const decompose = `cle${String.fromCodePoint(0x301)} d’or`
+    const decoded = decodePuzzleFile(JSON.stringify([{ answer: decompose, category: 'Mot' }]))
+    expect(decoded.ok && decoded.value.entries[0]?.answer).toBe('CLÉ D\'OR')
   })
 })

@@ -288,3 +288,86 @@ export function decodePuzzles(raw: string): Decoded<readonly Puzzle[]> {
   }
   return { ok: true, value: puzzles }
 }
+
+/** Énigme telle qu'elle sort d'un fichier : l'identifiant peut manquer, la fusion s'en chargera. */
+export interface ImportedPuzzle {
+  readonly id: string | null
+  readonly answer: string
+  readonly category: string
+}
+
+export interface PuzzleFile {
+  readonly entries: readonly ImportedPuzzle[]
+  /** Entrées écartées faute de forme exploitable. Sert au compte rendu d'import. */
+  readonly rejected: number
+}
+
+/**
+ * Fichier d'export/import des énigmes perso : le seul filet de sécurité du
+ * projet en l'absence de backend. Ne transporte que `id`, `answer`,
+ * `category` — surtout pas `source` (tout ce qui est importé est perso par
+ * construction), et surtout jamais la clé d'API Mistral, qui vit dans sa
+ * propre entrée de stockage précisément pour qu'aucun objet exportable ne la
+ * contienne. Indenté, contrairement à `encodeRecord` : ce fichier est destiné
+ * à être ouvert et corrigé à la main.
+ */
+export function encodePuzzleFile(puzzles: readonly Puzzle[]): string {
+  const entries: ImportedPuzzle[] = puzzles.map((puzzle) => ({
+    id: puzzle.id,
+    answer: puzzle.answer,
+    category: puzzle.category,
+  }))
+  const envelope: Envelope = { version: SCHEMA_VERSION, value: entries }
+  return JSON.stringify(envelope, null, 2)
+}
+
+/**
+ * Forme seulement : un `answer` texte non vide, normalisé pour qu'un fichier
+ * écrit à la main (accents décomposés, apostrophe typographique) passe sans
+ * être rejeté. La jouabilité (longueur, nombre de consonnes, doublons) est
+ * une règle de jeu qui vit ailleurs — la dupliquer ici créerait deux sources
+ * de vérité pour la même question.
+ */
+function toImportedPuzzle(entry: unknown): ImportedPuzzle | null {
+  if (!isRecord(entry) || !isText(entry.answer)) return null
+  return {
+    id: isText(entry.id) ? entry.id : null,
+    answer: normalizeAnswer(entry.answer),
+    category: typeof entry.category === 'string' ? entry.category : '',
+  }
+}
+
+/**
+ * Tolère deux formes : l'enveloppe versionnée produite par `encodePuzzleFile`,
+ * et un tableau nu écrit à la main. Le tableau nu ne porte pas de version :
+ * le refuser faute de champ `version` serait hostile envers la seule
+ * sauvegarde dont dispose l'utilisateur pour ses énigmes perso.
+ */
+export function decodePuzzleFile(raw: string): Decoded<PuzzleFile> {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return fail('unreadable')
+  }
+
+  let list: readonly unknown[]
+  if (Array.isArray(parsed)) {
+    list = parsed
+  } else if (isRecord(parsed) && 'version' in parsed) {
+    if (parsed.version !== SCHEMA_VERSION) return fail('version')
+    if (!Array.isArray(parsed.value)) return fail('invalid')
+    list = parsed.value
+  } else {
+    return fail('invalid')
+  }
+
+  const entries: ImportedPuzzle[] = []
+  let rejected = 0
+  for (const item of list) {
+    const entry = toImportedPuzzle(item)
+    if (entry !== null) entries.push(entry)
+    else rejected += 1
+  }
+  return { ok: true, value: { entries, rejected } }
+}

@@ -1,26 +1,21 @@
 import { describe, expect, it } from 'vitest'
-import { cellsOf, isConsonant, isVowel, lettersOf, normalizeAnswer } from '../../game/puzzle'
+import { cellsOf, normalizeAnswer } from '../../game/puzzle'
 import { createRng } from '../../game/rng'
 import type { Puzzle, PuzzleId } from '../../game/types'
 import { asPuzzleId } from '../../game/types'
+import { draftIssues, issueMessage } from '../../game/validate'
 import { CATEGORIES } from '../categories'
 import { PACK_PUZZLES, pickPuzzle } from './index'
 
 /**
  * Le catalogue est le contenu du jeu : ces contraintes existent avant les
  * énigmes, pas après. Chacune correspond à une manière de rendre une manche
- * injouable ou illisible.
+ * injouable ou illisible. Les contraintes elles-mêmes vivent dans
+ * `src/game/validate.ts`, partagées avec l'éditeur d'énigmes perso.
  */
 
 /** `exp-001`, `cin-014` : préfixe de catégorie et numéro, stables à vie. */
 const FORMAT_ID = /^[a-z]{3}-\d{3}$/
-
-/** Majuscules accentuées, espace, apostrophe droite et tiret. Ni chiffre, ni autre ponctuation. */
-const CARACTERES = /^[A-ZÀÂÄÇÉÈÊËÎÏÔÖÙÛÜŸ' -]+$/
-
-const LONGUEUR_MIN = 10
-/** Au-delà, la grille devient illisible sur un écran de 360 px. */
-const LONGUEUR_MAX = 42
 
 describe('catalogue', () => {
   it('compte au moins vingt énigmes', () => {
@@ -52,13 +47,11 @@ describe('catalogue', () => {
     // Stockée sous forme canonique : la normaliser au chargement laisserait la
     // grille et `isSolved` divergents le temps d'un rendu.
     expect(puzzle.answer).toBe(normalizeAnswer(puzzle.answer))
-    expect(puzzle.answer).toMatch(CARACTERES)
-    expect(puzzle.answer.length).toBeGreaterThanOrEqual(LONGUEUR_MIN)
-    expect(puzzle.answer.length).toBeLessThanOrEqual(LONGUEUR_MAX)
 
-    const letters = [...lettersOf(puzzle.answer)]
-    expect(letters.filter(isConsonant).length).toBeGreaterThanOrEqual(3)
-    expect(letters.filter(isVowel).length).toBeGreaterThanOrEqual(2)
+    // Chaque énigme est son propre doublon si on ne l'exclut pas des « autres ».
+    const autres = PACK_PUZZLES.filter((other) => other.id !== puzzle.id)
+    const issues = draftIssues(puzzle, autres)
+    expect(issues.map(issueMessage)).toEqual([])
 
     // Une ligature laissée telle quelle ne serait révélée par aucune lettre.
     expect(puzzle.answer).not.toMatch(/[ŒÆ]/)
