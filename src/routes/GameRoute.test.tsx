@@ -100,6 +100,30 @@ describe('GameRoute', () => {
     expect(screen.getByRole('status')).not.toHaveTextContent('')
   })
 
+  /**
+   * Un seul joueur : le tour ne change pas, la cagnotte reste à zéro, aucune
+   * manche ne se termine — rien d'autre à l'écran ne dit que Z est absent.
+   * Sans `EventFeedback`, seule la live region `sr-only` le saurait.
+   */
+  it('affiche à l’œil le résultat d’un coup qui n’a aucun autre retour visible', async () => {
+    const enManche = avecPhase(demarrer({ players: [joueur('Alice')], answer: 'le vent' }), {
+      kind: 'awaiting-consonant',
+      value: 300,
+      segment: { kind: 'cash', index: cash(300), value: 300 },
+    })
+    saveGame(jeu(enManche))
+    const user = userEvent.setup()
+    monterApp('/jeu')
+
+    await user.click(screen.getByRole('button', { name: 'Lettre Z' }))
+
+    // « Pas de Z. » apparaît deux fois : une fois dans la live region
+    // `sr-only` (déjà couverte par d'autres tests), et maintenant dans le
+    // retour visible d'`EventFeedback` — la preuve que l'œil reçoit la même
+    // phrase que le lecteur d'écran.
+    expect(await screen.findAllByText('Pas de Z.')).toHaveLength(2)
+  })
+
   it('« Tourner » fait sortir la phase de spinning et ne fige pas la partie', async () => {
     // jsdom n'implémente pas `Element.prototype.animate` : `useWheelSpin`
     // dégrade alors vers un règlement différé d'environ 300 ms (bien avant le

@@ -14,6 +14,12 @@ export interface Announcement {
   readonly status: string
   /** Lu par la live region `role="alert"`. Chaîne vide si rien à signaler. */
   readonly alert: string
+  /**
+   * Ce que l'œil doit lire. **Absent** = identique à `status`, cas de loin le
+   * plus fréquent. **Présent et vide** = ne rien afficher, parce que l'écran
+   * porte déjà l'information par lui-même.
+   */
+  readonly visible?: string
 }
 
 /** Raison d'échec du juge : `actions.ts` ne l'exporte pas comme type à part, on le dérive. */
@@ -284,12 +290,12 @@ function passAnnouncement(prevGame: Game, nextGame: Game, by: PlayerId): string 
 }
 
 /**
- * Diff de deux états, dépendant de l'action : `resolve/failed` (échec
- * technique, la main ne bouge pas) et un verdict négatif en solo produisent
- * des couples `(prev, next)` identiques mais des annonces opposées, d'où le
- * troisième paramètre obligatoire.
+ * Ce que le lecteur d'écran doit entendre, sans considération pour ce que
+ * l'écran montre déjà. Corps historique de `announceTransition`, extrait tel
+ * quel pour que la fonction exportée n'ait plus qu'un seul point de sortie —
+ * seul endroit où le champ `visible` peut alors se décider.
  */
-export function announceTransition(prev: GameState, next: GameState, action: GameAction): Announcement {
+function heardAnnouncement(prev: GameState, next: GameState, action: GameAction): Announcement {
   if (next === prev) return { status: '', alert: '' }
   if (action.type === 'config/set-resolve-enabled') return { status: '', alert: '' }
   if (action.type === 'resolve/failed') {
@@ -320,4 +326,51 @@ export function announceTransition(prev: GameState, next: GameState, action: Gam
     case 'round/next':
       return { status: roundNextAnnouncement(nextGame), alert: '' }
   }
+}
+
+/**
+ * Vrai quand l'écran porte déjà l'information : la phrase part alors au lecteur
+ * d'écran seul, et la ligne d'évènement se vide.
+ *
+ * C'est le seul endroit du module qui dépende de ce que l'interface affiche.
+ * Si la mise en page change, c'est ici qu'il faut revenir : l'en-tête de
+ * `routes/GameRoute.tsx` et `components/PuzzleBoard/` justifient le cas du
+ * départ de manche, la carte « Manche terminée » de `routes/GameRoute.tsx`
+ * celui de la fin de manche.
+ */
+function alreadyOnScreen(next: GameState, action: GameAction): boolean {
+  if (next.kind !== 'playing') return false
+  // Fin de manche : la carte « Manche terminée » porte déjà la même phrase,
+  // quelle que soit l'action qui vient de la produire (dernière lettre,
+  // voyelle achetée, verdict du juge).
+  if (next.game.progress.kind === 'round-over') return true
+  // Départ de partie : l'énigme toute fraîche est épelée dans `status`, l'œil
+  // la lit déjà déroulée en blancs sur le plateau.
+  if (action.type === 'game/start') return true
+  if (action.type !== 'round/next' || next.game.progress.kind !== 'round') return false
+  // `round/next` peut aussi enchaîner sur une nouvelle manche après un blocage
+  // (plus aucune lettre jouable) : dans ce cas précis, la phrase ne parle pas
+  // de la nouvelle énigme mais de la réponse de la manche annulée — une
+  // information qui n'apparaît nulle part ailleurs à l'écran, donc à garder
+  // visible.
+  const last = next.game.history[next.game.history.length - 1]
+  return last !== undefined && last.outcome.kind !== 'void'
+}
+
+/**
+ * Diff de deux états, dépendant de l'action : `resolve/failed` (échec
+ * technique, la main ne bouge pas) et un verdict négatif en solo produisent
+ * des couples `(prev, next)` identiques mais des annonces opposées, d'où le
+ * troisième paramètre obligatoire.
+ *
+ * Seul endroit où se décide le partage entre les deux publics : la phrase
+ * entendue est calculée d'abord, sans rien savoir de l'écran, puis `visible`
+ * la retire de l'affichage quand l'interface la porte déjà autrement.
+ */
+export function announceTransition(prev: GameState, next: GameState, action: GameAction): Announcement {
+  const heard = heardAnnouncement(prev, next, action)
+  // Une action que le reducer a ignorée ne change rien, pas même la ligne
+  // d'évènement : sans cette garde, `visible: ''` viendrait l'effacer.
+  if (next === prev) return heard
+  return alreadyOnScreen(next, action) ? { ...heard, visible: '' } : heard
 }

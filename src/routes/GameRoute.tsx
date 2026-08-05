@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Navigate } from 'react-router'
 import Controls from '../components/Controls'
+import EventFeedback from '../components/EventFeedback'
 import Keyboard from '../components/Keyboard'
 import PuzzleBoard from '../components/PuzzleBoard'
 import ResolveDialog from '../components/ResolveDialog'
@@ -12,6 +13,7 @@ import {
   useGame,
   useGameCommands,
   useJudgeFailure,
+  useLastEvent,
   useRound,
 } from '../context/selectors'
 import { announcePuzzle, formatEuros } from '../game/announce'
@@ -57,6 +59,7 @@ export default function GameRoute() {
   const player = useCurrentPlayer()
   const { playLetter, spin, pass, nextRound, settleSpin, resolve } = useGameCommands()
   const judgeFailure = useJudgeFailure()
+  const lastEvent = useLastEvent()
 
   // La boîte est un élément d'interface, pas un état de partie : le reducer
   // n'a aucune raison de savoir qu'un dialogue est affiché.
@@ -152,6 +155,8 @@ export default function GameRoute() {
       )}
 
       <Scoreboard players={game.players} currentPlayerId={player?.id ?? null} />
+
+      <EventFeedback text={lastEvent} />
 
       {round !== null && (
         <Controls

@@ -18,7 +18,7 @@ const LEVELS: Record<(typeof BOT_LEVELS)[number], string> = {
 export default function HomeRoute() {
   const game = useGame()
   const { startGame } = useGameCommands()
-  const { settings, update } = useSettings()
+  const { settings, update, hasMistralKey } = useSettings()
   const navigate = useNavigate()
 
   function onNewGame() {
@@ -43,6 +43,20 @@ export default function HomeRoute() {
           </p>
           <Link to="/jeu" className={`${BUTTON_PRIMARY} mt-3 inline-block`}>
             Reprendre
+          </Link>
+        </section>
+      )}
+
+      {!hasMistralKey && (
+        <section className={CARD}>
+          <h2 className="font-semibold text-fg">Aucune clé d’API enregistrée</h2>
+          <p className="mt-1 text-sm text-fg-muted">
+            Sans clé, proposer une réponse complète (« Résoudre ») sera indisponible
+            pendant la partie. Vous pouvez jouer sans : deviner l’énigme lettre par
+            lettre fonctionne entièrement.
+          </p>
+          <Link to="/reglages" className={`${BUTTON_GHOST} mt-3 inline-block`}>
+            Enregistrer une clé dans les réglages
           </Link>
         </section>
       )}

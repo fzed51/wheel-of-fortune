@@ -65,6 +65,21 @@ export function useJudgeFailure(): JudgeErrorReason | null {
   return useContext(JudgeFailureContext)
 }
 
+/**
+ * Dernière phrase d'évènement de manche (« Pas de K. À vous de jouer. »,
+ * « Banqueroute. Vous perdez votre cagnotte. », etc.), destinée à l'œil et pas
+ * seulement au lecteur d'écran — même précédent que `JudgeFailureContext` :
+ * valeur primitive, `null` par défaut est déjà la bonne réponse hors provider,
+ * aucune mémoïsation à faire. `null` quand `announceTransition` juge que
+ * l'écran porte déjà l'information (`visible: ''`, voir `game/announce.ts`)
+ * ou qu'il n'y a rien de neuf à dire.
+ */
+export const LastEventContext = createContext<string | null>(null)
+
+export function useLastEvent(): string | null {
+  return useContext(LastEventContext)
+}
+
 export function useGameState(): GameState {
   const state = useContext(GameStateContext)
   if (state === null) throw new Error('useGameState hors de GameProvider')

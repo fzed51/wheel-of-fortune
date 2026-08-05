@@ -19,7 +19,7 @@ import { useSettings } from '../hooks/useSettings'
 import { createJudge } from '../llm'
 import type { JudgeErrorReason } from '../llm/judge'
 import { loadGame, loadMistralKey } from '../storage/persist'
-import { GameCommandsContext, GameStateContext, JudgeFailureContext } from './selectors'
+import { GameCommandsContext, GameStateContext, JudgeFailureContext, LastEventContext } from './selectors'
 import type { GameCommands } from './selectors'
 
 /**
@@ -75,6 +75,13 @@ export function GameProvider({ children }: { readonly children: ReactNode }) {
     settingsRef.current = settings
   }, [settings])
 
+  /*
+   * Déclaré avant le dispatch enveloppé, qui appelle son `setLastEvent` : la
+   * lecture du fichier suit alors l'ordre d'usage. Voir la documentation de
+   * `LastEventContext` pour ce que cette valeur porte.
+   */
+  const [lastEvent, setLastEvent] = useState<string | null>(null)
+
   /**
    * Dispatch enveloppé : seul point du provider où `prev`, `action` et `next`
    * coexistent, donc seul endroit capable de produire les annonces. Un diff à
@@ -99,9 +106,16 @@ export function GameProvider({ children }: { readonly children: ReactNode }) {
         // une fois le rendu passé ; c'est sans effet, gardé pour ne pas dupliquer
         // ce point unique de vérité qu'est `stateRef`.
         stateRef.current = next
-        const { status, alert } = announceTransition(prev, next, action)
+        const announcement = announceTransition(prev, next, action)
+        const { status, alert } = announcement
         if (status !== '') announcer.say(status)
         if (alert !== '') announcer.warn(alert)
+        // `visible` prime sur `status` s'il est présent (départ ou fin de
+        // manche, déjà porté par l'écran) ; sinon `status` est la même phrase
+        // que celle envoyée au lecteur d'écran. Chaîne vide -> `null`, pour
+        // qu'une ancienne phrase ne traîne pas sur l'écran suivant.
+        const texte = announcement.visible ?? status
+        setLastEvent(texte === '' ? null : texte)
       }
       rawDispatch(action)
     },
@@ -303,7 +317,9 @@ export function GameProvider({ children }: { readonly children: ReactNode }) {
   return (
     <GameCommandsContext value={commands}>
       <GameStateContext value={state}>
-        <JudgeFailureContext value={judgeFailure}>{children}</JudgeFailureContext>
+        <JudgeFailureContext value={judgeFailure}>
+          <LastEventContext value={lastEvent}>{children}</LastEventContext>
+        </JudgeFailureContext>
       </GameStateContext>
     </GameCommandsContext>
   )

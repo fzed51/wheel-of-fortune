@@ -161,6 +161,21 @@ describe('announceTransition — démarrage et enchaînement de manche', () => {
       'Manche 1 sur 3, gains ×1. Catégorie : Test. 1 mot. blanc blanc blanc blanc blanc. À vous de jouer.',
     )
   })
+
+  it('ne rend rien à l’œil au démarrage : l’énigme épelée n’a de sens que pour le lecteur d’écran', () => {
+    // L'en-tête de `GameRoute` affiche déjà la manche et le multiplicateur, et
+    // `PuzzleBoard` les cases : rien à ajouter à l'écran.
+    const prev = { kind: 'no-game' as const }
+    const action = {
+      type: 'game/start' as const,
+      config: { roundCount: 3, vowelCost: 250, minRoundPrize: 500, resolveEnabled: true },
+      players: [joueur('Alice')],
+      puzzle: enigme('terre'),
+      firstPlayer: 0,
+    }
+    const next = jouer(prev, action)
+    expect(announceTransition(prev, next, action).visible).toBe('')
+  })
 })
 
 describe('announceTransition — roue', () => {
@@ -223,10 +238,15 @@ describe('announceTransition — consonne', () => {
     const prev = tourner(depart, cash(500))
     const action = { type: 'letter/consonant' as const, by: courant(prev).id, letter: 'S' as const }
     const next = jouer(prev, action)
-    expect(announceTransition(prev, next, action)).toEqual({
+    const announcement = announceTransition(prev, next, action)
+    expect(announcement).toEqual({
       status: 'Pas de S. Au tour de Bot 1.',
       alert: '',
     })
+    // Évènement ordinaire, sans retour visible autre que `status` : `visible`
+    // reste absent, la valeur `toEqual` ci-dessus le confirme déjà en creux —
+    // cette assertion le rend explicite pour ne pas reposer sur un oubli.
+    expect(announcement.visible).toBeUndefined()
   })
 
   it('annonce une occurrence unique au singulier, sans changer de joueur', () => {
@@ -285,9 +305,12 @@ describe('announceTransition — consonne', () => {
     const prev = tourner(depart, cash(300))
     const action = { type: 'letter/consonant' as const, by: courant(prev).id, letter: 'R' as const }
     const next = jouer(prev, action)
+    // Fin de manche : la même phrase est déjà portée par la carte « Manche
+    // terminée » de `GameRoute`, `visible` se vide pour ne pas la doubler.
     expect(announceTransition(prev, next, action)).toEqual({
       status: 'Manche gagnée par Vous : 600 euros. Réponse : R R.',
       alert: '',
+      visible: '',
     })
   })
 })
@@ -338,6 +361,21 @@ describe('announceTransition — voyelle', () => {
       alert: '',
     })
   })
+
+  it('remplace l’annonce par la manche gagnée quand la voyelle achetée révèle la dernière lettre', () => {
+    // « EE » : les deux seules lettres sont des E, la voyelle achetée solde donc
+    // la manche d'un coup, sans qu'aucune consonne n'ait jamais été jouée.
+    const depart = avecPot(demarrer({ answer: 'ee', players: [joueur('Alice'), BOT_1] }), 0, 1000)
+    const action = { type: 'letter/buy-vowel' as const, by: courant(depart).id, letter: 'E' as const }
+    const next = jouer(depart, action)
+    // Même raison que pour la consonne gagnante : la carte « Manche terminée »
+    // de `GameRoute` porte déjà cette phrase, `visible` se vide pour l'éviter en double.
+    expect(announceTransition(depart, next, action)).toEqual({
+      status: 'Manche gagnée par Vous : 750 euros. Réponse : EE.',
+      alert: '',
+      visible: '',
+    })
+  })
 })
 
 describe('announceTransition — résolution', () => {
@@ -384,9 +422,13 @@ describe('announceTransition — résolution', () => {
       requestId: 'req-1',
     })
     const next = jouer(enResolution, action)
+    // Fin de manche : même raison que pour la consonne et la voyelle
+    // gagnantes, la carte « Manche terminée » de `GameRoute` porte déjà
+    // cette phrase, `visible` se vide pour ne pas la doubler.
     expect(announceTransition(enResolution, next, action)).toEqual({
       status: 'Manche gagnée par Vous : 500 euros. Réponse : LE VENT.',
       alert: '',
+      visible: '',
     })
   })
 
@@ -505,6 +547,13 @@ describe('announceTransition — fin de manche et de partie', () => {
     expect(announceTransition(gagnee, next, action).status).toBe(
       'Manche 2 sur 3, gains ×2. Catégorie : Test. 2 mots. blanc blanc, blanc blanc blanc. À vous de jouer.',
     )
+  })
+
+  it('ne rend rien à l’œil au départ de la manche suivante : l’en-tête et le plateau portent déjà l’information', () => {
+    const gagnee = resoudre(demarrer({ config: { roundCount: 3 } }), true, 'req-1')
+    const action = { type: 'round/next' as const, puzzle: enigme('la mer'), firstPlayer: 0 }
+    const next = jouer(gagnee, action)
+    expect(announceTransition(gagnee, next, action).visible).toBe('')
   })
 
   it('annonce la victoire finale d’un joueur unique', () => {
