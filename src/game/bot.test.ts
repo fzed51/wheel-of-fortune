@@ -1,25 +1,32 @@
 import { describe, expect, it } from 'vitest'
-import { BOT_ATTEMPT, decideBotAction } from './bot'
-import { reduce } from './engine'
+import {
+  BOT_ATTEMPT,
+  BOT_EASY_RESOLVE_HANDICAP,
+  botResolveIsCorrect,
+  botTurnKey,
+  decideBotAction,
+} from './bot'
+import { initialState, reduce } from './engine'
 import { CONSONANTS } from './puzzle'
 import { createRng } from './rng'
 import { currentPlayerOf, legalActions, remainingConsonants } from './rules'
 import type { GameState, Player } from './types'
 import {
+  PASSE,
   avecLettres,
+  avecPhase,
   avecPot,
+  bot,
   cash,
   demarrer,
   enigme,
   jeu,
+  jouer,
   joueur,
   manche,
+  resoudre,
   tourner,
 } from '../test/game'
-
-function bot(name: string, level: 'easy' | 'normal' = 'normal'): Player {
-  return joueur(name, { kind: { type: 'bot', level } })
-}
 
 const ENIGMES = ['le vent', 'mon chat', 'la mer', 'au revoir', 'bonne nuit'] as const
 
@@ -232,5 +239,125 @@ describe('décisions figées', () => {
       spin: { index: cash(500), offset: 0, spinId: 1 },
     })
     expect(decideBotAction(jeu(lance), constant, { spinId: 2, requestId: 'r1' })).toBeNull()
+  })
+})
+
+describe('botTurnKey', () => {
+  it('vaut null hors partie', () => {
+    expect(botTurnKey(initialState)).toBeNull()
+  })
+
+  it('vaut null quand la manche vient de se terminer', () => {
+    const state = resoudre(demarrer({ players: [bot('Bot')], config: { roundCount: 1 } }), true)
+    expect(jeu(state).progress.kind).toBe('round-over')
+    expect(botTurnKey(state)).toBeNull()
+  })
+
+  it('vaut null quand la partie est terminée', () => {
+    const apres = resoudre(demarrer({ players: [bot('Bot')], config: { roundCount: 1 } }), true)
+    const fini = jouer(apres, {
+      type: 'round/next',
+      puzzle: enigme('la mer'),
+      firstPlayer: 0,
+    })
+    expect(jeu(fini).progress.kind).toBe('game-over')
+    expect(botTurnKey(fini)).toBeNull()
+  })
+
+  it('vaut null quand le joueur courant est humain', () => {
+    const state = demarrer({ players: [joueur('Alice'), bot('Bot')], firstPlayer: 0 })
+    expect(botTurnKey(state)).toBeNull()
+  })
+
+  it('vaut null pendant la rotation de la roue', () => {
+    const state = avecPhase(demarrer({ players: [bot('Bot')] }), {
+      kind: 'spinning',
+      segment: { kind: 'cash', index: 0, value: 100 },
+      spin: { index: 0, offset: 0, spinId: 1 },
+    })
+    expect(botTurnKey(state)).toBeNull()
+  })
+
+  it('vaut null en attente de verdict', () => {
+    const state = avecPhase(demarrer({ players: [bot('Bot')] }), {
+      kind: 'resolving',
+      attempt: 'x',
+      requestId: 'r',
+    })
+    expect(botTurnKey(state)).toBeNull()
+  })
+
+  it('vaut null quand tout le monde est bloqué', () => {
+    const state = avecPhase(demarrer({ players: [bot('Bot')] }), { kind: 'blocked' })
+    expect(botTurnKey(state)).toBeNull()
+  })
+
+  it('rend une clé non nulle pour un bot en attente d’action', () => {
+    expect(botTurnKey(demarrer({ players: [bot('Bot')] }))).not.toBeNull()
+  })
+
+  it('rend une clé non nulle pour un bot en attente de consonne', () => {
+    const state = tourner(demarrer({ players: [bot('Bot')] }), cash(500))
+    expect(botTurnKey(state)).not.toBeNull()
+  })
+
+  it('est stable pour un même état', () => {
+    const state = demarrer({ players: [bot('Bot')] })
+    expect(botTurnKey(state)).toBe(botTurnKey(state))
+  })
+
+  it('change quand la cagnotte du bot change', () => {
+    const state = demarrer({ players: [bot('Bot')] })
+    expect(botTurnKey(avecPot(state, 0, 500))).not.toBe(botTurnKey(state))
+  })
+
+  it('change quand une lettre rejoint les lettres proposées', () => {
+    const state = demarrer({ players: [bot('Bot')] })
+    expect(botTurnKey(avecLettres(state, ['T']))).not.toBe(botTurnKey(state))
+  })
+
+  it('change quand la main passe à un autre bot', () => {
+    const debut = demarrer({ players: [bot('Bot 1'), bot('Bot 2')] })
+    const passe = tourner(debut, PASSE)
+    expect(currentPlayerOf(jeu(passe)).id).not.toBe(currentPlayerOf(jeu(debut)).id)
+    expect(botTurnKey(passe)).not.toBe(botTurnKey(debut))
+  })
+
+  it('change quand la phase change', () => {
+    const action = demarrer({ players: [bot('Bot')] })
+    const consonne = tourner(action, cash(500))
+    expect(botTurnKey(consonne)).not.toBe(botTurnKey(action))
+  })
+})
+
+describe('botResolveIsCorrect', () => {
+  it('est faux pour un joueur humain, même avec un tirage favorable', () => {
+    const state = demarrer({ players: [joueur('Alice')], answer: 'le vent' })
+    expect(botResolveIsCorrect(jeu(state), () => 0)).toBe(false)
+  })
+
+  it('bascule au seuil, pour un bot normal', () => {
+    // « LE VENT » : 5 lettres distinctes, 4 révélées (E manque) => avancement 0,8.
+    const state = avecLettres(
+      demarrer({ players: [bot('Bot')], answer: 'le vent' }),
+      ['L', 'V', 'N', 'T'],
+    )
+    expect(botResolveIsCorrect(jeu(state), () => 0.79)).toBe(true)
+    expect(botResolveIsCorrect(jeu(state), () => 0.81)).toBe(false)
+  })
+
+  it('un bot facile échoue là où un bot normal réussit, à avancement et tirage identiques', () => {
+    const avancement = ['L', 'V', 'N', 'T'] as const
+    const normal = avecLettres(demarrer({ players: [bot('Bot')], answer: 'le vent' }), [
+      ...avancement,
+    ])
+    const facile = avecLettres(demarrer({ players: [bot('Bot', 'easy')], answer: 'le vent' }), [
+      ...avancement,
+    ])
+    const avancement08 = 0.8
+    // Sous le seuil normal (0,8) mais au-dessus du seuil facile, handicapé.
+    const rng = () => (avancement08 + avancement08 * BOT_EASY_RESOLVE_HANDICAP) / 2
+    expect(botResolveIsCorrect(jeu(normal), rng)).toBe(true)
+    expect(botResolveIsCorrect(jeu(facile), rng)).toBe(false)
   })
 })

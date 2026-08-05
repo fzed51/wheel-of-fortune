@@ -249,6 +249,37 @@ describe('announceTransition — consonne', () => {
     })
   })
 
+  it('nomme le bot auteur avant l’annonce du gain, sans changer la phrase pour un humain', () => {
+    const depart = demarrer({ answer: 'terre', players: [joueur('Alice'), BOT_1], firstPlayer: 1 })
+    const prev = tourner(depart, cash(500))
+    const action = { type: 'letter/consonant' as const, by: courant(prev).id, letter: 'R' as const }
+    const next = jouer(prev, action)
+    expect(announceTransition(prev, next, action)).toEqual({
+      status: 'Bot 1 : R, 2 fois. Cagnotte : 1 000 euros.',
+      alert: '',
+    })
+
+    // Même coup, même énigme, mais un auteur humain : la phrase garde son absence de sujet.
+    const humain = tourner(demarrer({ answer: 'terre' }), cash(500))
+    const actionHumain = { type: 'letter/consonant' as const, by: courant(humain).id, letter: 'R' as const }
+    const nextHumain = jouer(humain, actionHumain)
+    expect(announceTransition(humain, nextHumain, actionHumain)).toEqual({
+      status: 'R, 2 fois. Cagnotte : 1 000 euros.',
+      alert: '',
+    })
+  })
+
+  it('nomme le bot auteur sur une consonne absente, en plus du joueur suivant', () => {
+    const depart = demarrer({ answer: 'terre', players: [joueur('Alice'), BOT_1], firstPlayer: 1 })
+    const prev = tourner(depart, cash(500))
+    const action = { type: 'letter/consonant' as const, by: courant(prev).id, letter: 'S' as const }
+    const next = jouer(prev, action)
+    expect(announceTransition(prev, next, action)).toEqual({
+      status: 'Bot 1 : Pas de S. À vous de jouer.',
+      alert: '',
+    })
+  })
+
   it('remplace l’annonce du gain par la manche gagnée quand la dernière lettre tombe', () => {
     const depart = demarrer({ answer: 'r r', players: [joueur('Alice'), BOT_1] })
     const prev = tourner(depart, cash(300))
@@ -281,6 +312,32 @@ describe('announceTransition — voyelle', () => {
       alert: '',
     })
   })
+
+  it('nomme le bot auteur avant l’annonce des occurrences d’une voyelle achetée', () => {
+    const depart = avecPot(
+      demarrer({ answer: 'eeez', players: [joueur('Alice'), BOT_1], firstPlayer: 1 }),
+      1,
+      1000,
+    )
+    const action = { type: 'letter/buy-vowel' as const, by: courant(depart).id, letter: 'E' as const }
+    const next = jouer(depart, action)
+    expect(announceTransition(depart, next, action)).toEqual({
+      status: 'Bot 1 : E, 3 fois. Voyelle payée 250 euros. Cagnotte : 750 euros.',
+      alert: '',
+    })
+  })
+
+  it('nomme le bot même sans changement de tour, sur une voyelle absente en solo', () => {
+    // Partie solo : le tour ne change jamais, donc `withTurnAnnounce` ne peut
+    // pas nommer l'auteur à la place — le sujet doit être dans la phrase elle-même.
+    const solo = avecPot(demarrer({ answer: 'zzzz', players: [BOT_1] }), 0, 1000)
+    const action = { type: 'letter/buy-vowel' as const, by: courant(solo).id, letter: 'E' as const }
+    const next = jouer(solo, action)
+    expect(announceTransition(solo, next, action)).toEqual({
+      status: 'Bot 1 : Pas de E. Voyelle payée 250 euros.',
+      alert: '',
+    })
+  })
 })
 
 describe('announceTransition — résolution', () => {
@@ -295,6 +352,23 @@ describe('announceTransition — résolution', () => {
     const next = jouer(prev, action)
     expect(announceTransition(prev, next, action)).toEqual({
       status: 'Proposition envoyée au juge.',
+      alert: '',
+    })
+  })
+
+  it('annonce que le bot propose une réponse plutôt que l’envoi au juge', () => {
+    // `attempt` est un texte de remplacement (`BOT_ATTEMPT`), jamais une vraie
+    // réponse : il ne doit apparaître dans aucune phrase.
+    const depart = demarrer({ players: [joueur('Alice'), BOT_1], firstPlayer: 1 })
+    const action = {
+      type: 'resolve/start' as const,
+      by: courant(depart).id,
+      attempt: 'texte de remplacement du bot',
+      requestId: 'req-1',
+    }
+    const next = jouer(depart, action)
+    expect(announceTransition(depart, next, action)).toEqual({
+      status: 'Bot 1 propose une réponse.',
       alert: '',
     })
   })
@@ -328,6 +402,22 @@ describe('announceTransition — résolution', () => {
     const next = jouer(enResolution, action)
     expect(announceTransition(enResolution, next, action)).toEqual({
       status: 'Mauvaise réponse. Au tour de Bot 1.',
+      alert: '',
+    })
+  })
+
+  it('nomme le bot qui se trompe sur un verdict faux', () => {
+    const depart = demarrer({ players: [joueur('Alice'), BOT_1], firstPlayer: 1 })
+    const enResolution = jouer(depart, {
+      type: 'resolve/start',
+      by: courant(depart).id,
+      attempt: 'texte de remplacement du bot',
+      requestId: 'req-1',
+    })
+    const action = { type: 'resolve/verdict' as const, requestId: 'req-1', correct: false }
+    const next = jouer(enResolution, action)
+    expect(announceTransition(enResolution, next, action)).toEqual({
+      status: 'Mauvaise réponse de Bot 1. À vous de jouer.',
       alert: '',
     })
   })
@@ -375,6 +465,22 @@ describe('announceTransition — passage de main forcé', () => {
     const next = jouer(bloque, action)
     expect(announceTransition(bloque, next, action)).toEqual({
       status: 'Plus aucune action possible pour vous. Au tour de Bot 1.',
+      alert: '',
+    })
+  })
+
+  it('nomme le bot bloqué plutôt que de dire « vous »', () => {
+    const depart = demarrer({
+      answer: 'terre',
+      players: [joueur('Alice'), BOT_1],
+      firstPlayer: 1,
+      config: { resolveEnabled: false },
+    })
+    const bloque = avecLettres(depart, ['B', 'C', 'D', 'F', 'G', 'H', 'J', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'V', 'W', 'X', 'Y', 'Z'])
+    const action = { type: 'turn/pass' as const, by: courant(bloque).id }
+    const next = jouer(bloque, action)
+    expect(announceTransition(bloque, next, action)).toEqual({
+      status: 'Plus aucune action possible pour Bot 1. À vous de jouer.',
       alert: '',
     })
   })

@@ -5,6 +5,7 @@ import {
   avecLettres,
   avecPhase,
   avecPot,
+  bot,
   cash,
   courant,
   demarrer,
@@ -21,6 +22,7 @@ import {
   canResolve,
   canSpin,
   currentPlayerOf,
+  isBotTurn,
   isStuck,
   keyState,
   legalActions,
@@ -75,6 +77,24 @@ describe('currentPlayerOf', () => {
   it('lève hors d’une manche plutôt que de rendre undefined', () => {
     const fini = resoudre(demarrer({ config: { roundCount: 1 } }), true)
     expect(() => currentPlayerOf(jeu(fini))).toThrow()
+  })
+})
+
+describe('isBotTurn', () => {
+  it('est vrai quand le joueur courant est un bot', () => {
+    const state = demarrer({ players: [bot('Bot')], firstPlayer: 0 })
+    expect(isBotTurn(jeu(state))).toBe(true)
+  })
+
+  it('est faux quand le joueur courant est humain', () => {
+    const state = demarrer({ firstPlayer: 0 })
+    expect(isBotTurn(jeu(state))).toBe(false)
+  })
+
+  it('est faux hors d’une manche', () => {
+    const fini = resoudre(demarrer({ players: [bot('Bot')], config: { roundCount: 1 } }), true)
+    expect(jeu(fini).progress.kind).toBe('round-over')
+    expect(isBotTurn(jeu(fini))).toBe(false)
   })
 })
 
@@ -223,6 +243,19 @@ describe('keyState', () => {
     const state = proposer(tourner(demarrer({ answer: 'le vent' }), cash(500)), 'T')
     expect(courant(state).pot).toBe(500)
     expect(keyState(jeu(state), 'A')).toBe('available')
+  })
+
+  it('verrouille pendant le tour d’un bot une lettre par ailleurs jouable', () => {
+    const state = tourner(demarrer({ players: [bot('Bot')], answer: 'le vent' }), cash(500))
+    expect(keyState(jeu(state), 'T')).toBe('locked')
+  })
+
+  it('garde « used » une lettre déjà proposée pendant le tour d’un bot', () => {
+    const state = proposer(
+      tourner(demarrer({ players: [bot('Bot')], answer: 'le vent' }), cash(500)),
+      'T',
+    )
+    expect(keyState(jeu(state), 'T')).toBe('used')
   })
 })
 

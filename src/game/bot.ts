@@ -11,7 +11,7 @@ import {
   remainingConsonants,
   remainingVowels,
 } from './rules'
-import type { Consonant, Game, RoundState, Vowel } from './types'
+import type { Consonant, Game, GameState, RoundState, Vowel } from './types'
 import { pickSpinOutcome } from './wheel'
 
 /**
@@ -123,4 +123,66 @@ export function decideBotAction(game: Game, rng: Rng, ticket: BotTicket): GameAc
   if (isStuck(game)) return { type: 'turn/pass', by }
 
   return null
+}
+
+/**
+ * Pause de lisibilité avant qu'un bot ne joue son coup — pas une simulation de
+ * réflexion : le joueur doit voir la main changer avant que l'action n'arrive.
+ * Le tirage de roue a sa propre durée (`SPIN_MS` dans `game/wheel.ts`), qui
+ * s'ajoute par-dessus plutôt que de s'y substituer. Elle vit ici, et non dans
+ * le driver, pour que les tests avancent leurs horloges de la valeur exacte au
+ * lieu d'en recopier une.
+ */
+export const BOT_DELAY_MS = 800
+
+/**
+ * Clé primitive de décision : c'est elle que le driver dépose en dépendance de
+ * son `useEffect`, à la place de l'objet d'état. Dépendre de l'état
+ * replanifierait le minuteur du bot à chaque changement, ce qui est le
+ * générateur de boucles du projet.
+ *
+ * `null` signifie « le bot n'a rien à décider maintenant ». Sinon la clé doit
+ * **changer** à chaque décision réellement nouvelle du bot (sinon il resterait
+ * muet après son premier coup) et rester **stable** pour un même état (sinon
+ * l'effet se replanifierait sans fin) : ni horloge, ni identifiant tiré ici.
+ */
+export function botTurnKey(state: GameState): string | null {
+  if (state.kind !== 'playing') return null
+  const { game } = state
+  if (game.progress.kind !== 'round') return null
+  // Narrowing direct sur `game.progress.round`, sans passer par un alias
+  // intermédiaire : TypeScript ne transporte pas le rétrécissement de
+  // `progress.kind` à travers une variable qui l'aurait capturé séparément.
+  const { round } = game.progress
+  if (round.phase.kind !== 'awaiting-action' && round.phase.kind !== 'awaiting-consonant') {
+    return null
+  }
+  const player = currentPlayerOf(game)
+  if (player.kind.type !== 'bot') return null
+  return `${round.index}:${player.id}:${round.phase.kind}:${round.guessed.length}:${player.pot}`
+}
+
+/** Un bot facile réussit moins souvent qu'un bot normal à avancement égal : voir `botResolveIsCorrect`. */
+export const BOT_EASY_RESOLVE_HANDICAP = 0.75
+
+/**
+ * Tirage du verdict d'une tentative de bot. Ce n'est pas le juge LLM qui
+ * tranche — `BOT_ATTEMPT` est un texte de remplacement, l'envoyer à un juge
+ * n'aurait aucun sens — c'est le driver qui décide, via ce tirage.
+ *
+ * La chance d'avoir trouvé est **la part de l'énigme que le bot voit** : il
+ * reste faillible sans accéder à la solution ni introduire un niveau de
+ * difficulté supplémentaire. Le handicap du bot facile est nécessaire parce
+ * que `decideBotAction` lui impose déjà un seuil de tentative plus haut (0,85
+ * contre 0,7) : sans lui, un bot facile réussirait *plus* souvent qu'un bot
+ * normal, l'inverse de ce qu'annonce son nom.
+ */
+export function botResolveIsCorrect(game: Game, rng: Rng): boolean {
+  if (game.progress.kind !== 'round') return false
+  const player = currentPlayerOf(game)
+  // Garde d'équité, échec fermé : un driver fautif ne doit pas pouvoir faire
+  // réussir un humain sans juge.
+  if (player.kind.type !== 'bot') return false
+  const handicap = player.kind.level === 'easy' ? BOT_EASY_RESOLVE_HANDICAP : 1
+  return rng() < progressRatio(game.progress.round) * handicap
 }

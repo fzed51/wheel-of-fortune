@@ -7,7 +7,15 @@ import Wheel from '../components/Wheel'
 import { BUTTON_PRIMARY, CARD } from '../components/classes'
 import { useCurrentPlayer, useGame, useGameCommands, useRound } from '../context/selectors'
 import { announcePuzzle, formatEuros } from '../game/announce'
-import { canResolve, canSpin, isStuck, keyState, multiplierFor, revealedLetters } from '../game/rules'
+import {
+  canResolve,
+  canSpin,
+  isBotTurn,
+  isStuck,
+  keyState,
+  multiplierFor,
+  revealedLetters,
+} from '../game/rules'
 import type { Game } from '../game/types'
 import { usePhysicalKeyboard } from '../hooks/usePhysicalKeyboard'
 
@@ -56,6 +64,15 @@ export default function GameRoute() {
   if (game === null) return null
   if (game.progress.kind === 'game-over') return <Navigate to="/resultats" replace />
 
+  /*
+   * Pendant le tour d'un bot, les trois commandes sont inertes. Ce n'est
+   * qu'une mise en forme : la garde qui compte est dans les commandes du
+   * provider, parce que le clavier physique n'a pas d'attribut à griser. Le
+   * clavier virtuel se tait de lui-même, `keyState` connaissant déjà le tour
+   * de bot.
+   */
+  const botTurn = isBotTurn(game)
+
   return (
     <div className="flex flex-col gap-4">
       <section className={CARD}>
@@ -98,9 +115,9 @@ export default function GameRoute() {
 
       {round !== null && (
         <Controls
-          canSpin={canSpin(game)}
-          canResolve={canResolve(game)}
-          canPass={isStuck(game)}
+          canSpin={canSpin(game) && !botTurn}
+          canResolve={canResolve(game) && !botTurn}
+          canPass={isStuck(game) && !botTurn}
           // Forcé à `false` (voir `onResolve` ci-dessus) : le bouton reste visible
           // mais inactif tant qu'aucun juge n'est joignable.
           resolveEnabled={false}

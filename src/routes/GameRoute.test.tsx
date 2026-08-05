@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { clearAllData, saveGame } from '../storage/persist'
-import { avecPhase, cash, demarrer, jeu, joueur, resoudre } from '../test/game'
+import { avecPhase, bot, cash, demarrer, jeu, joueur, resoudre } from '../test/game'
 import { monterApp } from '../test/app'
 
 /**
@@ -27,7 +27,11 @@ describe('GameRoute', () => {
     expect(screen.getAllByRole('button', { name: /^Lettre /u })).toHaveLength(26)
     expect(screen.getByText('Alice')).toBeInTheDocument()
     expect(screen.getByText('Bob')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Tourner' })).toBeInTheDocument()
+    // Actif : c'est le pendant du test du tour de bot, où ce même bouton est inerte.
+    expect(screen.getByRole('button', { name: 'Tourner' })).toHaveAttribute(
+      'aria-disabled',
+      'false',
+    )
     expect(screen.getByRole('button', { name: 'Résoudre' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Passer la main' })).toBeInTheDocument()
   })
@@ -88,6 +92,35 @@ describe('GameRoute', () => {
       // Sans le règlement de la roue, le statut resterait bloqué sur l'annonce
       // de lancement : la phase serait toujours `spinning`.
       expect(screen.getByRole('status')).not.toHaveTextContent('La roue tourne…')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  /**
+   * Horloges factices sans `shouldAdvanceTime` et sans jamais avancer : le
+   * minuteur du bot ne doit pas se déclencher pendant ce test, sous peine de
+   * remplacer l'état observé par le coup suivant. Aucun `user-event` ici, donc
+   * aucun risque de pendaison — c'est le clic qui l'exige, pas le rendu.
+   */
+  it('rend les commandes et le clavier inertes pendant le tour d’un bot', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      saveGame(jeu(demarrer({ players: [bot('Bot 1'), joueur('Alice')], firstPlayer: 0 })))
+      monterApp('/jeu')
+
+      expect(screen.getByText(/^Au tour de Bot 1/u)).toBeInTheDocument()
+      // « Tourner » est le seul des trois boutons qu'un humain aurait ici :
+      // « Résoudre » attend le juge de l'étape 16 et « Passer la main » exige
+      // d'être bloqué. Les vérifier tous les trois ferait passer ce test même
+      // sans verrou de tour.
+      expect(screen.getByRole('button', { name: 'Tourner' })).toHaveAttribute(
+        'aria-disabled',
+        'true',
+      )
+      // Les 26 touches sont annoncées « indisponible » et non « déjà proposée » :
+      // aucune lettre n'est sortie, c'est bien le tour du bot qui les éteint.
+      expect(screen.getAllByRole('button', { name: /^Lettre .+, indisponible$/u })).toHaveLength(26)
     } finally {
       vi.useRealTimers()
     }

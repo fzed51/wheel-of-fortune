@@ -42,6 +42,11 @@ export function joueur(name: string, patch: Partial<Player> = {}): Player {
   }
 }
 
+/** Raccourci vers un joueur bot, pour les tests du tour de bot et des vagues suivantes. */
+export function bot(name: string, level: 'easy' | 'normal' = 'normal'): Player {
+  return joueur(name, { kind: { type: 'bot', level } })
+}
+
 export function enigme(answer: string, id = answer): Puzzle {
   return {
     id: asPuzzleId(id),

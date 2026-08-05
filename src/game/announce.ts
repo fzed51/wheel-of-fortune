@@ -84,6 +84,25 @@ function subjectName(player: Player): string {
   return player.kind.type === 'human' ? 'Vous' : player.name
 }
 
+/**
+ * Retrouve l'auteur d'une action par son id et ne le rend que si c'est un
+ * bot : l'humain reste implicite (« vous ») comme partout ailleurs dans
+ * l'interface, un sujet systématique alourdirait chaque coup pour rien.
+ *
+ * Deux formes, parce que le sujet ne tombe pas au même endroit de la phrase :
+ * celle-ci pour les phrases qui nomment le joueur en cours de texte, `botLabel`
+ * pour celles qui le mettent en tête.
+ */
+function botSpeaker(game: Game, by: PlayerId): Player | null {
+  const player = game.players.find((candidate) => candidate.id === by)
+  return player !== undefined && player.kind.type === 'bot' ? player : null
+}
+
+/** Préfixe de sujet des phrases de lettre : `« Bot 1 : »` pour un bot, rien pour l'humain. */
+function botLabel(player: Player | undefined): string {
+  return player !== undefined && player.kind.type === 'bot' ? `${player.name} : ` : ''
+}
+
 /** Liste à la française : « A », « A et B », « A, B et C ». */
 function joinFr(names: readonly string[]): string {
   return names.reduce((acc, name, index) => {
@@ -201,13 +220,15 @@ function consonantAnnouncement(
   const prevRound = activeRound(prevGame)
   if (prevRound === null || prevRound.phase.kind !== 'awaiting-consonant') return ''
 
-  const hits = countOccurrences(prevRound.puzzle.answer, letter)
-  if (hits === 0) return withTurnAnnounce(`Pas de ${letter}.`, prevGame, nextGame)
+  // Sans ce préfixe, un joueur humain entendrait le gain d'un bot comme si c'était le sien.
+  const author = nextGame.players.find((candidate) => candidate.id === by)
+  const label = botLabel(author)
 
-  const player = nextGame.players.find((candidate) => candidate.id === by)
-  const pot = player?.pot ?? 0
+  const hits = countOccurrences(prevRound.puzzle.answer, letter)
+  if (hits === 0) return withTurnAnnounce(`${label}Pas de ${letter}.`, prevGame, nextGame)
+
   const times = hits === 1 ? 'une fois' : `${hits} fois`
-  return `${letter}, ${times}. Cagnotte : ${formatEuros(pot)}.`
+  return `${label}${letter}, ${times}. Cagnotte : ${formatEuros(author?.pot ?? 0)}.`
 }
 
 function buyVowelAnnouncement(prevGame: Game, nextGame: Game, letter: Vowel, by: PlayerId): string {
@@ -215,20 +236,51 @@ function buyVowelAnnouncement(prevGame: Game, nextGame: Game, letter: Vowel, by:
   const prevRound = activeRound(prevGame)
   if (prevRound === null) return ''
 
+  const author = nextGame.players.find((candidate) => candidate.id === by)
+  const label = botLabel(author)
+
   const hits = countOccurrences(prevRound.puzzle.answer, letter)
   const cost = `Voyelle payée ${formatEuros(prevGame.config.vowelCost)}.`
-  if (hits === 0) return withTurnAnnounce(`Pas de ${letter}. ${cost}`, prevGame, nextGame)
+  if (hits === 0) return withTurnAnnounce(`${label}Pas de ${letter}. ${cost}`, prevGame, nextGame)
 
-  const player = nextGame.players.find((candidate) => candidate.id === by)
-  const pot = player?.pot ?? 0
   const times = hits === 1 ? 'une fois' : `${hits} fois`
-  return `${letter}, ${times}. ${cost} Cagnotte : ${formatEuros(pot)}.`
+  return `${label}${letter}, ${times}. ${cost} Cagnotte : ${formatEuros(author?.pot ?? 0)}.`
 }
 
+/**
+ * `resolve/verdict` ne porte pas `by` : contrairement aux autres actions à
+ * un seul auteur, l'auteur se retrouve via le joueur courant de `prevGame`,
+ * inchangé depuis `resolve/start` puisque la phase « resolving » ne fait
+ * tourner la main qu'au verdict lui-même.
+ */
 function verdictAnnouncement(prevGame: Game, nextGame: Game, correct: boolean): string {
-  if (!correct) return withTurnAnnounce('Mauvaise réponse.', prevGame, nextGame)
+  if (!correct) {
+    const author = currentPlayerOf(prevGame)
+    const phrase =
+      author.kind.type === 'human'
+        ? 'Mauvaise réponse.'
+        : `Mauvaise réponse de ${author.name}.`
+    return withTurnAnnounce(phrase, prevGame, nextGame)
+  }
   // Un verdict correct termine toujours la manche (`finishRound`) : jamais de phrase à part.
   return roundOverPhrase(nextGame)
+}
+
+/**
+ * Un bot ne consulte jamais le juge : `BOT_ATTEMPT` (voir `game/bot.ts`) est
+ * un texte de remplacement interne, jamais une vraie réponse, et son verdict
+ * est tiré par le driver sans appel réseau. « Envoyé au juge » serait donc
+ * un mensonge pour un bot.
+ */
+function resolveStartAnnouncement(game: Game, by: PlayerId): string {
+  const speaker = botSpeaker(game, by)
+  return speaker === null ? 'Proposition envoyée au juge.' : `${speaker.name} propose une réponse.`
+}
+
+function passAnnouncement(prevGame: Game, nextGame: Game, by: PlayerId): string {
+  const speaker = botSpeaker(nextGame, by)
+  const name = speaker === null ? 'vous' : speaker.name
+  return withTurnAnnounce(`Plus aucune action possible pour ${name}.`, prevGame, nextGame)
 }
 
 /**
@@ -260,11 +312,11 @@ export function announceTransition(prev: GameState, next: GameState, action: Gam
     case 'letter/buy-vowel':
       return { status: buyVowelAnnouncement(prevGame, nextGame, action.letter, action.by), alert: '' }
     case 'resolve/start':
-      return { status: 'Proposition envoyée au juge.', alert: '' }
+      return { status: resolveStartAnnouncement(nextGame, action.by), alert: '' }
     case 'resolve/verdict':
       return { status: verdictAnnouncement(prevGame, nextGame, action.correct), alert: '' }
     case 'turn/pass':
-      return { status: withTurnAnnounce('Plus aucune action possible pour vous.', prevGame, nextGame), alert: '' }
+      return { status: passAnnouncement(prevGame, nextGame, action.by), alert: '' }
     case 'round/next':
       return { status: roundNextAnnouncement(nextGame), alert: '' }
   }

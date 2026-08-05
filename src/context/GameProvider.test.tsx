@@ -2,6 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { BOT_DELAY_MS } from '../game/bot'
 import { CONSONANTS } from '../game/puzzle'
 import { HUMAN_ID } from '../game/setup'
 import { SPIN_MS } from '../game/wheel'
@@ -13,6 +14,7 @@ import {
   avecLettres,
   avecPhase,
   avecPot,
+  bot,
   cash,
   demarrer,
   jeu,
@@ -71,6 +73,17 @@ function Sonde() {
     if (joueur === undefined) return
     dispatch({ type: 'resolve/start', by: joueur.id, attempt: 'ma proposition', requestId: 'req-1' })
     dispatch({ type: 'resolve/verdict', requestId: 'req-1', correct })
+  }
+
+  // `resolve/start` seul, sans verdict enchaîné : c'est ce qu'il faut pour
+  // observer le driver trancher lui-même le sort d'une tentative de bot, sans
+  // fabriquer la phase `resolving` par un fixture (`toPersisted` la ramènerait
+  // à `awaiting-action` avant écriture).
+  function demarrerResolution() {
+    if (partie === null || partie.progress.kind !== 'round') return
+    const joueur = partie.players[partie.progress.currentPlayer]
+    if (joueur === undefined) return
+    dispatch({ type: 'resolve/start', by: joueur.id, attempt: 'tentative', requestId: 'req-bot' })
   }
 
   // Panne technique du juge : aucun verdict ne revient, `resolve/failed` clôt la tentative.
@@ -144,6 +157,9 @@ function Sonde() {
       </button>
       <button type="button" onClick={jugeEnPanne}>
         Juge en panne
+      </button>
+      <button type="button" onClick={demarrerResolution}>
+        Démarrer résolution
       </button>
       <button
         type="button"
@@ -469,6 +485,129 @@ describe('GameProvider', () => {
           vi.advanceTimersByTime(500 + 1)
         })
         expect(champ('Phase de la manche')).not.toBe('spinning')
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+  })
+
+  describe('tour de bot', () => {
+    it('le bot joue après un court délai', () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true })
+      try {
+        saveGame(jeu(demarrer({ players: [bot('Bot 1')] })))
+        monter(<Sonde />)
+        expect(champ('Phase de la manche')).toBe('awaiting-action')
+
+        // Rien avant l'échéance : c'est ce qui prouve qu'on observe bien le
+        // minuteur du bot, pas un effet de bord d'un autre effet.
+        act(() => {
+          vi.advanceTimersByTime(BOT_DELAY_MS - 1)
+        })
+        expect(champ('Phase de la manche')).toBe('awaiting-action')
+
+        act(() => {
+          vi.advanceTimersByTime(1)
+        })
+        // Seul un bot peut jouer sans intervention : la phase a changé (rotation
+        // de la roue, le pot étant à 0 il ne peut rien acheter).
+        expect(champ('Phase de la manche')).not.toBe('awaiting-action')
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it("le bot n'usurpe pas le tour de l'humain", () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true })
+      try {
+        // Deux joueurs humains (fixture par défaut de `demarrer`) : Alice, au
+        // premier siège, ne doit jamais être jouée par le driver de bot.
+        saveGame(jeu(demarrer()))
+        monter(<Sonde />)
+
+        act(() => {
+          vi.advanceTimersByTime(BOT_DELAY_MS * 3)
+        })
+
+        expect(champ('Phase de la manche')).toBe('awaiting-action')
+        expect(champ('Lettres jouées')).toBe('')
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('enchaîne plusieurs coups de bot sans se figer', () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true })
+      try {
+        saveGame(jeu(demarrer({ players: [bot('Bot 1')] })))
+        monter(<Sonde />)
+
+        // Le segment tiré par la roue est aléatoire (banqueroute et passe ne
+        // produisent aucune lettre) : on répète le cycle décision → rotation →
+        // chien de garde jusqu'à voir une lettre jouée, borné pour ne jamais
+        // boucler indéfiniment si le bot restait muet après son premier coup —
+        // c'est exactement le bug que ce test doit attraper.
+        let lettresJouees = champ('Lettres jouées')
+        for (let cycle = 0; cycle < 8 && lettresJouees === ''; cycle += 1) {
+          act(() => {
+            vi.advanceTimersByTime(BOT_DELAY_MS)
+          })
+          if (champ('Phase de la manche') === 'spinning') {
+            // Le double de la rotation : la marge exacte du chien de garde est
+            // privée à `useGameEffects`, et la recopier ici ferait échouer ce
+            // test en silence — la boucle s'épuiserait — le jour où elle change.
+            act(() => {
+              vi.advanceTimersByTime(SPIN_MS * 2)
+            })
+          }
+          lettresJouees = champ('Lettres jouées')
+        }
+
+        expect(champ('Phase de la manche')).not.toBe('spinning')
+        expect(lettresJouees).not.toBe('')
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it("l'humain ne peut pas jouer à la place du bot", async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true })
+      try {
+        const user = userEvent.setup({ delay: null })
+        saveGame(jeu(demarrer({ players: [bot('Bot 1')] })))
+        monter(<Sonde />)
+
+        // Assertion faite avant tout écoulement du minuteur du bot : elle
+        // distingue le refus de la commande d'un simple silence dû au minuteur.
+        await user.click(screen.getByRole('button', { name: 'Tourner' }))
+
+        expect(champ('Phase de la manche')).toBe('awaiting-action')
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('sort de la résolution après le verdict d’un bot', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true })
+      try {
+        const user = userEvent.setup({ delay: null })
+        // La clé Mistral doit être enregistrée : sans elle, l'effet de
+        // synchronisation du provider ramène `resolveEnabled` à `false` dès le
+        // montage, et `resolve/start` deviendrait indispatchable.
+        saveMistralKey('sk-test')
+        saveGame(jeu(demarrer({ players: [bot('Bot 1')] })))
+        monter(<Sonde />)
+
+        await user.click(screen.getByRole('button', { name: 'Démarrer résolution' }))
+        expect(champ('Phase de la manche')).toBe('resolving')
+
+        act(() => {
+          vi.advanceTimersByTime(BOT_DELAY_MS)
+        })
+
+        // Aucune assertion sur le contenu du verdict, il est tiré au hasard :
+        // seule compte la sortie de la phase, sans quoi la partie se figerait.
+        expect(champ('Phase de la manche')).not.toBe('resolving')
       } finally {
         vi.useRealTimers()
       }

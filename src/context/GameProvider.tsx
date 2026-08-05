@@ -7,7 +7,7 @@ import { initialState, reduce } from '../game/engine'
 import { isVowel } from '../game/puzzle'
 import { createRng } from '../game/rng'
 import type { Rng } from '../game/rng'
-import { canBuyVowel, canGuess, currentPlayerOf } from '../game/rules'
+import { canBuyVowel, canGuess, currentPlayerOf, isBotTurn } from '../game/rules'
 import { configFrom, playersFrom } from '../game/setup'
 import type { Setup } from '../game/setup'
 import type { GameState, Letter } from '../game/types'
@@ -114,8 +114,24 @@ export function GameProvider({ children }: { readonly children: ReactNode }) {
   }, [])
 
   // Monotone et jamais remis à zéro : deux tirages successifs du même segment
-  // doivent rejouer l'animation, qui est clée sur `spinId`.
+  // doivent rejouer l'animation, qui est clée sur `spinId`. Seul chemin vers le
+  // compteur — `useGameEffects` s'en sert aussi pour les rotations de bot, et
+  // deux compteurs indépendants finiraient par produire deux fois la même
+  // valeur, donc une rotation qui ne s'animerait pas.
   const spinIdRef = useRef(0)
+  const nextSpinId = useCallback(() => {
+    spinIdRef.current += 1
+    return spinIdRef.current
+  }, [])
+
+  // Identifiant de requête pour une résolution : un compteur monotone suffit,
+  // il n'a besoin d'être unique que dans la session. Pas de `crypto.randomUUID` :
+  // un compteur est déterministe et se lit dans un test.
+  const requestIdRef = useRef(0)
+  const newRequestId = useCallback(() => {
+    requestIdRef.current += 1
+    return `req-${requestIdRef.current}`
+  }, [])
 
   const startGame = useCallback(
     (overrides: Partial<Setup> = {}) => {
@@ -152,11 +168,16 @@ export function GameProvider({ children }: { readonly children: ReactNode }) {
   const spin = useCallback(() => {
     const current = stateRef.current
     if (current.kind !== 'playing' || current.game.progress.kind !== 'round') return
+    // Garde structurelle : l'interface grise ses boutons pendant le tour d'un
+    // bot, mais le clavier physique et un futur composant n'ont pas à repasser
+    // par cette décision. Sans elle l'humain pourrait jouer à la place du bot,
+    // le reducer acceptant l'action au nom du joueur courant sans distinguer qui
+    // l'a réellement déclenchée.
+    if (isBotTurn(current.game)) return
     const player = current.game.players[current.game.progress.currentPlayer]
     if (player === undefined) return
-    spinIdRef.current += 1
-    dispatch({ type: 'wheel/spin', by: player.id, spin: pickSpinOutcome(rng, spinIdRef.current) })
-  }, [dispatch, rng])
+    dispatch({ type: 'wheel/spin', by: player.id, spin: pickSpinOutcome(rng, nextSpinId()) })
+  }, [dispatch, rng, nextSpinId])
 
   /**
    * Trouver le `spinId` et le joueur courant, c'est lire l'état de la partie :
@@ -187,6 +208,8 @@ export function GameProvider({ children }: { readonly children: ReactNode }) {
     (letter: Letter) => {
       const current = stateRef.current
       if (current.kind !== 'playing' || current.game.progress.kind !== 'round') return
+      // Voir le commentaire de `spin` : même garde, même raison.
+      if (isBotTurn(current.game)) return
       // Le joueur est lu sur `current.game` et non sur un alias : TypeScript ne
       // transporte pas le rétrécissement de `progress.kind` à travers une copie.
       const player = current.game.players[current.game.progress.currentPlayer]
@@ -207,6 +230,8 @@ export function GameProvider({ children }: { readonly children: ReactNode }) {
   const pass = useCallback(() => {
     const current = stateRef.current
     if (current.kind !== 'playing' || current.game.progress.kind !== 'round') return
+    // Voir le commentaire de `spin` : même garde, même raison.
+    if (isBotTurn(current.game)) return
     const player = currentPlayerOf(current.game)
     dispatch({ type: 'turn/pass', by: player.id })
   }, [dispatch])
@@ -216,7 +241,7 @@ export function GameProvider({ children }: { readonly children: ReactNode }) {
     [startGame, nextRound, spin, settleSpin, playLetter, pass, dispatch],
   )
 
-  useGameEffects(state, dispatch)
+  useGameEffects(state, dispatch, { rng, nextSpinId, newRequestId })
 
   return (
     <GameCommandsContext value={commands}>

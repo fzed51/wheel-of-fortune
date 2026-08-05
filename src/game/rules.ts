@@ -60,6 +60,19 @@ export function currentPlayerOf(game: Game): Player {
 }
 
 /**
+ * Vrai si une manche est en cours et que le joueur courant est un bot. Sert à
+ * l'interface et aux commandes du provider, croisé avec `canSpin`, `canResolve`
+ * et `isStuck`, pour interdire à l'humain de jouer à la place d'un bot.
+ * Volontairement séparé de ces prédicats : ils servent aussi au bot lui-même
+ * et au fuzz via `legalActions`, et y intégrer « c'est au tour d'un humain »
+ * rendrait le bot incapable d'agir.
+ */
+export function isBotTurn(game: Game): boolean {
+  const round = activeRound(game)
+  return round !== null && currentPlayerOf(game).kind.type === 'bot'
+}
+
+/**
  * Les trois prédicats ci-dessous raisonnent « comme si » la phase était
  * `awaiting-action` : ils servent aussi à décider **à qui donner la main**,
  * décision prise avant que la phase du destinataire n'existe.
@@ -147,6 +160,9 @@ export function legalActions(game: Game): readonly GameAction['type'][] {
 
 export function keyState(game: Game, letter: Letter): 'available' | 'used' | 'locked' {
   const round = activeRound(game)
+  // Une lettre déjà proposée reste « used » même pendant le tour d'un bot :
+  // elle porte l'information « celle-là est sortie », qui vaut pour tous.
   if (round !== null && round.guessed.includes(letter)) return 'used'
-  return canGuess(game, letter) ? 'available' : 'locked'
+  if (!canGuess(game, letter)) return 'locked'
+  return isBotTurn(game) ? 'locked' : 'available'
 }
