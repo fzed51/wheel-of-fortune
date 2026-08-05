@@ -2,7 +2,10 @@
 <html lang="fr">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="%BASE_URL%favicon.svg" />
+    <!-- Aucun `<link rel="icon">` écrit à la main : `pwa-assets.config.ts` les
+         injecte tous ici (favicon, icône Apple, écrans de démarrage iOS) depuis
+         `public/favicon.svg`. Une balise en dur ferait doublon et finirait par
+         pointer une icône que le générateur ne produit plus. -->
     <!-- Ni `maximum-scale` ni `user-scalable=no` : ce serait un échec WCAG 1.4.4. -->
     <meta
       name="viewport"

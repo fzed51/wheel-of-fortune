@@ -108,3 +108,11 @@ node_modules/
 /dev-dist/
 /coverage/
 *.tsbuildinfo
+# Icônes déclinées de public/favicon.svg. Le plugin PWA les régénère à chaque
+# build ; seul `yarn generate-pwa-assets`, lancé à la main pour les regarder,
+# les écrit vraiment ici. Versionnées, elles finiraient par contredire la source.
+/public/favicon.ico
+/public/pwa-*.png
+/public/maskable-icon-*.png
+/public/apple-touch-icon-*.png
+/public/apple-splash-*.png

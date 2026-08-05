@@ -1,11 +1,12 @@
 import { Link, Outlet } from 'react-router'
 import LiveRegions from './components/LiveRegions'
 import ThemeToggle from './components/ThemeToggle'
+import UpdatePrompt from './components/UpdatePrompt'
 import { useApplyTheme } from './hooks/useTheme'
 
 /**
  * Layout racine. Il ne contient que l'ossature : en-tête, contenu, les live regions
- * et bientôt l'invite de mise à jour. Aucune règle de jeu ici.
+ * et l'invite de mise à jour du service worker. Aucune règle de jeu ici.
  *
  * C'est le seul composant garanti monté en permanence : c'est donc lui qui applique
  * le thème au document, et qui monte les live regions une fois pour toute la partie.
@@ -29,6 +30,8 @@ export default function App() {
         </Link>
         <ThemeToggle />
       </header>
+
+      <UpdatePrompt />
 
       <main id="contenu" className="mx-auto max-w-3xl px-6 pb-safe-b">
         <Outlet />

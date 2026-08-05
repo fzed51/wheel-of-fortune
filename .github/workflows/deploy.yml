@@ -1,0 +1,60 @@
+name: Déploiement GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  # Permet de redéployer sans nouveau commit, depuis l'onglet Actions.
+  workflow_dispatch:
+
+# Le jeton n'a besoin que de lire le dépôt et d'écrire une page : `id-token`
+# est exigé par `deploy-pages`, qui prouve l'origine du déploiement.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Un seul déploiement à la fois, sans annuler celui qui est en cours : couper un
+# déploiement en vol laisserait le site dans un état intermédiaire.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Activer corepack
+        # Avant setup-node, pour que la version de yarn du champ packageManager
+        # soit celle utilisée par la détection de cache.
+        run: corepack enable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: yarn
+
+      - run: yarn install --immutable
+
+      # Les mêmes portes que la CI, rejouées ici : un déploiement ne part jamais
+      # d'un état non vérifié, même si le workflow CI a été relancé entre-temps.
+      - run: yarn lint
+      - run: yarn test
+      - run: yarn build
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
