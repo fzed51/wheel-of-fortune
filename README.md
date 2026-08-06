@@ -21,6 +21,7 @@ yarn dev            # http://localhost:5173
 | `yarn test:watch` | Vitest en continu |
 | `yarn lint` | `oxlint --type-aware` |
 | `yarn preview` | sert le build de production sur `http://localhost:4173` |
+| `yarn check:browser` | contrôle du build dans un vrai Chrome — à lancer après `yarn build` |
 | `yarn generate-pwa-assets` | régénère les icônes dans `public/` pour les regarder à l'œil |
 
 Le service worker est désactivé en développement, sinon le cache masquerait chaque modification. Pour le tester sans passer par `yarn build` : `SW_DEV=true yarn dev`.
@@ -152,6 +153,18 @@ Doctrine, appliquée sans exception :
 - les modules purs (`game/`, `llm/`, `storage/`) se testent en environnement node ; seuls les fichiers qui touchent au DOM portent `// @vitest-environment jsdom` ;
 - au moins un test affirme une **absence** : la bannière de mise à jour ne crée pas de seconde live region. C'est l'invariant que trois autres fichiers supposent sans le dire.
 
+### Le contrôle au navigateur
+
+```bash
+yarn build && yarn check:browser
+```
+
+Quatorze contrôles dans un vrai Chrome, sur le build de production, pour ce que jsdom ne peut pas atteindre : la CSP réelle, le service worker et le hors-ligne, le manifest, l'animation de la roue par la Web Animations API, l'arbre d'accessibilité de Chrome, le `<dialog>` natif et l'écouteur clavier posé sur `document`. Sans aucune dépendance : le pilote parle directement le Chrome DevTools Protocol.
+
+Ce n'est **pas** dans la CI ni dans `yarn test` — c'est une porte de déploiement passée à la main, qui lance Chrome et dure une minute. Aucune requête ne part vers Mistral : la clé écrite dans le profil jetable est factice et sert seulement à rendre `Résoudre` disponible.
+
+Détail des contrôles, de ce qui n'est volontairement pas couvert, et des variables d'environnement : [`scripts/browser-check/README.md`](scripts/browser-check/README.md).
+
 ## Conventions de code
 
 - **TypeScript en `strict` complet**, compilateur natif de TypeScript 7. Attention : il **refuse les options inconnues** au lieu de les ignorer, et ne prend pas en charge les `plugins` de tsconfig ;
@@ -165,7 +178,7 @@ Doctrine, appliquée sans exception :
 
 Honnêtement listé, pour que personne ne le découvre en production :
 
-- **les contrôles manuels au navigateur n'ont jamais été passés** : ni audit Lighthouse, ni axe DevTools, ni mode hors ligne, ni installation réelle sur un appareil. La CSP en particulier ne se valide qu'en vrai ;
+- **la recette au navigateur n'est qu'à moitié faite.** `yarn check:browser` couvre désormais la CSP, le service worker, le hors-ligne, le manifest et l'accessibilité de l'arbre Chrome ; restent hors couverture l'audit Lighthouse, axe DevTools, l'installation réelle sur un appareil et la bannière de mise à jour, qui demande deux builds successifs ;
 - le catalogue embarqué compte **20 énigmes**, assez pour jouer, pas assez pour ne pas se répéter longtemps ;
 - pas de son, pas de vibration ;
 - pas de multi local : le moteur est déjà écrit autour d'une liste de joueurs, mais rien ne le pilote ;
