@@ -1,6 +1,7 @@
 import { Link, Navigate } from 'react-router'
 import { BUTTON_PRIMARY, CARD } from '../components/classes'
 import { useGame } from '../context/selectors'
+import { formatEuros } from '../game/announce'
 
 /**
  * Résultats. Renvoie vers `/jeu` tant que la partie n'est pas finie : sans ça,
@@ -32,7 +33,11 @@ export default function GameOverRoute() {
         {classement.map((player) => (
           <li key={player.id} className={`${CARD} flex justify-between`}>
             <span className="text-fg">{player.name}</span>
-            <span className="text-fg-muted">{player.total} €</span>
+            {/* `formatEuros` et non `{total} €` : c'est la seule écriture des montants
+                du projet, elle groupe les milliers en espace insécable et accorde
+                l'unité. Un `3000 €` isolé ici contredisait le tableau des scores,
+                qui affiche « 3 000 euros » pour la même valeur. */}
+            <span className="text-fg-muted">{formatEuros(player.total)}</span>
           </li>
         ))}
       </ol>
