@@ -1,5 +1,7 @@
 # La Roue de la Fortune
 
+**→ [Jouer en ligne](https://fzed51.github.io/wheel-of-fortune/)**
+
 Jeu d'énigmes à lettres, en français, installable comme application. On tourne une roue, on propose une consonne, on achète une voyelle, et on tente de deviner l'énoncé caché — seul ou contre des bots.
 
 Ce n'est pas un tirage au sort : la roue ne fait que fixer la valeur du coup suivant. Tout le reste est du raisonnement sur les lettres.
