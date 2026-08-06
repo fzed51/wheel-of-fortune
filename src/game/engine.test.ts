@@ -620,18 +620,35 @@ function fuzz(seed: number, resolveEnabled: boolean): { pas: number; state: Game
   return { pas, state }
 }
 
-describe('fuzz d’invariants', () => {
-  it('termine sans violer un invariant, juge disponible', () => {
-    for (let seed = 1; seed <= 200; seed += 1) {
-      const { state } = fuzz(seed, true)
-      expect(jeu(state).history).toHaveLength(3)
-    }
-  })
+/**
+ * Deux cents parties complètes par cas, chacune assertée à chaque pas : les
+ * quelques secondes que ça prend dépassent le délai par défaut de Vitest sur
+ * un runner de CI, plus lent que la machine de développement. Le délai est
+ * donc explicite ici plutôt que global, pour que les autres tests gardent la
+ * garde rapprochée qui repère une boucle infinie.
+ */
+const DELAI_FUZZ = 60_000
 
-  it('termine aussi sans juge, où seules les lettres font avancer la partie', () => {
-    for (let seed = 1; seed <= 200; seed += 1) {
-      const { state } = fuzz(seed, false)
-      expect(jeu(state).history).toHaveLength(3)
-    }
-  })
+describe('fuzz d’invariants', () => {
+  it(
+    'termine sans violer un invariant, juge disponible',
+    () => {
+      for (let seed = 1; seed <= 200; seed += 1) {
+        const { state } = fuzz(seed, true)
+        expect(jeu(state).history).toHaveLength(3)
+      }
+    },
+    DELAI_FUZZ,
+  )
+
+  it(
+    'termine aussi sans juge, où seules les lettres font avancer la partie',
+    () => {
+      for (let seed = 1; seed <= 200; seed += 1) {
+        const { state } = fuzz(seed, false)
+        expect(jeu(state).history).toHaveLength(3)
+      }
+    },
+    DELAI_FUZZ,
+  )
 })
