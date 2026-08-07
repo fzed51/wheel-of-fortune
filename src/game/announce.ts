@@ -198,6 +198,12 @@ function settledAnnouncement(prevGame: Game, nextGame: Game): string {
   const spinner = currentPlayerOf(prevGame)
   switch (segment.kind) {
     case 'cash':
+      // Segment à 0 : ni Banqueroute ni Passe, la main reste au joueur qui doit
+      // quand même proposer une consonne — sans cette phrase, il croirait sa
+      // main soufflée comme sur les deux autres segments spéciaux.
+      if (segment.value === 0) {
+        return "La roue s'arrête sur 0 euro : la lettre compte, mais ne rapporte rien."
+      }
       return `La roue s'arrête sur ${formatEuros(segment.value)}.`
     case 'bankrupt': {
       const phrase =

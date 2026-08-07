@@ -15,6 +15,8 @@ import { asPlayerId } from './types'
 import { pickSpinOutcome } from './wheel'
 import {
   BANQUEROUTE,
+  CASH_ZERO,
+  CONFIG,
   PASSE,
   acheter,
   avecLettres,
@@ -209,9 +211,26 @@ describe('achat de voyelle', () => {
     state = acheter(state, 'A')
     const progress = jeu(state).progress
     if (progress.kind === 'round-over' && progress.summary.outcome.kind === 'solved') {
-      expect(progress.summary.outcome.amount).toBe(500)
+      expect(progress.summary.outcome.amount).toBe(CONFIG.minRoundPrize)
     }
-    expect(joueurNomme(state, 'Alice').total).toBe(500)
+    expect(joueurNomme(state, 'Alice').total).toBe(CONFIG.minRoundPrize)
+  })
+
+  it('rapporte quand même le plancher pour une manche jouée entièrement sur des cases à 0', () => {
+    // La case à 0 ne rapporte rien mais garde la main : sans ce test, un plancher
+    // qui ne s'appliquerait qu'aux voyelles laisserait un « 0 » de bout en bout
+    // rapporter zéro à la résolution.
+    let state = tourner(demarrer({ answer: 'as' }), CASH_ZERO)
+    state = proposer(state, 'S')
+    expect(courant(state).pot).toBe(0)
+    expect(courant(state).name).toBe('Alice')
+
+    state = resoudre(state, true)
+    const progress = jeu(state).progress
+    if (progress.kind === 'round-over' && progress.summary.outcome.kind === 'solved') {
+      expect(progress.summary.outcome.amount).toBe(CONFIG.minRoundPrize)
+    }
+    expect(joueurNomme(state, 'Alice').total).toBe(CONFIG.minRoundPrize)
   })
 
   it('ignore une consonne envoyée comme voyelle', () => {
@@ -449,12 +468,12 @@ describe('scénario complet', () => {
     state = tourner(state, BANQUEROUTE)
     expect(joueurNomme(state, 'Alice').pot).toBe(0)
     expect(courant(state).name).toBe('Bob')
-    state = proposer(tourner(state, cash(1000)), 'V')
+    state = proposer(tourner(state, cash(600)), 'V')
     state = proposer(tourner(state, cash(250)), 'L')
-    expect(courant(state).pot).toBe(1250)
+    expect(courant(state).pot).toBe(850)
     state = acheter(state, 'E')
     expect(jeu(state).progress.kind).toBe('round-over')
-    expect(joueurNomme(state, 'Bob').total).toBe(1000)
+    expect(joueurNomme(state, 'Bob').total).toBe(600)
 
     // Manche 2 (×2) — Bob passe, Alice enchaîne et achète les deux voyelles.
     state = jouer(state, { type: 'round/next', puzzle: enigme('mon chat'), firstPlayer: 1 })
@@ -481,10 +500,10 @@ describe('scénario complet', () => {
     expect(manche(state).index).toBe(2)
     state = proposer(tourner(state, cash(100)), 'Z')
     expect(courant(state).name).toBe('Bob')
-    state = proposer(tourner(state, cash(750)), 'R')
-    expect(courant(state).pot).toBe(2250)
+    state = proposer(tourner(state, cash(500)), 'R')
+    expect(courant(state).pot).toBe(1500)
     state = resoudre(state, true)
-    expect(joueurNomme(state, 'Bob').total).toBe(3250)
+    expect(joueurNomme(state, 'Bob').total).toBe(2100)
 
     state = jouer(state, { type: 'round/next', puzzle: enigme('au revoir'), firstPlayer: 0 })
     const game = jeu(state)
@@ -493,7 +512,7 @@ describe('scénario complet', () => {
       expect(game.progress.winners).toEqual([asPlayerId('bob')])
     }
     expect(joueurNomme(state, 'Alice').total).toBe(2000)
-    expect(joueurNomme(state, 'Bob').total).toBe(3250)
+    expect(joueurNomme(state, 'Bob').total).toBe(2100)
     expect(game.history).toHaveLength(3)
   })
 })

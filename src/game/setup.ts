@@ -20,8 +20,13 @@ export interface Setup {
 /** Prix d'une voyelle. Figé ici : c'est une règle du jeu, pas un réglage. */
 export const VOWEL_COST = 250
 
-/** Plancher de gain d'une manche, pour qu'une manche gagnée aux voyelles rapporte. */
-export const MIN_ROUND_PRIZE = 500
+/**
+ * Plancher de gain d'une manche, pour qu'une manche gagnée aux voyelles rapporte.
+ * Calibré sur la moyenne des cases `cash` de la roue (262,5 €) : à 500 €, il
+ * dépasserait la cagnotte réelle de la plupart des manches 1 et cesserait d'être
+ * un filet de sécurité pour devenir le gain courant.
+ */
+export const MIN_ROUND_PRIZE = 250
 
 export const HUMAN_ID = asPlayerId('you')
 export const HUMAN_NAME = 'Vous'

@@ -201,6 +201,20 @@ describe('announceTransition — roue', () => {
     })
   })
 
+  it('annonce le segment à 0 : la lettre compte mais ne rapporte rien, sans changer de joueur', () => {
+    const prev = jouer(demarrer(), {
+      type: 'wheel/spin',
+      by: courant(demarrer()).id,
+      spin: { index: cash(0), offset: 0, spinId: 1 },
+    })
+    const action = { type: 'wheel/settled' as const, by: courant(prev).id, spinId: 1 }
+    const next = jouer(prev, action)
+    expect(announceTransition(prev, next, action)).toEqual({
+      status: "La roue s'arrête sur 0 euro : la lettre compte, mais ne rapporte rien.",
+      alert: '',
+    })
+  })
+
   it('annonce la banqueroute et nomme le joueur suivant', () => {
     const depart = demarrer({ players: [joueur('Alice'), BOT_1] })
     const prev = jouer(depart, {
@@ -265,6 +279,18 @@ describe('announceTransition — consonne', () => {
     const next = jouer(prev, action)
     expect(announceTransition(prev, next, action)).toEqual({
       status: 'R, 2 fois. Cagnotte : 1 000 euros.',
+      alert: '',
+    })
+  })
+
+  it('annonce une consonne trouvée sur un segment à 0 sans dire un gain absurde, et garde la main', () => {
+    const prev = tourner(demarrer({ answer: 'terre' }), cash(0))
+    const action = { type: 'letter/consonant' as const, by: courant(prev).id, letter: 'R' as const }
+    const next = jouer(prev, action)
+    // La cagnotte reste à 0 : le segment n'a rien rapporté, la phrase le dit
+    // sans jamais prétendre à un gain — ni « gagnez 0 euros » ni faute de sens.
+    expect(announceTransition(prev, next, action)).toEqual({
+      status: 'R, 2 fois. Cagnotte : 0 euro.',
       alert: '',
     })
   })

@@ -10,15 +10,18 @@ import {
   encodePuzzleFile,
   encodeRecord,
 } from './codec'
+import { SCHEMA_VERSION } from './keys'
 import { DEFAULT_SETTINGS } from './settings'
 import { toPersisted } from './snapshot'
 
 /**
- * Enveloppe écrite à la main, version en littéral : si le format du fil change,
- * ces tests doivent le dire, pas s'adapter en silence à la nouvelle constante.
+ * Enveloppe écrite à la main, version lue sur `SCHEMA_VERSION` : un littéral
+ * fige la version courante et casse à chaque bump du schéma, exactement le bug
+ * que ce fichier corrige plus bas pour les tests qui, eux, veulent une version
+ * étrangère volontaire.
  */
 function enveloppe(value: unknown): string {
-  return JSON.stringify({ version: 1, value })
+  return JSON.stringify({ version: SCHEMA_VERSION, value })
 }
 
 /** Sauvegarde vue comme une donnée brute : ces tests abîment exprès sa forme. */
@@ -44,7 +47,9 @@ describe('enveloppe', () => {
   })
 
   it('distingue une version étrangère d’une donnée invalide', () => {
-    expect(decodeRecord(JSON.stringify({ version: 2, value: {} }))).toEqual({
+    // Dérivée de `SCHEMA_VERSION` : un littéral casserait ce test au prochain bump,
+    // qui rendrait justement cette version « étrangère » égale à la courante.
+    expect(decodeRecord(JSON.stringify({ version: SCHEMA_VERSION + 1, value: {} }))).toEqual({
       ok: false,
       reason: 'version',
     })
@@ -221,7 +226,7 @@ describe('fichier d’énigmes', () => {
   })
 
   it('refuse une version d’enveloppe inconnue', () => {
-    expect(decodePuzzleFile(JSON.stringify({ version: 2, value: [] }))).toEqual({
+    expect(decodePuzzleFile(JSON.stringify({ version: SCHEMA_VERSION + 1, value: [] }))).toEqual({
       ok: false,
       reason: 'version',
     })

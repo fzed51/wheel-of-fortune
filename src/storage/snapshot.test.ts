@@ -47,11 +47,11 @@ describe('toPersisted', () => {
   })
 
   it('garde la consonne due quand la roue s’est arrêtée sur un montant', () => {
-    const persisted = toPersisted(enRotation(demarrer(), cash(750)))
+    const persisted = toPersisted(enRotation(demarrer(), cash(400)))
     expect(persisted.progress).toMatchObject({
       kind: 'round',
       currentPlayer: 0,
-      round: { phase: { kind: 'awaiting-consonant', value: 750 } },
+      round: { phase: { kind: 'awaiting-consonant', value: 400 } },
     })
   })
 
@@ -84,7 +84,7 @@ describe('toPersisted', () => {
   })
 
   it('n’écrit aucune donnée éphémère', () => {
-    const ecrit = JSON.stringify(toPersisted(enRotation(demarrer(), cash(750))))
+    const ecrit = JSON.stringify(toPersisted(enRotation(demarrer(), cash(400))))
     for (const champ of ['spinId', 'offset', 'requestId', 'attempt', 'spin']) {
       expect(ecrit, `${champ} ne doit pas être persisté`).not.toContain(champ)
     }

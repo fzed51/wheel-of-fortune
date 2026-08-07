@@ -114,6 +114,8 @@ export function cash(value: number): number {
 
 export const BANQUEROUTE = indexOf((segment) => segment.kind === 'bankrupt')
 export const PASSE = indexOf((segment) => segment.kind === 'pass')
+/** Le seul segment `cash` de valeur nulle : sert à vérifier que la main reste au joueur sans rien lui rapporter. */
+export const CASH_ZERO = indexOf((segment) => segment.kind === 'cash' && segment.value === 0)
 
 /** Tirage complet : `wheel/spin` puis `wheel/settled`, par le joueur courant. */
 export function tourner(state: GameState, index: number, spinId = 1): GameState {

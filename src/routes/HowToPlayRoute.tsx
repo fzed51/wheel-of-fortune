@@ -1,7 +1,7 @@
 import { CARD } from '../components/classes'
 import { formatEuros } from '../game/announce'
 import { MAX_OPPONENTS, MAX_ROUNDS, MIN_ROUNDS, MIN_ROUND_PRIZE, VOWEL_COST } from '../game/setup'
-import { SEGMENT_COUNT } from '../game/wheel'
+import { BANKRUPT_COUNT, PASS_COUNT, SEGMENT_COUNT, ZERO_COUNT } from '../game/wheel'
 
 /**
  * Règles du jeu. Écran purement documentaire : aucune valeur n'y est écrite en
@@ -72,8 +72,8 @@ export default function HowToPlayRoute() {
       <section className={CARD}>
         <h2 className="font-semibold text-fg">Les cases spéciales</h2>
         <p className="mt-2 text-fg-muted">
-          La roue compte {SEGMENT_COUNT} cases, dont deux Banqueroute et deux Passe ; les autres
-          portent un montant.
+          La roue compte {SEGMENT_COUNT} cases, dont {BANKRUPT_COUNT} Banqueroute, {PASS_COUNT}{' '}
+          Passe et {ZERO_COUNT} case à 0 € ; les autres portent un montant strictement positif.
         </p>
         <ul className="mt-2 flex list-disc flex-col gap-1 pl-5 text-fg-muted">
           <li>
@@ -83,6 +83,12 @@ export default function HowToPlayRoute() {
           <li>
             <strong>Passe</strong> : la cagnotte ne change pas, seule la main passe au joueur
             suivant.
+          </li>
+          <li>
+            <strong>Case à 0 €</strong> : le joueur propose quand même une consonne et la lettre
+            est révélée si elle est présente, mais aucun gain n’est crédité. Contrairement à
+            Passe, la main <strong>ne change pas</strong> : le même joueur rejoue aussitôt, roue
+            comprise.
           </li>
         </ul>
       </section>
