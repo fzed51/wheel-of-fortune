@@ -28,7 +28,7 @@ export const CONFIG: GameConfig = {
   roundCount: 3,
   vowelCost: 250,
   minRoundPrize: 500,
-  resolveEnabled: true,
+  bonusPrize: 500,
 }
 
 export function joueur(name: string, patch: Partial<Player> = {}): Player {
@@ -135,19 +135,21 @@ export function acheter(state: GameState, letter: Vowel): GameState {
   return jouer(state, { type: 'letter/buy-vowel', by: courant(state).id, letter })
 }
 
-export function resoudre(state: GameState, correct: boolean, requestId = 'req-1'): GameState {
-  return jouer(
-    state,
-    { type: 'resolve/start', by: courant(state).id, attempt: 'ma proposition', requestId },
-    { type: 'resolve/verdict', requestId, correct },
-  )
+/**
+ * Tentative de résolution du joueur courant. `attempt` par défaut reprend
+ * l'énigme de la manche en cours : c'est le raccourci le plus utile pour un
+ * scénario « le joueur trouve », l'appelant passe une chaîne différente pour
+ * simuler une réponse fausse.
+ */
+export function resoudre(state: GameState, attempt: string): GameState {
+  return jouer(state, { type: 'resolve/attempt', by: courant(state).id, attempt })
 }
 
 /** Partie menée jusqu'à `game-over` : chaque manche gagnée par résolution. */
 export function partieTerminee(state: GameState = demarrer()): GameState {
   let current = state
   for (let round = 0; round < jeu(current).config.roundCount; round += 1) {
-    current = resoudre(current, true, `req-${round}`)
+    current = resoudre(current, manche(current).puzzle.answer)
     current = jouer(current, {
       type: 'round/next',
       puzzle: enigme('la mer', `suite-${round}`),

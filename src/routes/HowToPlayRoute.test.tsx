@@ -22,11 +22,46 @@ describe('HowToPlayRoute', () => {
     ).toBeInTheDocument()
   })
 
-  it('explique que Résoudre est indisponible sans clé d’API, sans repli local', () => {
+  it('explique que Résoudre compare localement, sans réseau ni clé d’API', () => {
     monterApp('/regles')
 
     expect(
-      screen.getByText(/aucun repli local qui compare le texte tapé à la réponse attendue/),
+      screen.getByText(/aucun réseau, aucune clé d’API n’intervient/),
+    ).toBeInTheDocument()
+  })
+
+  it('donne des exemples de réponses acceptées malgré casse, accents et espaces', () => {
+    monterApp('/regles')
+
+    // La règle de comparaison vient de `foldForCompare` (src/game/compare.ts) :
+    // ce test tombe si l'écran cesse de citer les exemples qui la rendent concrète.
+    const item = screen.getByText(/ignore la casse, les accents/).closest('p')
+    if (item === null) {
+      throw new Error('Le paragraphe décrivant la tolérance de casse est introuvable.')
+    }
+    expect(item.textContent).toContain('LA CLÉ')
+    expect(item.textContent).toContain('la cle')
+    expect(item.textContent).toContain('LACLE')
+    expect(item.textContent).toContain('CŒUR')
+    expect(item.textContent).toContain('coeur')
+  })
+
+  it('précise que l’égalité reste stricte : une expression trop longue est refusée', () => {
+    monterApp('/regles')
+
+    const item = screen.getByText(/l’égalité doit être stricte/).closest('p')
+    if (item === null) {
+      throw new Error('Le paragraphe décrivant la rigueur de l’égalité est introuvable.')
+    }
+    expect(item.textContent).toContain('LES CLÉS')
+    expect(item.textContent).toContain('est refusé')
+  })
+
+  it('précise qu’une réponse fausse fait passer la main sans vider la cagnotte', () => {
+    monterApp('/regles')
+
+    expect(
+      screen.getByText(/Une réponse fausse fait passer la main au joueur suivant, mais la cagnotte de la manche\s+est conservée/),
     ).toBeInTheDocument()
   })
 

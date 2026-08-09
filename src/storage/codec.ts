@@ -110,7 +110,7 @@ function isConfig(value: unknown): value is GameConfig {
     value.roundCount >= 1 &&
     isCount(value.vowelCost) &&
     isCount(value.minRoundPrize) &&
-    typeof value.resolveEnabled === 'boolean'
+    typeof value.bonusPrize === 'number'
   )
 }
 
@@ -134,7 +134,8 @@ function isPersistedRound(value: unknown): value is PersistedRound {
     isCount(value.index) &&
     isPuzzle(value.puzzle) &&
     isGuessed(value.guessed) &&
-    isPersistedPhase(value.phase)
+    isPersistedPhase(value.phase) &&
+    isCount(value.passes)
   )
 }
 

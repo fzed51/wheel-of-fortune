@@ -6,6 +6,7 @@ import { createRng, pick } from './rng'
 import {
   canSpin,
   currentPlayerOf,
+  isStuck,
   legalActions,
   remainingConsonants,
   remainingVowels,
@@ -51,7 +52,7 @@ describe('game/start', () => {
     const puzzle = enigme('le vent')
     const state = reduce(initialState, {
       type: 'game/start',
-      config: { roundCount: 3, vowelCost: 250, minRoundPrize: 500, resolveEnabled: false },
+      config: { roundCount: 3, vowelCost: 250, minRoundPrize: 500, bonusPrize: 500 },
       players: [joueur('Alice')],
       puzzle,
       firstPlayer: 0,
@@ -68,7 +69,7 @@ describe('game/start', () => {
 describe('règlement du tirage', () => {
   it('la banqueroute vide la cagnotte, laisse la banque intacte et passe la main', () => {
     const gagne = proposer(tourner(demarrer({ answer: 'le vent' }), cash(500)), 'T')
-    const avecBanque = jouer(resoudre(gagne, true), {
+    const avecBanque = jouer(resoudre(gagne, manche(gagne).puzzle.answer), {
       type: 'round/next',
       puzzle: enigme('mon chat'),
       firstPlayer: 0,
@@ -225,7 +226,7 @@ describe('achat de voyelle', () => {
     expect(courant(state).pot).toBe(0)
     expect(courant(state).name).toBe('Alice')
 
-    state = resoudre(state, true)
+    state = resoudre(state, 'as')
     const progress = jeu(state).progress
     if (progress.kind === 'round-over' && progress.summary.outcome.kind === 'solved') {
       expect(progress.summary.outcome.amount).toBe(CONFIG.minRoundPrize)
@@ -244,33 +245,10 @@ describe('achat de voyelle', () => {
   })
 })
 
-describe('résolution', () => {
-  it('est refusée quand aucun juge n’est configuré', () => {
-    const state = demarrer({ config: { resolveEnabled: false } })
-    const rejet = reduce(state, {
-      type: 'resolve/start',
-      by: courant(state).id,
-      attempt: 'le vent',
-      requestId: 'r1',
-    })
-    expect(rejet).toBe(state)
-  })
-
-  it('verrouille tout pendant l’attente du verdict', () => {
-    const state = demarrer()
-    const attente = jouer(state, {
-      type: 'resolve/start',
-      by: courant(state).id,
-      attempt: 'le vent',
-      requestId: 'r1',
-    })
-    expect(manche(attente).phase.kind).toBe('resolving')
-    expect(legalActions(jeu(attente))).toEqual(['resolve/verdict', 'resolve/failed'])
-  })
-
-  it('un verdict favorable clôt la manche au crédit du joueur', () => {
+describe('resolve/attempt', () => {
+  it('une réponse juste clôt la manche par résolution', () => {
     const gagne = proposer(tourner(demarrer({ answer: 'le vent' }), cash(500)), 'T')
-    const state = resoudre(gagne, true)
+    const state = resoudre(gagne, 'le vent')
     const progress = jeu(state).progress
     expect(progress.kind).toBe('round-over')
     if (progress.kind === 'round-over' && progress.summary.outcome.kind === 'solved') {
@@ -280,40 +258,94 @@ describe('résolution', () => {
     expect(joueurNomme(state, 'Alice').total).toBe(500)
   })
 
-  it('un verdict défavorable passe la main sans toucher à la cagnotte', () => {
+  it('accepte une réponse juste écrite sans accents ni espaces', () => {
+    const state = resoudre(demarrer({ answer: 'la clé' }), 'lacle')
+    const progress = jeu(state).progress
+    expect(progress.kind).toBe('round-over')
+    if (progress.kind === 'round-over' && progress.summary.outcome.kind === 'solved') {
+      expect(progress.summary.outcome.how).toBe('resolve')
+    }
+  })
+
+  it('une réponse fausse passe la main, conserve la cagnotte et remet les passes à zéro', () => {
     const gagne = proposer(tourner(demarrer({ answer: 'le vent' }), cash(500)), 'T')
-    const state = resoudre(gagne, false)
+    const state = resoudre(gagne, 'reponse fausse')
     expect(courant(state).name).toBe('Bob')
     expect(joueurNomme(state, 'Alice').pot).toBe(500)
+    expect(manche(state).passes).toBe(0)
     expect(manche(state).phase.kind).toBe('awaiting-action')
   })
 
-  it('un juge injoignable ne coûte ni la main ni la cagnotte', () => {
-    const gagne = proposer(tourner(demarrer({ answer: 'le vent' }), cash(500)), 'T')
-    const state = jouer(
-      gagne,
-      { type: 'resolve/start', by: courant(gagne).id, attempt: 'le vent', requestId: 'r1' },
-      { type: 'resolve/failed', requestId: 'r1', reason: 'network' },
-    )
-    expect(courant(state).name).toBe('Alice')
-    expect(courant(state).pot).toBe(500)
-    expect(manche(state).phase.kind).toBe('awaiting-action')
-  })
-
-  it('ignore un verdict au requestId périmé', () => {
+  it('ignore une tentative venue d’un joueur qui n’a pas la main', () => {
     const state = demarrer()
-    const attente = jouer(state, {
-      type: 'resolve/start',
+    const intrus = joueurNomme(state, 'Bob').id
+    const rejet = reduce(state, { type: 'resolve/attempt', by: intrus, attempt: 'le vent' })
+    expect(rejet).toBe(state)
+  })
+
+  it('ignore une tentative de résolution pendant l’attente d’une consonne', () => {
+    const state = tourner(demarrer(), cash(500))
+    expect(manche(state).phase.kind).toBe('awaiting-consonant')
+    const rejet = reduce(state, {
+      type: 'resolve/attempt',
       by: courant(state).id,
       attempt: 'le vent',
-      requestId: 'r1',
     })
-    expect(reduce(attente, { type: 'resolve/verdict', requestId: 'r2', correct: true })).toBe(
-      attente,
-    )
-    expect(
-      reduce(attente, { type: 'resolve/failed', requestId: 'r2', reason: 'timeout' }),
-    ).toBe(attente)
+    expect(rejet).toBe(state)
+  })
+
+  it('ignore une seconde tentative juste après la première : le double clic ne rejoue rien', () => {
+    const state = demarrer({ answer: 'le vent' })
+    const by = courant(state).id
+    const resolu = resoudre(state, 'le vent')
+    expect(jeu(resolu).progress.kind).toBe('round-over')
+    // `turnOf` sort déjà sur `progress.kind !== 'round'` : plus aucune tentative
+    // ne peut s'appliquer, quel que soit son émetteur.
+    const rejeu = reduce(resolu, { type: 'resolve/attempt', by, attempt: 'le vent' })
+    expect(rejeu).toBe(resolu)
+  })
+})
+
+describe('compteur de passes', () => {
+  it('bloque la manche après autant de passes consécutifs que de joueurs', () => {
+    const coince = avecLettres(demarrer(), [...CONSONANTS])
+    expect(isStuck(jeu(coince))).toBe(true)
+
+    const unePasse = jouer(coince, { type: 'turn/pass', by: courant(coince).id })
+    expect(manche(unePasse).passes).toBe(1)
+    expect(manche(unePasse).phase.kind).toBe('awaiting-action')
+    expect(courant(unePasse).name).toBe('Bob')
+
+    const bloque = jouer(unePasse, { type: 'turn/pass', by: courant(unePasse).id })
+    expect(manche(bloque).passes).toBe(2)
+    expect(manche(bloque).phase.kind).toBe('blocked')
+  })
+
+  it('une lettre jouée entre deux passes remet le compteur à zéro : la manche ne se bloque pas', () => {
+    // « LA MER » garde deux voyelles (A et E) : acheter l'une des deux ne suffit
+    // pas à résoudre, ce qui laisse la manche observable en `awaiting-action`.
+    let state = avecPot(avecLettres(demarrer({ answer: 'la mer' }), [...CONSONANTS]), 0, 0)
+    expect(isStuck(jeu(state))).toBe(true)
+
+    state = jouer(state, { type: 'turn/pass', by: courant(state).id })
+    expect(manche(state).passes).toBe(1)
+    expect(courant(state).name).toBe('Bob')
+
+    state = avecPot(state, 1, 250)
+    state = acheter(state, 'E')
+    expect(manche(state).passes).toBe(0)
+    expect(manche(state).phase.kind).not.toBe('blocked')
+  })
+
+  it('une tentative fausse entre deux passes le remet aussi à zéro', () => {
+    let state = avecLettres(demarrer({ answer: 'la mer' }), [...CONSONANTS])
+    state = avecPot(state, 0, 0)
+    state = jouer(state, { type: 'turn/pass', by: courant(state).id })
+    expect(manche(state).passes).toBe(1)
+
+    state = resoudre(state, 'reponse fausse')
+    expect(manche(state).passes).toBe(0)
+    expect(manche(state).phase.kind).not.toBe('blocked')
   })
 })
 
@@ -327,7 +359,7 @@ describe('appropriation des actions', () => {
       { type: 'letter/consonant', by: intrus, letter: 'T' },
       { type: 'letter/buy-vowel', by: intrus, letter: 'E' },
       { type: 'turn/pass', by: intrus },
-      { type: 'resolve/start', by: intrus, attempt: 'x', requestId: 'r1' },
+      { type: 'resolve/attempt', by: intrus, attempt: 'x' },
     ]
     for (const action of actions) {
       expect(reduce(state, action), `action ${action.type} acceptée à tort`).toBe(state)
@@ -337,10 +369,13 @@ describe('appropriation des actions', () => {
 
 describe('blocage général', () => {
   it('bloque la manche quand plus personne ne peut jouer, puis la déclare nulle', () => {
-    const coince = avecLettres(demarrer({ config: { resolveEnabled: false } }), [...CONSONANTS])
-    expect(legalActions(jeu(coince))).toEqual(['turn/pass'])
+    const coince = avecLettres(demarrer(), [...CONSONANTS])
+    expect(legalActions(jeu(coince))).toContain('turn/pass')
 
-    const bloque = jouer(coince, { type: 'turn/pass', by: courant(coince).id })
+    const alice = jouer(coince, { type: 'turn/pass', by: courant(coince).id })
+    expect(manche(alice).phase.kind).toBe('awaiting-action')
+
+    const bloque = jouer(alice, { type: 'turn/pass', by: courant(alice).id })
     expect(manche(bloque).phase.kind).toBe('blocked')
     expect(legalActions(jeu(bloque))).toEqual(['round/next'])
 
@@ -356,12 +391,8 @@ describe('blocage général', () => {
   })
 
   it('rend la main au seul joueur encore capable de jouer', () => {
-    // Solo sans juge : sans ce rattrapage, le premier « Passe » figerait la partie.
-    const solo = avecPot(
-      demarrer({ players: [joueur('Alice')], config: { resolveEnabled: false } }),
-      0,
-      0,
-    )
+    // Solo : sans ce rattrapage, le premier « Passe » de la roue figerait la partie.
+    const solo = avecPot(demarrer({ players: [joueur('Alice')] }), 0, 0)
     const gagne = proposer(tourner(solo, cash(500)), 'T')
     const passe = tourner(gagne, PASSE)
     expect(courant(passe).name).toBe('Alice')
@@ -372,7 +403,7 @@ describe('blocage général', () => {
 describe('enchaînement des manches', () => {
   it('remet les cagnottes à zéro, conserve les banques et incrémente la manche', () => {
     const gagne = proposer(tourner(demarrer({ answer: 'le vent' }), cash(500)), 'T')
-    const suivante = jouer(resoudre(gagne, true), {
+    const suivante = jouer(resoudre(gagne, manche(gagne).puzzle.answer), {
       type: 'round/next',
       puzzle: enigme('mon chat'),
       firstPlayer: 1,
@@ -386,7 +417,8 @@ describe('enchaînement des manches', () => {
   })
 
   it('applique le multiplicateur ×2 en deuxième manche et ×3 en troisième', () => {
-    const manche1 = jouer(resoudre(demarrer({ answer: 'le vent' }), true), {
+    const depart = demarrer({ answer: 'le vent' })
+    const manche1 = jouer(resoudre(depart, manche(depart).puzzle.answer), {
       type: 'round/next',
       puzzle: enigme('mon chat'),
       firstPlayer: 0,
@@ -394,7 +426,7 @@ describe('enchaînement des manches', () => {
     const double = proposer(tourner(manche1, cash(500)), 'C')
     expect(courant(double).pot).toBe(1000)
 
-    const manche2 = jouer(resoudre(double, true), {
+    const manche2 = jouer(resoudre(double, manche(double).puzzle.answer), {
       type: 'round/next',
       puzzle: enigme('la mer'),
       firstPlayer: 0,
@@ -404,7 +436,8 @@ describe('enchaînement des manches', () => {
   })
 
   it('termine la partie après la dernière manche', () => {
-    const state = jouer(resoudre(demarrer({ config: { roundCount: 1 } }), true), {
+    const depart = demarrer({ config: { roundCount: 1 } })
+    const state = jouer(resoudre(depart, manche(depart).puzzle.answer), {
       type: 'round/next',
       puzzle: enigme('mon chat'),
       firstPlayer: 0,
@@ -419,13 +452,14 @@ describe('enchaînement des manches', () => {
   })
 
   it('déclare deux vainqueurs à égalité parfaite', () => {
-    const config = { roundCount: 2, resolveEnabled: true }
-    const manche1 = jouer(resoudre(demarrer({ config }), true), {
+    const config = { roundCount: 2 }
+    const depart = demarrer({ config })
+    const manche1 = jouer(resoudre(depart, manche(depart).puzzle.answer), {
       type: 'round/next',
       puzzle: enigme('mon chat'),
       firstPlayer: 1,
     })
-    const state = jouer(resoudre(manche1, true), {
+    const state = jouer(resoudre(manche1, manche(manche1).puzzle.answer), {
       type: 'round/next',
       puzzle: enigme('la mer'),
       firstPlayer: 0,
@@ -435,25 +469,6 @@ describe('enchaînement des manches', () => {
     if (progress.kind === 'game-over') {
       expect([...progress.winners].sort()).toEqual([asPlayerId('alice'), asPlayerId('bob')])
     }
-  })
-})
-
-describe('config/set-resolve-enabled', () => {
-  it('ouvre la résolution en cours de partie', () => {
-    const state = demarrer({ config: { resolveEnabled: false } })
-    const ouvert = reduce(state, { type: 'config/set-resolve-enabled', enabled: true })
-    expect(legalActions(jeu(ouvert))).toContain('resolve/start')
-  })
-
-  it('ne change pas de référence sans changement de valeur', () => {
-    const state = demarrer({ config: { resolveEnabled: false } })
-    expect(reduce(state, { type: 'config/set-resolve-enabled', enabled: false })).toBe(state)
-  })
-
-  it('est sans effet hors partie', () => {
-    expect(reduce(initialState, { type: 'config/set-resolve-enabled', enabled: true })).toBe(
-      initialState,
-    )
   })
 })
 
@@ -502,7 +517,7 @@ describe('scénario complet', () => {
     expect(courant(state).name).toBe('Bob')
     state = proposer(tourner(state, cash(500)), 'R')
     expect(courant(state).pot).toBe(1500)
-    state = resoudre(state, true)
+    state = resoudre(state, manche(state).puzzle.answer)
     expect(joueurNomme(state, 'Bob').total).toBe(2100)
 
     state = jouer(state, { type: 'round/next', puzzle: enigme('au revoir'), firstPlayer: 0 })
@@ -566,18 +581,10 @@ function actionPour(
     }
     case 'turn/pass':
       return { type, by }
-    case 'resolve/start':
-      return { type, by, attempt: `essai ${tick}`, requestId: `req-${tick}` }
-    case 'resolve/verdict': {
-      if (round.phase.kind !== 'resolving') throw new Error('Verdict hors résolution')
-      // Un verdict favorable de temps en temps : sinon la boucle
-      // « résoudre / se tromper » n'aurait aucune raison de finir.
-      return { type, requestId: round.phase.requestId, correct: rng() < 0.35 }
-    }
-    case 'resolve/failed': {
-      if (round.phase.kind !== 'resolving') throw new Error('Échec hors résolution')
-      return { type, requestId: round.phase.requestId, reason: 'network' }
-    }
+    case 'resolve/attempt':
+      // Une réponse juste de temps en temps : sinon aucune manche ne se termine
+      // jamais par résolution, et la branche gagnante du reducer n'est jamais fuzzée.
+      return { type, by, attempt: rng() < 0.35 ? round.puzzle.answer : 'reponse fausse' }
     default:
       throw new Error(`Type non gérable par le fuzz : ${type}`)
   }
@@ -594,6 +601,11 @@ function verifierInvariants(game: Game, totauxPrecedents: readonly number[]): vo
   if (game.progress.kind === 'round') {
     const round = game.progress.round
     expect(new Set(round.guessed).size, 'lettre proposée deux fois').toBe(round.guessed.length)
+    // Le compteur ne doit jamais dépasser le nombre de joueurs : au-delà, c'est
+    // qu'une transition autre qu'une passe a oublié de le remettre à zéro.
+    expect(round.passes, 'compteur de passes hors bornes').toBeLessThanOrEqual(
+      game.players.length,
+    )
     expect(game.progress.currentPlayer).toBeGreaterThanOrEqual(0)
     expect(game.progress.currentPlayer).toBeLessThan(game.players.length)
     expect(() => currentPlayerOf(game)).not.toThrow()
@@ -607,11 +619,10 @@ function verifierInvariants(game: Game, totauxPrecedents: readonly number[]): vo
  */
 const PAS_MAX = 1200
 
-function fuzz(seed: number, resolveEnabled: boolean): { pas: number; state: GameState } {
+function fuzz(seed: number): { pas: number; state: GameState } {
   const rng = createRng(seed)
   let state = demarrer({
     players: [joueur('Alice'), joueur('Bob'), joueur('Chloé')],
-    config: { resolveEnabled },
   })
   let pas = 0
 
@@ -640,31 +651,20 @@ function fuzz(seed: number, resolveEnabled: boolean): { pas: number; state: Game
 }
 
 /**
- * Deux cents parties complètes par cas, chacune assertée à chaque pas : les
- * quelques secondes que ça prend dépassent le délai par défaut de Vitest sur
- * un runner de CI, plus lent que la machine de développement. Le délai est
- * donc explicite ici plutôt que global, pour que les autres tests gardent la
- * garde rapprochée qui repère une boucle infinie.
+ * Deux cents parties complètes, chacune assertée à chaque pas : les quelques
+ * secondes que ça prend dépassent le délai par défaut de Vitest sur un runner
+ * de CI, plus lent que la machine de développement. Le délai est donc
+ * explicite ici plutôt que global, pour que les autres tests gardent la garde
+ * rapprochée qui repère une boucle infinie.
  */
 const DELAI_FUZZ = 60_000
 
 describe('fuzz d’invariants', () => {
   it(
-    'termine sans violer un invariant, juge disponible',
+    'termine sans violer un invariant, résolution comprise',
     () => {
       for (let seed = 1; seed <= 200; seed += 1) {
-        const { state } = fuzz(seed, true)
-        expect(jeu(state).history).toHaveLength(3)
-      }
-    },
-    DELAI_FUZZ,
-  )
-
-  it(
-    'termine aussi sans juge, où seules les lettres font avancer la partie',
-    () => {
-      for (let seed = 1; seed <= 200; seed += 1) {
-        const { state } = fuzz(seed, false)
+        const { state } = fuzz(seed)
         expect(jeu(state).history).toHaveLength(3)
       }
     },

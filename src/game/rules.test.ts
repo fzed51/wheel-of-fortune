@@ -75,7 +75,8 @@ describe('currentPlayerOf', () => {
   })
 
   it('lève hors d’une manche plutôt que de rendre undefined', () => {
-    const fini = resoudre(demarrer({ config: { roundCount: 1 } }), true)
+    const depart = demarrer({ config: { roundCount: 1 } })
+    const fini = resoudre(depart, manche(depart).puzzle.answer)
     expect(() => currentPlayerOf(jeu(fini))).toThrow()
   })
 })
@@ -92,7 +93,8 @@ describe('isBotTurn', () => {
   })
 
   it('est faux hors d’une manche', () => {
-    const fini = resoudre(demarrer({ players: [bot('Bot')], config: { roundCount: 1 } }), true)
+    const depart = demarrer({ players: [bot('Bot')], config: { roundCount: 1 } })
+    const fini = resoudre(depart, manche(depart).puzzle.answer)
     expect(jeu(fini).progress.kind).toBe('round-over')
     expect(isBotTurn(jeu(fini))).toBe(false)
   })
@@ -133,9 +135,20 @@ describe('canBuyVowel', () => {
 })
 
 describe('canResolve', () => {
-  it('suit le drapeau de configuration, seul juge de la disponibilité du LLM', () => {
-    expect(canResolve(jeu(demarrer({ config: { resolveEnabled: true } })))).toBe(true)
-    expect(canResolve(jeu(demarrer({ config: { resolveEnabled: false } })))).toBe(false)
+  it('est toujours vrai en phase d’action, quel que soit l’état de la cagnotte', () => {
+    expect(canResolve(jeu(demarrer()))).toBe(true)
+    expect(canResolve(jeu(avecLettres(demarrer(), [...CONSONANTS])))).toBe(true)
+  })
+
+  it('est faux hors de la phase d’action', () => {
+    const state = tourner(demarrer(), cash(500))
+    expect(manche(state).phase.kind).toBe('awaiting-consonant')
+    expect(canResolve(jeu(state))).toBe(false)
+  })
+
+  it('est faux pendant le blocage général', () => {
+    const state = avecPhase(demarrer(), { kind: 'blocked' })
+    expect(canResolve(jeu(state))).toBe(false)
   })
 })
 
@@ -163,27 +176,25 @@ describe('isStuck', () => {
     expect(isStuck(jeu(demarrer()))).toBe(false)
   })
 
-  it('est vrai sans consonne, sans cagnotte et sans juge', () => {
-    const state = avecLettres(demarrer({ config: { resolveEnabled: false } }), [...CONSONANTS])
+  it('est vrai sans consonne ni voyelle abordable, même si résoudre reste possible', () => {
+    // `canResolve` étant désormais toujours vrai en `awaiting-action`, `isStuck`
+    // ne peut plus le croiser : sans lui, plus aucun joueur ne serait jamais
+    // « coincé », et `turn/pass` disparaîtrait de `legalActions`.
+    const state = avecLettres(demarrer(), [...CONSONANTS])
     expect(isStuck(jeu(state))).toBe(true)
-  })
-
-  it('est faux si le juge est disponible, même sans lettre ni cagnotte', () => {
-    const state = avecLettres(demarrer({ config: { resolveEnabled: true } }), [...CONSONANTS])
-    expect(isStuck(jeu(state))).toBe(false)
   })
 })
 
 describe('legalActions', () => {
   it('propose tourner et résoudre en phase d’action, sans cagnotte', () => {
-    expect(legalActions(jeu(demarrer()))).toEqual(['wheel/spin', 'resolve/start'])
+    expect(legalActions(jeu(demarrer()))).toEqual(['wheel/spin', 'resolve/attempt'])
   })
 
   it('ajoute l’achat de voyelle dès que la cagnotte suffit', () => {
     expect(legalActions(jeu(avecPot(demarrer(), 0, 250)))).toEqual([
       'wheel/spin',
       'letter/buy-vowel',
-      'resolve/start',
+      'resolve/attempt',
     ])
   })
 
@@ -201,23 +212,19 @@ describe('legalActions', () => {
     expect(legalActions(jeu(tourner(demarrer(), cash(500))))).toEqual(['letter/consonant'])
   })
 
-  it('n’offre que le verdict pendant une résolution, sans annulation', () => {
-    const state = avecPhase(demarrer(), { kind: 'resolving', attempt: 'x', requestId: 'r' })
-    expect(legalActions(jeu(state))).toEqual(['resolve/verdict', 'resolve/failed'])
-  })
-
   it('n’offre que la manche suivante quand tout le monde est bloqué', () => {
     const state = avecPhase(demarrer(), { kind: 'blocked' })
     expect(legalActions(jeu(state))).toEqual(['round/next'])
   })
 
   it('ajoute le passage de main au joueur sans issue', () => {
-    const state = avecLettres(demarrer({ config: { resolveEnabled: false } }), [...CONSONANTS])
+    const state = avecLettres(demarrer(), [...CONSONANTS])
     expect(legalActions(jeu(state))).toContain('turn/pass')
   })
 
   it('n’offre plus rien après la fin de partie', () => {
-    const fini = jouer(resoudre(demarrer({ config: { roundCount: 1 } }), true), {
+    const depart = demarrer({ config: { roundCount: 1 } })
+    const fini = jouer(resoudre(depart, manche(depart).puzzle.answer), {
       type: 'round/next',
       puzzle: manche(demarrer()).puzzle,
       firstPlayer: 0,

@@ -73,7 +73,7 @@ export function isBotTurn(game: Game): boolean {
 }
 
 /**
- * Les trois prédicats ci-dessous raisonnent « comme si » la phase était
+ * Les deux prédicats ci-dessous raisonnent « comme si » la phase était
  * `awaiting-action` : ils servent aussi à décider **à qui donner la main**,
  * décision prise avant que la phase du destinataire n'existe.
  */
@@ -83,15 +83,6 @@ function couldSpin(round: RoundState): boolean {
 
 function couldBuyVowel(config: GameConfig, round: RoundState, player: Player): boolean {
   return player.pot >= config.vowelCost && remainingVowels(round).length > 0
-}
-
-/**
- * Vrai si ce joueur aurait au moins une action légale en début de tour. Le
- * reducer s'en sert pour chaque joueur, pas seulement le courant : c'est ce qui
- * distingue « ce joueur est bloqué » de « la manche est ingagnable ».
- */
-export function canPlayerAct(config: GameConfig, round: RoundState, player: Player): boolean {
-  return couldSpin(round) || couldBuyVowel(config, round, player) || config.resolveEnabled
 }
 
 function awaiting(game: Game): RoundState | null {
@@ -111,10 +102,6 @@ export function canBuyVowel(game: Game): boolean {
   return couldBuyVowel(game.config, round, currentPlayerOf(game))
 }
 
-export function canResolve(game: Game): boolean {
-  return game.config.resolveEnabled && awaiting(game) !== null
-}
-
 export function canGuess(game: Game, letter: Letter): boolean {
   const round = activeRound(game)
   if (round === null || round.guessed.includes(letter)) return false
@@ -123,16 +110,21 @@ export function canGuess(game: Game, letter: Letter): boolean {
   return false
 }
 
-/** Le joueur courant n'a plus rien à jouer : `turn/pass` devient sa seule sortie. */
+/**
+ * `canResolve` en est volontairement absent : l'inclure rendrait « Passer la
+ * main » définitivement indispatchable, puisque proposer la réponse est
+ * désormais toujours légal.
+ */
 export function isStuck(game: Game): boolean {
-  return awaiting(game) !== null && !canSpin(game) && !canBuyVowel(game) && !canResolve(game)
+  return awaiting(game) !== null && !canSpin(game) && !canBuyVowel(game)
 }
 
-/**
- * Actions réellement dispatchables. `config/set-resolve-enabled` n'y figure
- * pas : c'est un réglage, pas un coup — l'inclure ferait dériver le fuzz vers
- * des changements de règles au lieu de jouer.
- */
+/** Toujours légal en `awaiting-action` : comparer deux chaînes ne dépend de rien. */
+export function canResolve(game: Game): boolean {
+  return awaiting(game) !== null
+}
+
+/** Actions réellement dispatchables. */
 export function legalActions(game: Game): readonly GameAction['type'][] {
   const progress = game.progress
   if (progress.kind === 'game-over') return []
@@ -143,15 +135,13 @@ export function legalActions(game: Game): readonly GameAction['type'][] {
       return ['wheel/settled']
     case 'awaiting-consonant':
       return ['letter/consonant']
-    case 'resolving':
-      return ['resolve/verdict', 'resolve/failed']
     case 'blocked':
       return ['round/next']
     case 'awaiting-action': {
       const actions: GameAction['type'][] = []
       if (canSpin(game)) actions.push('wheel/spin')
       if (canBuyVowel(game)) actions.push('letter/buy-vowel')
-      if (canResolve(game)) actions.push('resolve/start')
+      if (canResolve(game)) actions.push('resolve/attempt')
       if (isStuck(game)) actions.push('turn/pass')
       return actions
     }

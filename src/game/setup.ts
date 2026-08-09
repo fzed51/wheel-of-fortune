@@ -13,8 +13,6 @@ export interface Setup {
   readonly roundCount: number
   readonly opponents: number
   readonly botLevel: 'easy' | 'normal'
-  /** Vrai si et seulement si un juge est disponible. */
-  readonly resolveEnabled: boolean
 }
 
 /** Prix d'une voyelle. Figé ici : c'est une règle du jeu, pas un réglage. */
@@ -27,6 +25,14 @@ export const VOWEL_COST = 250
  * un filet de sécurité pour devenir le gain courant.
  */
 export const MIN_ROUND_PRIZE = 250
+
+/**
+ * Montant fixe de la question bonus de la manche finale, versé au total et
+ * jamais multiplié par `multiplierFor` : c'est un forfait, pas un gain de
+ * manche. Réglage de règle, pas de partie — n'apparaît donc pas dans `Setup`.
+ * Inutilisé tant que l'étape C n'est pas livrée.
+ */
+export const BONUS_PRIZE = 500
 
 export const HUMAN_ID = asPlayerId('you')
 export const HUMAN_NAME = 'Vous'
@@ -50,7 +56,7 @@ export function configFrom(setup: Setup): GameConfig {
     roundCount: clamp(setup.roundCount, MIN_ROUNDS, MAX_ROUNDS),
     vowelCost: VOWEL_COST,
     minRoundPrize: MIN_ROUND_PRIZE,
-    resolveEnabled: setup.resolveEnabled,
+    bonusPrize: BONUS_PRIZE,
   }
 }
 

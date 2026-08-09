@@ -22,11 +22,13 @@ afterEach(() => {
 })
 
 describe('SettingsRoute', () => {
-  it('sans clé enregistrée, annonce que « Résoudre » restera indisponible', () => {
+  it('sans clé enregistrée, rassure : le jeu se joue entièrement sans', () => {
     monterApp('/reglages')
 
     expect(
-      screen.getByText('Aucune clé enregistrée : « Résoudre » reste indisponible.'),
+      screen.getByText(
+        'Aucune clé enregistrée. Le jeu se joue entièrement sans : cette clé ne sert qu’à tester l’accès à Mistral, si vous en enregistrez une.',
+      ),
     ).toBeInTheDocument()
   })
 
@@ -56,13 +58,17 @@ describe('SettingsRoute', () => {
     await user.type(input, 'sk-une-cle-1234')
     await user.click(screen.getByRole('button', { name: 'Enregistrer la clé' }))
     expect(
-      screen.queryByText('Aucune clé enregistrée : « Résoudre » reste indisponible.'),
+      screen.queryByText(
+        'Aucune clé enregistrée. Le jeu se joue entièrement sans : cette clé ne sert qu’à tester l’accès à Mistral, si vous en enregistrez une.',
+      ),
     ).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Effacer la clé' }))
 
     expect(
-      screen.getByText('Aucune clé enregistrée : « Résoudre » reste indisponible.'),
+      screen.getByText(
+        'Aucune clé enregistrée. Le jeu se joue entièrement sans : cette clé ne sert qu’à tester l’accès à Mistral, si vous en enregistrez une.',
+      ),
     ).toBeInTheDocument()
   })
 
@@ -143,7 +149,9 @@ describe('SettingsRoute', () => {
       expect(loadMistralKey()).toBeNull()
     })
     expect(
-      screen.getByText('Aucune clé enregistrée : « Résoudre » reste indisponible.'),
+      screen.getByText(
+        'Aucune clé enregistrée. Le jeu se joue entièrement sans : cette clé ne sert qu’à tester l’accès à Mistral, si vous en enregistrez une.',
+      ),
     ).toBeInTheDocument()
     /*
      * Le rechargement fait partie du contrat, ce n'est pas un détail

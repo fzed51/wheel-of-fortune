@@ -1,4 +1,3 @@
-import { prefilter } from './prefilter'
 import type { Judge, JudgeErrorReason, JudgeInput, JudgeResult } from './judge'
 
 /**
@@ -191,14 +190,6 @@ export function createMistralJudge(opts: MistralOptions): Judge {
 
   return {
     async judge(input: JudgeInput): Promise<JudgeResult> {
-      // Le pré-filtre tranche seul les cas non ambigus, sans jamais toucher
-      // au réseau : moins de latence, moins de coût, et surtout moins de
-      // surface d'injection de prompt exposée.
-      const pre = prefilter(input.attempt, input.answer)
-      if (pre.kind === 'decided') {
-        return { kind: 'verdict', correct: pre.correct }
-      }
-
       const sentinel = randomSentinel()
       const attempt = sanitize(input.attempt, 120)
       const answer = sanitize(input.answer, 120)

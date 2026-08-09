@@ -11,9 +11,10 @@
  * unions recopiées finiraient par diverger d'un membre — celui-là même qu'on
  * oublierait alors de traduire.
  *
- * Ces quatre valeurs sont exactement celles que porte `resolve/failed` : le
- * reducer et le juge partagent la même liste, sans quoi le driver aurait à
- * traduire l'une vers l'autre.
+ * Ces quatre valeurs sont exactement celles de `JudgeFailureReason`, dans
+ * `game/announce.ts` : le moteur ne pouvant pas importer `llm/`, la liste y est
+ * recopiée, et les deux doivent rester identiques membre pour membre — sans quoi
+ * le driver aurait à traduire l'une vers l'autre.
  */
 export type JudgeErrorReason = 'network' | 'timeout' | 'bad-response' | 'unauthorized'
 

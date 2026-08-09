@@ -20,7 +20,7 @@ function round(answer: string, guessed: readonly Letter[]): RoundState {
     category: 'Test',
     source: 'pack',
   }
-  return { index: 0, puzzle, guessed, phase: { kind: 'awaiting-action' } }
+  return { index: 0, puzzle, guessed, phase: { kind: 'awaiting-action' }, passes: 0 }
 }
 
 describe('letterOf', () => {

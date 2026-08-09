@@ -21,17 +21,5 @@ export type GameAction =
   | { readonly type: 'letter/consonant'; readonly by: PlayerId; readonly letter: Consonant }
   | { readonly type: 'letter/buy-vowel'; readonly by: PlayerId; readonly letter: Vowel }
   | { readonly type: 'turn/pass'; readonly by: PlayerId }
-  | {
-      readonly type: 'resolve/start'
-      readonly by: PlayerId
-      readonly attempt: string
-      readonly requestId: string
-    }
-  | { readonly type: 'resolve/verdict'; readonly requestId: string; readonly correct: boolean }
-  | {
-      readonly type: 'resolve/failed'
-      readonly requestId: string
-      readonly reason: 'network' | 'timeout' | 'bad-response' | 'unauthorized'
-    }
+  | { readonly type: 'resolve/attempt'; readonly by: PlayerId; readonly attempt: string }
   | { readonly type: 'round/next'; readonly puzzle: Puzzle; readonly firstPlayer: number }
-  | { readonly type: 'config/set-resolve-enabled'; readonly enabled: boolean }

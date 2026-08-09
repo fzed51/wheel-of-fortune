@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  BOT_ATTEMPT,
-  BOT_EASY_RESOLVE_HANDICAP,
-  botResolveIsCorrect,
-  botTurnKey,
-  decideBotAction,
-} from './bot'
+import { BOT_EASY_RESOLVE_HANDICAP, botTurnKey, decideBotAction } from './bot'
 import { initialState, reduce } from './engine'
 import { CONSONANTS } from './puzzle'
 import { createRng } from './rng'
@@ -18,6 +12,7 @@ import {
   avecPot,
   bot,
   cash,
+  courant,
   demarrer,
   enigme,
   jeu,
@@ -32,16 +27,17 @@ const ENIGMES = ['le vent', 'mon chat', 'la mer', 'au revoir', 'bonne nuit'] as 
 
 /**
  * Driver de test : il ne décide rien du jeu, il ne fait que ce qu'un vrai driver
- * fera — régler la rotation, rendre un verdict, enchaîner les manches — et laisse
- * toutes les décisions au bot.
+ * fera — régler la rotation, enchaîner les manches — et laisse toutes les
+ * décisions au bot. `resolve/attempt` n'a plus de traitement à part : il
+ * emprunte le même chemin de reducer qu'un humain, il n'y a donc plus de
+ * verdict à rendre séparément ici.
  */
 function partieAutomatique(
   seed: number,
   players: readonly Player[],
-  resolveEnabled: boolean,
 ): { pas: number; state: GameState } {
   const rng = createRng(seed)
-  let state = demarrer({ players, config: { resolveEnabled } })
+  let state = demarrer({ players })
   let pas = 0
 
   while (jeu(state).progress.kind !== 'game-over') {
@@ -76,23 +72,13 @@ function partieAutomatique(
       })
       continue
     }
-    if (phase.kind === 'resolving') {
-      // Le verdict est rendu par le driver, jamais par le bot : côté reducer, un
-      // bot et un humain empruntent exactement le même chemin.
-      state = reduce(state, {
-        type: 'resolve/verdict',
-        requestId: phase.requestId,
-        correct: rng() < 0.4,
-      })
-      continue
-    }
     if (phase.kind === 'blocked') {
       state = reduce(state, suivante())
       continue
     }
 
     const legales = legalActions(game)
-    const action = decideBotAction(game, rng, { spinId: pas, requestId: `req-${pas}` })
+    const action = decideBotAction(game, rng, { spinId: pas })
     expect(action, `bot sans décision alors que ${legales.join(', ')} est légal`).not.toBeNull()
     if (action === null) throw new Error('bot sans décision')
 
@@ -106,27 +92,16 @@ function partieAutomatique(
 }
 
 describe('parties entièrement pilotées par des bots', () => {
-  it('vont au bout sans jamais rester sans décision, avec juge', () => {
+  it('vont au bout sans jamais rester sans décision', () => {
     for (let seed = 1; seed <= 50; seed += 1) {
-      const { state } = partieAutomatique(seed, [bot('Bot 1'), bot('Bot 2', 'easy')], true)
-      expect(jeu(state).history).toHaveLength(3)
-    }
-  })
-
-  it('vont au bout sans juge, où seules les lettres font avancer la partie', () => {
-    for (let seed = 1; seed <= 50; seed += 1) {
-      const { state } = partieAutomatique(seed, [bot('Bot 1'), bot('Bot 2', 'easy')], false)
+      const { state } = partieAutomatique(seed, [bot('Bot 1'), bot('Bot 2', 'easy')])
       expect(jeu(state).history).toHaveLength(3)
     }
   })
 
   it('vont au bout à trois bots, dont un facile', () => {
     for (let seed = 1; seed <= 20; seed += 1) {
-      const { state } = partieAutomatique(
-        seed,
-        [bot('Bot 1'), bot('Bot 2', 'easy'), bot('Bot 3')],
-        true,
-      )
+      const { state } = partieAutomatique(seed, [bot('Bot 1'), bot('Bot 2', 'easy'), bot('Bot 3')])
       expect(jeu(state).history).toHaveLength(3)
     }
   })
@@ -137,7 +112,7 @@ describe('décisions figées', () => {
 
   it('un bot normal descend les fréquences du français', () => {
     const state = tourner(demarrer({ players: [bot('Bot')], answer: 'le vent' }), cash(500))
-    const action = decideBotAction(jeu(state), constant, { spinId: 1, requestId: 'r1' })
+    const action = decideBotAction(jeu(state), constant, { spinId: 1 })
     expect(action).toEqual({
       type: 'letter/consonant',
       by: currentPlayerOf(jeu(state)).id,
@@ -150,51 +125,62 @@ describe('décisions figées', () => {
       demarrer({ players: [bot('Bot', 'easy')], answer: 'le vent' }),
       cash(500),
     )
-    const action = decideBotAction(jeu(state), createRng(7), { spinId: 1, requestId: 'r1' })
+    const action = decideBotAction(jeu(state), createRng(7), { spinId: 1 })
     expect(action?.type).toBe('letter/consonant')
     if (action?.type === 'letter/consonant') {
       expect(remainingConsonants(manche(state))).toContain(action.letter)
     }
   })
 
-  it('ne tente jamais de résoudre sans juge configuré', () => {
-    // Quatre lettres sur cinq révélées : un bot avec juge répondrait ici.
-    const state = avecLettres(
-      demarrer({ players: [bot('Bot')], answer: 'le vent', config: { resolveEnabled: false } }),
-      ['L', 'V', 'N', 'T'],
-    )
-    const action = decideBotAction(jeu(state), constant, { spinId: 3, requestId: 'r1' })
+  it('ne tente pas de résoudre avant le seuil d’avancement, et tourne la roue à la place', () => {
+    // « LE VENT » : 5 lettres distinctes, 3 révélées (E et T manquent) => 0,6 < 0,7.
+    const state = avecLettres(demarrer({ players: [bot('Bot')], answer: 'le vent' }), [
+      'L',
+      'V',
+      'N',
+    ])
+    const action = decideBotAction(jeu(state), constant, { spinId: 3 })
     expect(action?.type).toBe('wheel/spin')
   })
 
-  it('répond dès que l’énigme est assez avancée', () => {
-    const state = avecLettres(
-      demarrer({ players: [bot('Bot')], answer: 'le vent', config: { resolveEnabled: true } }),
-      ['L', 'V', 'N', 'T'],
-    )
-    const action = decideBotAction(jeu(state), constant, { spinId: 3, requestId: 'r9' })
+  it('propose resolve/attempt, exactement la réponse, une fois le seuil d’avancement atteint', () => {
+    // 4 lettres sur 5 révélées => 0,8 >= 0,7 : le bot tente, et sa tentative est
+    // la vraie solution — jamais un texte de remplacement, condition sine qua
+    // non pour que `botTurnKey` reparte après le coup (voir le commentaire de
+    // `decideBotAction` dans `bot.ts`).
+    const state = avecLettres(demarrer({ players: [bot('Bot')], answer: 'le vent' }), [
+      'L',
+      'V',
+      'N',
+      'T',
+    ])
+    const action = decideBotAction(jeu(state), constant, { spinId: 3 })
     expect(action).toEqual({
-      type: 'resolve/start',
+      type: 'resolve/attempt',
       by: currentPlayerOf(jeu(state)).id,
-      attempt: BOT_ATTEMPT,
-      requestId: 'r9',
+      attempt: manche(state).puzzle.answer,
     })
   })
 
-  it('ne divulgue pas la solution dans sa tentative', () => {
-    const state = avecLettres(
-      demarrer({ players: [bot('Bot')], answer: 'le vent' }),
-      ['L', 'V', 'N', 'T'],
-    )
-    const action = decideBotAction(jeu(state), constant, { spinId: 3, requestId: 'r1' })
-    if (action?.type === 'resolve/start') {
-      expect(action.attempt).not.toContain('VENT')
-    }
+  it('un bot facile résiste plus qu’un bot normal, à avancement et tirage identiques', () => {
+    const avancement = ['L', 'V', 'N', 'T'] as const
+    const normal = avecLettres(demarrer({ players: [bot('Bot')], answer: 'le vent' }), [
+      ...avancement,
+    ])
+    const facile = avecLettres(demarrer({ players: [bot('Bot', 'easy')], answer: 'le vent' }), [
+      ...avancement,
+    ])
+    const avancement08 = 0.8
+    // Sous le seuil facile (0,85), mais au-dessus du seuil normal (0,7) une fois
+    // le tirage handicapé pris en compte.
+    const rng = () => (avancement08 + avancement08 * BOT_EASY_RESOLVE_HANDICAP) / 2
+    expect(decideBotAction(jeu(normal), rng, { spinId: 1 })?.type).toBe('resolve/attempt')
+    expect(decideBotAction(jeu(facile), rng, { spinId: 1 })?.type).not.toBe('resolve/attempt')
   })
 
   it('achète une voyelle quand il a de la marge et la manche est jeune', () => {
     const state = avecPot(demarrer({ players: [bot('Bot')], answer: 'le vent' }), 0, 500)
-    const action = decideBotAction(jeu(state), constant, { spinId: 1, requestId: 'r1' })
+    const action = decideBotAction(jeu(state), constant, { spinId: 1 })
     expect(action).toEqual({
       type: 'letter/buy-vowel',
       by: currentPlayerOf(jeu(state)).id,
@@ -202,43 +188,35 @@ describe('décisions figées', () => {
     })
   })
 
-  it('résout à contrecœur plutôt que de laisser la partie se figer', () => {
+  it('passe la main plutôt que de tenter une résolution à l’aveugle, quand il ne lui reste que ça de théoriquement légal', () => {
     // « OUI » n'a aucune consonne : toutes proposées, la roue ne sert plus à rien
-    // et la cagnotte est vide. Seule la résolution reste légale, très en dessous
-    // du seuil de stratégie.
-    const state = avecLettres(
-      demarrer({ players: [bot('Bot')], answer: 'oui', config: { resolveEnabled: true } }),
-      [...CONSONANTS],
-    )
-    expect(legalActions(jeu(state))).toEqual(['resolve/start'])
-    const action = decideBotAction(jeu(state), constant, { spinId: 1, requestId: 'r1' })
-    expect(action?.type).toBe('resolve/start')
-  })
-
-  it('passe la main quand il n’a plus rien du tout', () => {
-    const state = avecLettres(
-      demarrer({ players: [bot('Bot 1'), bot('Bot 2')], config: { resolveEnabled: false } }),
-      [...CONSONANTS],
-    )
-    expect(legalActions(jeu(state))).toEqual(['turn/pass'])
-    expect(decideBotAction(jeu(state), constant, { spinId: 1, requestId: 'r1' })?.type).toBe(
-      'turn/pass',
-    )
+    // et la cagnotte est vide. `resolve/attempt` reste légal — il l'est toujours
+    // en `awaiting-action` — mais l'avancement est nul : le bot n'a rien deviné
+    // et ne soumet pas de réponse au hasard. `turn/pass` reste la seule issue
+    // qu'il emprunte, jamais `null`.
+    const state = avecLettres(demarrer({ players: [bot('Bot 1'), bot('Bot 2')], answer: 'oui' }), [
+      ...CONSONANTS,
+    ])
+    expect(legalActions(jeu(state))).toEqual(['resolve/attempt', 'turn/pass'])
+    expect(decideBotAction(jeu(state), constant, { spinId: 1 })).toEqual({
+      type: 'turn/pass',
+      by: currentPlayerOf(jeu(state)).id,
+    })
   })
 
   it('ne joue jamais à la place d’un humain', () => {
     const state = demarrer({ players: [joueur('Alice'), bot('Bot')], firstPlayer: 0 })
-    expect(decideBotAction(jeu(state), constant, { spinId: 1, requestId: 'r1' })).toBeNull()
+    expect(decideBotAction(jeu(state), constant, { spinId: 1 })).toBeNull()
   })
 
-  it('ne décide rien pendant une rotation ou une attente de verdict', () => {
+  it('ne décide rien pendant une rotation de la roue', () => {
     const state = demarrer({ players: [bot('Bot')] })
     const lance = reduce(state, {
       type: 'wheel/spin',
       by: currentPlayerOf(jeu(state)).id,
       spin: { index: cash(500), offset: 0, spinId: 1 },
     })
-    expect(decideBotAction(jeu(lance), constant, { spinId: 2, requestId: 'r1' })).toBeNull()
+    expect(decideBotAction(jeu(lance), constant, { spinId: 2 })).toBeNull()
   })
 })
 
@@ -248,13 +226,15 @@ describe('botTurnKey', () => {
   })
 
   it('vaut null quand la manche vient de se terminer', () => {
-    const state = resoudre(demarrer({ players: [bot('Bot')], config: { roundCount: 1 } }), true)
+    const depart = demarrer({ players: [bot('Bot')], config: { roundCount: 1 } })
+    const state = resoudre(depart, manche(depart).puzzle.answer)
     expect(jeu(state).progress.kind).toBe('round-over')
     expect(botTurnKey(state)).toBeNull()
   })
 
   it('vaut null quand la partie est terminée', () => {
-    const apres = resoudre(demarrer({ players: [bot('Bot')], config: { roundCount: 1 } }), true)
+    const depart = demarrer({ players: [bot('Bot')], config: { roundCount: 1 } })
+    const apres = resoudre(depart, manche(depart).puzzle.answer)
     const fini = jouer(apres, {
       type: 'round/next',
       puzzle: enigme('la mer'),
@@ -274,15 +254,6 @@ describe('botTurnKey', () => {
       kind: 'spinning',
       segment: { kind: 'cash', index: 0, value: 100 },
       spin: { index: 0, offset: 0, spinId: 1 },
-    })
-    expect(botTurnKey(state)).toBeNull()
-  })
-
-  it('vaut null en attente de verdict', () => {
-    const state = avecPhase(demarrer({ players: [bot('Bot')] }), {
-      kind: 'resolving',
-      attempt: 'x',
-      requestId: 'r',
     })
     expect(botTurnKey(state)).toBeNull()
   })
@@ -328,36 +299,21 @@ describe('botTurnKey', () => {
     const consonne = tourner(action, cash(500))
     expect(botTurnKey(consonne)).not.toBe(botTurnKey(action))
   })
-})
 
-describe('botResolveIsCorrect', () => {
-  it('est faux pour un joueur humain, même avec un tirage favorable', () => {
-    const state = demarrer({ players: [joueur('Alice')], answer: 'le vent' })
-    expect(botResolveIsCorrect(jeu(state), () => 0)).toBe(false)
-  })
-
-  it('bascule au seuil, pour un bot normal', () => {
-    // « LE VENT » : 5 lettres distinctes, 4 révélées (E manque) => avancement 0,8.
-    const state = avecLettres(
-      demarrer({ players: [bot('Bot')], answer: 'le vent' }),
-      ['L', 'V', 'N', 'T'],
-    )
-    expect(botResolveIsCorrect(jeu(state), () => 0.79)).toBe(true)
-    expect(botResolveIsCorrect(jeu(state), () => 0.81)).toBe(false)
-  })
-
-  it('un bot facile échoue là où un bot normal réussit, à avancement et tirage identiques', () => {
-    const avancement = ['L', 'V', 'N', 'T'] as const
-    const normal = avecLettres(demarrer({ players: [bot('Bot')], answer: 'le vent' }), [
-      ...avancement,
-    ])
-    const facile = avecLettres(demarrer({ players: [bot('Bot', 'easy')], answer: 'le vent' }), [
-      ...avancement,
-    ])
-    const avancement08 = 0.8
-    // Sous le seuil normal (0,8) mais au-dessus du seuil facile, handicapé.
-    const rng = () => (avancement08 + avancement08 * BOT_EASY_RESOLVE_HANDICAP) / 2
-    expect(botResolveIsCorrect(jeu(normal), rng)).toBe(true)
-    expect(botResolveIsCorrect(jeu(facile), rng)).toBe(false)
+  it('change de valeur autour d’une résolution ratée d’un bot : c’est ce qui empêche la partie de se figer', () => {
+    // Deux bots, pour que le siège change réellement après l'échec : avec un
+    // seul joueur, `rotation(seat + 1, 1)` reboucle sur le même siège et rien
+    // ne distinguerait la clé — précisément le piège que `resolve/attempt`
+    // évite en ne soumettant jamais sciemment une réponse fausse (voir
+    // `decideBotAction`). Ce test rejoue l'action par le vrai reducer, pas une
+    // fixture à la main, pour éprouver la garantie sur le chemin réel.
+    const state = demarrer({ players: [bot('Bot 1'), bot('Bot 2')] })
+    const avant = botTurnKey(state)
+    const apres = reduce(state, {
+      type: 'resolve/attempt',
+      by: courant(state).id,
+      attempt: 'réponse fausse',
+    })
+    expect(botTurnKey(apres)).not.toBe(avant)
   })
 })

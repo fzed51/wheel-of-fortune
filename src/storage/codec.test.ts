@@ -80,7 +80,24 @@ describe('decodeGame', () => {
     ['total fractionnaire', (g) => (g.players[0].total = 12.5)],
     ['niveau de bot inconnu', (g) => (g.players[0].kind = { type: 'bot', level: 'expert' })],
     ['zéro manche', (g) => (g.config.roundCount = 0)],
+    [
+      // `bonusPrize` a remplacé `resolveEnabled` : un enregistrement qui ne le
+      // porte plus vient d'une version antérieure au refactor des règles.
+      'config sans bonusPrize',
+      (g) => {
+        delete g.config.bonusPrize
+      },
+    ],
     ['manche au-delà du compte', (g) => (g.progress.round.index = 3)],
+    [
+      // Sans ce compteur, un rechargement en cours de tour de table redonnerait
+      // un tour gratuit à tout joueur déjà passé.
+      'passes manquant',
+      (g) => {
+        delete g.progress.round.passes
+      },
+    ],
+    ['passes non numérique', (g) => (g.progress.round.passes = 'zéro')],
     ['résumé de manche abîmé', (g) => (g.history = [{ ...g.progress.round, outcome: null }])],
     [
       // Résumé valide, mais une manche de plus que l'index courant : l'historique

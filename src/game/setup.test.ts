@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  BONUS_PRIZE,
   HUMAN_ID,
   MAX_OPPONENTS,
   MAX_ROUNDS,
@@ -11,16 +12,16 @@ import {
 } from './setup'
 import type { Setup } from './setup'
 
-const BASE: Setup = { roundCount: 3, opponents: 0, botLevel: 'normal', resolveEnabled: false }
+const BASE: Setup = { roundCount: 3, opponents: 0, botLevel: 'normal' }
 
 describe('configFrom', () => {
-  it('reprend le nombre de manches et le juge, fige le reste', () => {
-    const config = configFrom({ ...BASE, roundCount: 5, resolveEnabled: true })
+  it('reprend le nombre de manches, fige le reste dont le forfait bonus', () => {
+    const config = configFrom({ ...BASE, roundCount: 5 })
     expect(config).toEqual({
       roundCount: 5,
       vowelCost: VOWEL_COST,
       minRoundPrize: MIN_ROUND_PRIZE,
-      resolveEnabled: true,
+      bonusPrize: BONUS_PRIZE,
     })
   })
 

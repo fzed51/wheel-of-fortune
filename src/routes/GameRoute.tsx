@@ -8,14 +8,7 @@ import ResolveDialog from '../components/ResolveDialog'
 import Scoreboard from '../components/Scoreboard'
 import Wheel from '../components/Wheel'
 import { BUTTON_PRIMARY, CARD } from '../components/classes'
-import {
-  useCurrentPlayer,
-  useGame,
-  useGameCommands,
-  useJudgeFailure,
-  useLastEvent,
-  useRound,
-} from '../context/selectors'
+import { useCurrentPlayer, useGame, useGameCommands, useLastEvent, useRound } from '../context/selectors'
 import { announcePuzzle, formatEuros } from '../game/announce'
 import {
   canResolve,
@@ -26,7 +19,7 @@ import {
   multiplierFor,
   revealedLetters,
 } from '../game/rules'
-import type { Game } from '../game/types'
+import type { Game, RoundState } from '../game/types'
 import { usePhysicalKeyboard } from '../hooks/usePhysicalKeyboard'
 
 /**
@@ -49,6 +42,16 @@ function roundOverMessage(game: Game): string {
 }
 
 /**
+ * Phrase de la carte « manche bloquée » : tous les joueurs ont passé la main
+ * d'affilée (`round.passes` a atteint `players.length`), la manche s'arrête
+ * sans gagnant. On révèle la réponse ici — le joueur qui vient de buter dessus
+ * veut savoir ce qu'il cherchait.
+ */
+function blockedRoundMessage(round: RoundState): string {
+  return `Personne n'a trouvé, la manche s'arrête sans gagnant. Réponse : ${round.puzzle.answer}.`
+}
+
+/**
  * Écran de jeu : assemble le plateau, le clavier, les scores et les commandes.
  * Aucune règle n'y est réécrite — tous les prédicats viennent de `game/rules.ts`.
  * La redirection de fin de partie est rendue en JSX, jamais appelée dans un effet.
@@ -58,32 +61,13 @@ export default function GameRoute() {
   const round = useRound()
   const player = useCurrentPlayer()
   const { playLetter, spin, pass, nextRound, settleSpin, resolve } = useGameCommands()
-  const judgeFailure = useJudgeFailure()
   const lastEvent = useLastEvent()
 
   // La boîte est un élément d'interface, pas un état de partie : le reducer
-  // n'a aucune raison de savoir qu'un dialogue est affiché.
+  // n'a aucune raison de savoir qu'un dialogue est affiché. `ResolveDialog` se
+  // ferme désormais lui-même à la soumission (verdict synchrone, plus d'attente
+  // à piloter depuis ici) : ce booléen ne fait plus qu'ouvrir la boîte.
   const [resolveOpen, setResolveOpen] = useState(false)
-
-  // Lu directement sur `round.phase`, jamais via une variable intermédiaire :
-  // TypeScript ne transporte pas le rétrécissement de `phase.kind` à travers
-  // un alias (déjà commenté ainsi plus bas dans ce fichier).
-  const pending = round !== null && round.phase.kind === 'resolving'
-
-  // Repli sur la valeur précédente comparée pendant le rendu — même motif que
-  // `PuzzleForm`/`ResolveDialog` — plutôt qu'un effet, qui coûterait un rendu
-  // de plus pendant lequel la boîte afficherait encore l'attente alors que la
-  // manche est déjà finie. On ne ferme qu'à la transition attente -> repos,
-  // et seulement si aucun échec technique n'a été posé : `GameProvider` pose
-  // `judgeFailure` et dispatche `resolve/failed` dans le même lot, les deux
-  // arrivent donc ensemble. Si le joueur ferme la boîte après un échec puis
-  // la rouvre, l'ancien message reste affiché jusqu'au prochain envoi — c'est
-  // assumé, le message reste vrai : le dernier essai a bien échoué.
-  const [prevPending, setPrevPending] = useState(pending)
-  if (pending !== prevPending) {
-    setPrevPending(pending)
-    if (prevPending && judgeFailure === null) setResolveOpen(false)
-  }
 
   // Refusée en silence si l'action est illégale : partie non nulle,
   // `canResolve(game)`, et pas le tour d'un bot. Nécessaire ici et pas
@@ -163,7 +147,6 @@ export default function GameRoute() {
           canSpin={canSpin(game) && !botTurn}
           canResolve={canResolve(game) && !botTurn}
           canPass={isStuck(game) && !botTurn}
-          resolveEnabled={game.config.resolveEnabled}
           vowelCost={game.config.vowelCost}
           spinning={round.phase.kind === 'spinning'}
           onSpin={spin}
@@ -175,8 +158,6 @@ export default function GameRoute() {
       {round !== null && (
         <ResolveDialog
           open={resolveOpen}
-          pending={pending}
-          failure={judgeFailure}
           // Le dialogue modal masque le plateau : la catégorie est le seul
           // indice qui reste au joueur.
           category={round.puzzle.category}
@@ -189,6 +170,22 @@ export default function GameRoute() {
         <section className={CARD}>
           <h3 className="font-semibold text-fg">Manche terminée</h3>
           <p className="mt-1 text-fg-muted">{roundOverMessage(game)}</p>
+          <button
+            type="button"
+            className={`${BUTTON_PRIMARY} mt-3 min-h-11`}
+            onClick={() => {
+              nextRound()
+            }}
+          >
+            Manche suivante
+          </button>
+        </section>
+      )}
+
+      {round !== null && round.phase.kind === 'blocked' && (
+        <section className={CARD}>
+          <h3 className="font-semibold text-fg">Manche bloquée</h3>
+          <p className="mt-1 text-fg-muted">{blockedRoundMessage(round)}</p>
           <button
             type="button"
             className={`${BUTTON_PRIMARY} mt-3 min-h-11`}

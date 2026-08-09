@@ -13,6 +13,7 @@ import {
   jeu,
   jouer,
   joueur,
+  manche,
   partieTerminee,
   proposer,
   resoudre,
@@ -55,28 +56,10 @@ describe('toPersisted', () => {
     })
   })
 
-  it('ramène une résolution en cours à l’attente d’action, sans rien coûter', () => {
-    const enAttente = avecPot(demarrer(), 0, 1200)
-    const by = courant(enAttente).id
-    const game = jeu(
-      jouer(enAttente, { type: 'resolve/start', by, attempt: 'LE VENT', requestId: 'req-42' }),
-    )
-    const persisted = toPersisted(game)
-
-    expect(persisted.progress).toMatchObject({
-      kind: 'round',
-      currentPlayer: 0,
-      round: { phase: { kind: 'awaiting-action' } },
-    })
-    expect(persisted.players[0]?.pot).toBe(1200)
-  })
-
   it('conserve une manche bloquée, qui est un état stable', () => {
-    // Solo, sans juge, toutes les consonnes proposées : plus rien n'est jouable.
-    const state = avecLettres(
-      demarrer({ players: [joueur('Solo')], config: { resolveEnabled: false } }),
-      [...CONSONANTS],
-    )
+    // Solo, toutes les consonnes proposées, voyelle inabordable (pot à zéro) :
+    // « Passer » devient légal, et une seule passe suffit à bloquer un solo.
+    const state = avecLettres(demarrer({ players: [joueur('Solo')] }), [...CONSONANTS])
     const bloque = jeu(reduce(state, { type: 'turn/pass', by: courant(state).id }))
 
     expect(bloque.progress).toMatchObject({ kind: 'round', round: { phase: { kind: 'blocked' } } })
@@ -98,9 +81,23 @@ describe('fromPersisted', () => {
   })
 
   it('reconstitue une manche terminée', () => {
-    const game = jeu(resoudre(demarrer(), true))
+    const game = jeu(resoudre(demarrer(), 'le vent'))
     expect(game.progress.kind).toBe('round-over')
     expect(fromPersisted(toPersisted(game))).toEqual(game)
+  })
+
+  it('conserve `passes`, aller-retour compris', () => {
+    // Aucune `Phase` ne porte ce compteur : une régression qui l'oublierait
+    // dans `copyPhase`/`shell` ne bloquerait une manche que bien plus tard,
+    // jamais dès le rechargement qui suit la première passe.
+    const state = avecLettres(demarrer(), [...CONSONANTS])
+    const passe = reduce(state, { type: 'turn/pass', by: courant(state).id })
+
+    expect(manche(passe).passes).toBe(1)
+    expect(fromPersisted(toPersisted(jeu(passe))).progress).toMatchObject({
+      kind: 'round',
+      round: { passes: 1 },
+    })
   })
 
   it('reconstitue une partie terminée', () => {

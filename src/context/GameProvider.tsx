@@ -16,9 +16,8 @@ import { useAnnouncer } from '../hooks/useAnnouncer'
 import { useGameEffects } from '../hooks/useGameEffects'
 import { usePuzzles } from '../hooks/usePuzzles'
 import { useSettings } from '../hooks/useSettings'
-import { createJudge } from '../llm'
 import type { JudgeErrorReason } from '../llm/judge'
-import { loadGame, loadMistralKey } from '../storage/persist'
+import { loadGame } from '../storage/persist'
 import { GameCommandsContext, GameStateContext, JudgeFailureContext, LastEventContext } from './selectors'
 import type { GameCommands } from './selectors'
 
@@ -35,7 +34,7 @@ function initGameState(): GameState {
 
 export function GameProvider({ children }: { readonly children: ReactNode }) {
   const [state, rawDispatch] = useReducer(reduce, undefined, initGameState)
-  const { settings, hasMistralKey } = useSettings()
+  const { settings } = useSettings()
   const { pool } = usePuzzles()
   const announcer = useAnnouncer()
 
@@ -47,12 +46,8 @@ export function GameProvider({ children }: { readonly children: ReactNode }) {
     roundCount: settings.roundCount,
     opponents: settings.opponents,
     botLevel: settings.botLevel,
-    resolveEnabled: hasMistralKey,
   })
   const poolRef = useRef(pool)
-  // Réglages courants pour la fabrique du juge : seul le nom du modèle nous
-  // intéresse ici, la clé elle-même n'est jamais mise en ref, voir `getJudge`.
-  const settingsRef = useRef(settings)
 
   useEffect(() => {
     stateRef.current = state
@@ -63,17 +58,12 @@ export function GameProvider({ children }: { readonly children: ReactNode }) {
       roundCount: settings.roundCount,
       opponents: settings.opponents,
       botLevel: settings.botLevel,
-      resolveEnabled: hasMistralKey,
     }
-  }, [settings, hasMistralKey])
+  }, [settings])
 
   useEffect(() => {
     poolRef.current = pool
   }, [pool])
-
-  useEffect(() => {
-    settingsRef.current = settings
-  }, [settings])
 
   /*
    * Déclaré avant le dispatch enveloppé, qui appelle son `setLastEvent` : la
@@ -85,26 +75,27 @@ export function GameProvider({ children }: { readonly children: ReactNode }) {
   /**
    * Dispatch enveloppé : seul point du provider où `prev`, `action` et `next`
    * coexistent, donc seul endroit capable de produire les annonces. Un diff à
-   * deux états ne suffit pas : `resolve/failed` (juge en panne, la main ne
-   * bouge pas) et un verdict négatif en solo (la main « passe » au même siège,
-   * `settle` la lui rend aussitôt) produisent des états `prev`/`next`
-   * identiques mais des annonces opposées — d'où l'écart avec le plan initial,
-   * qui prévoyait ce calcul dans `useGameEffects`, lequel ne voit jamais
-   * l'action. Toute commande qui touche l'état doit passer par lui, jamais
-   * par `rawDispatch` en direct, sous peine de transitions muettes pour le
-   * lecteur d'écran.
+   * deux états ne suffit pas : `letter/consonant`, par exemple, porte la
+   * lettre jouée et l'identité de son auteur, deux informations qu'aucune
+   * comparaison de `prev` et `next` ne fait apparaître — le plateau ne dit pas
+   * quelle lettre vient d'être tentée quand elle est absente de la réponse, et
+   * le siège courant ne suffit pas à nommer l'auteur d'un coup qui a fait
+   * tourner la main. D'où l'écart avec le plan initial, qui prévoyait ce
+   * calcul dans `useGameEffects`, lequel ne voit jamais l'action (même
+   * justification dans `announceTransition`, voir `game/announce.ts`). Toute
+   * commande qui touche l'état doit passer par lui, jamais par `rawDispatch`
+   * en direct, sous peine de transitions muettes pour le lecteur d'écran.
    */
   const dispatch = useCallback(
     (action: GameAction) => {
       const prev = stateRef.current
       const next = reduce(prev, action) // le reducer est pur, un second appel est gratuit
       if (next !== prev) {
-        // Assignation synchrone : si un gestionnaire dispatche deux actions à la
-        // suite (le juge, par exemple, enchaîne `resolve/start` puis
-        // `resolve/verdict`), la seconde doit voir l'état intermédiaire, pas celui
-        // du dernier rendu commité. L'effet sur `state` réassigne la même valeur
-        // une fois le rendu passé ; c'est sans effet, gardé pour ne pas dupliquer
-        // ce point unique de vérité qu'est `stateRef`.
+        // Assignation synchrone : si un gestionnaire dispatchait deux actions
+        // coup sur coup, la seconde devrait voir l'état intermédiaire, pas
+        // celui du dernier rendu commité. L'effet sur `state` réassigne la
+        // même valeur une fois le rendu passé ; c'est sans effet, gardé pour
+        // ne pas dupliquer ce point unique de vérité qu'est `stateRef`.
         stateRef.current = next
         const announcement = announceTransition(prev, next, action)
         const { status, alert } = announcement
@@ -121,12 +112,6 @@ export function GameProvider({ children }: { readonly children: ReactNode }) {
     },
     [announcer],
   )
-
-  // Le juge peut apparaître ou disparaître en pleine partie, quand l'utilisateur
-  // saisit ou efface sa clé dans les Réglages. Le reducer no-ope si rien ne change.
-  useEffect(() => {
-    dispatch({ type: 'config/set-resolve-enabled', enabled: hasMistralKey })
-  }, [dispatch, hasMistralKey])
 
   // Créé à la première utilisation : `createRng(Date.now())` à chaque rendu serait
   // du travail perdu, et la graine n'a de sens qu'une fois par partie.
@@ -156,28 +141,14 @@ export function GameProvider({ children }: { readonly children: ReactNode }) {
     return `req-${requestIdRef.current}`
   }, [])
 
-  /**
-   * Fabrique du juge, appelée au dernier moment plutôt que conservée dans un
-   * state ou une ref longue durée : la clé ne survit alors que le temps d'un
-   * appel, dans la closure d'un juge éphémère, au lieu de rester à demeure
-   * dans un objet que les outils de développement affichent. `hasMistralKey`
-   * a déjà tranché sur la présence de la clé pour le reste de l'application ;
-   * `createJudge` retranche indépendamment, et renvoie `null` sans repli local
-   * si la clé a disparu entre-temps (effacée dans les Réglages, par exemple).
-   */
-  const getJudge = useCallback(
-    () => createJudge({ apiKey: loadMistralKey(), model: settingsRef.current.mistralModel }),
-    [],
-  )
-
-  // Dernier échec technique du juge, pour le seul consommateur qui doit
-  // l'afficher : voir la documentation de `JudgeFailureContext`. Remis à
-  // `null` par `resolve` avant chaque nouvelle tentative, pour qu'une
-  // ancienne panne ne reste pas affichée par-dessus un nouvel essai.
-  const [judgeFailure, setJudgeFailure] = useState<JudgeErrorReason | null>(null)
-  const onJudgeFailure = useCallback((reason: JudgeErrorReason) => {
-    setJudgeFailure(reason)
-  }, [])
+  // Dernier échec technique d'un juge, pour le seul consommateur qui doit
+  // l'afficher : voir la documentation de `JudgeFailureContext`. « Résoudre »
+  // ne consulte plus aucun juge — le verdict est un calcul synchrone du
+  // reducer — donc ce state n'a plus aucun producteur : `setJudgeFailure`
+  // n'est volontairement pas déstructuré ci-dessous, sous peine de lint sur
+  // une variable jamais lue. L'étape suivante (question bonus de la manche
+  // finale) le rebranche à l'identique.
+  const [judgeFailure] = useState<JudgeErrorReason | null>(null)
 
   const startGame = useCallback(
     (overrides: Partial<Setup> = {}) => {
@@ -283,11 +254,11 @@ export function GameProvider({ children }: { readonly children: ReactNode }) {
   }, [dispatch])
 
   /**
-   * Envoie une tentative de résolution au juge. Mêmes gardes que `spin` et pour
-   * les mêmes raisons : le clavier physique n'a pas d'attribut à griser, et un
-   * humain ne résout pas à la place d'un bot. `canResolve` de `rules.ts`
-   * tranche la légalité, cette commande ne fait que relayer la demande —
-   * `useGameEffects` s'occupe d'appeler le juge et de dispatcher le verdict.
+   * Dispatche directement une tentative de résolution : le verdict est un
+   * calcul synchrone du reducer (`matchesAnswer`), plus rien à relayer à un
+   * driver. Mêmes gardes que `spin` et pour les mêmes raisons : le clavier
+   * physique n'a pas d'attribut à griser, et un humain ne résout pas à la
+   * place d'un bot. `canResolve` de `rules.ts` tranche la légalité.
    */
   const resolve = useCallback(
     (attempt: string) => {
@@ -295,16 +266,11 @@ export function GameProvider({ children }: { readonly children: ReactNode }) {
       if (current.kind !== 'playing' || current.game.progress.kind !== 'round') return
       if (isBotTurn(current.game)) return
       if (!canResolve(current.game)) return
-      // Le joueur est lu sur `current.game` et non sur un alias : voir le
-      // commentaire de `settleSpin`.
       const player = current.game.players[current.game.progress.currentPlayer]
       if (player === undefined) return
-      // Une ancienne panne réseau ne doit pas rester affichée par-dessus ce
-      // nouvel essai.
-      setJudgeFailure(null)
-      dispatch({ type: 'resolve/start', by: player.id, attempt, requestId: newRequestId() })
+      dispatch({ type: 'resolve/attempt', by: player.id, attempt })
     },
-    [dispatch, newRequestId],
+    [dispatch],
   )
 
   const commands = useMemo<GameCommands>(
@@ -312,7 +278,7 @@ export function GameProvider({ children }: { readonly children: ReactNode }) {
     [startGame, nextRound, spin, settleSpin, playLetter, pass, resolve, dispatch],
   )
 
-  useGameEffects(state, dispatch, { rng, nextSpinId, newRequestId, getJudge, onJudgeFailure })
+  useGameEffects(state, dispatch, { rng, nextSpinId, newRequestId })
 
   return (
     <GameCommandsContext value={commands}>

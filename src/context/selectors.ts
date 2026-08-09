@@ -38,7 +38,11 @@ export interface GameCommands {
   readonly playLetter: (letter: Letter) => void
   /** Passe la main quand plus aucune action n'est possible. */
   readonly pass: () => void
-  /** Envoie une proposition au juge. Le verdict arrive par le driver, jamais d'ici. */
+  /**
+   * Tente de résoudre l'énigme : le verdict est immédiat et local, tranché par
+   * `matchesAnswer` (`game/compare.ts`) dans le reducer — aucun réseau, aucun
+   * juge à attendre.
+   */
   readonly resolve: (attempt: string) => void
   /** Sortie de secours pour les actions qui n'ont besoin d'aucune impureté. */
   readonly dispatch: (action: GameAction) => void
@@ -47,17 +51,19 @@ export interface GameCommands {
 export const GameCommandsContext = createContext<GameCommands | null>(null)
 
 /**
- * Dernier échec technique du juge (réseau, clé révoquée, réponse illisible), ou
- * `null` si la dernière tentative a abouti — verdict rendu ou aucune tentative
- * encore lancée. Écart au plan initial : le reducer ne conserve pas la raison
- * d'un `resolve/failed`, il se contente de ramener la phase à
- * `awaiting-action` sans pénalité, et les live regions du projet sont
- * `sr-only`. Sans ce contexte, un échec technique du juge n'a donc **aucun
- * chemin vers l'écran** : le joueur verrait sa boîte de dialogue se vider sans
- * explication. Valeur primitive, pas d'objet enveloppant : aucune
- * mémoïsation à faire, et `null` par défaut est déjà la bonne réponse hors
- * provider — contrairement à `useGameState`, ce lecteur n'a aucune raison de
- * lever pour « aucun échec ».
+ * Dernier échec technique d'un juge (réseau, clé révoquée, réponse illisible),
+ * ou `null` en l'absence d'échec. « Résoudre » ne consulte plus aucun juge —
+ * son verdict est un calcul synchrone du reducer, voir `resolve` ci-dessus —
+ * donc ce contexte n'a **aucun producteur** pour l'instant : `GameProvider`
+ * fournit toujours une valeur (`null`, immuable) pour que le type reste sûr,
+ * mais rien ne la fait jamais varier. Il attend la question bonus de la
+ * manche finale, seule fonctionnalité qui consultera encore un LLM et qui
+ * rebranchera ce canal vers l'écran pour ses pannes techniques (réseau, clé
+ * révoquée, réponse illisible) — ne pas le supprimer sous prétexte qu'il est
+ * inerte. Valeur primitive, pas d'objet enveloppant : aucune mémoïsation à
+ * faire, et `null` par défaut est déjà la bonne réponse hors provider —
+ * contrairement à `useGameState`, ce lecteur n'a aucune raison de lever pour
+ * « aucun échec ».
  */
 export const JudgeFailureContext = createContext<JudgeErrorReason | null>(null)
 

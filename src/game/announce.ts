@@ -22,8 +22,14 @@ export interface Announcement {
   readonly visible?: string
 }
 
-/** Raison d'échec du juge : `actions.ts` ne l'exporte pas comme type à part, on le dérive. */
-type ResolveFailedReason = Extract<GameAction, { readonly type: 'resolve/failed' }>['reason']
+/**
+ * Raisons d'échec technique d'un juge. Déclarée ici plutôt que dérivée d'une
+ * action, depuis que « Résoudre » ne consulte plus personne. Doit rester
+ * structurellement identique à `JudgeErrorReason` de `src/llm/judge.ts` :
+ * `game/` ne doit pas dépendre de `llm/`, sinon le moteur cesserait de se
+ * tester seul. Sans consommateur jusqu'à l'étape bonus — ne la supprimez pas.
+ */
+export type JudgeFailureReason = 'network' | 'timeout' | 'bad-response' | 'unauthorized'
 
 /**
  * Groupe les milliers par une espace insécable et accorde « euro » au
@@ -72,7 +78,7 @@ export function announceTurn(game: Game): string {
   return player.kind.type === 'human' ? 'À vous de jouer.' : `Au tour de ${player.name}.`
 }
 
-export function announceJudgeFailure(reason: ResolveFailedReason): string {
+export function announceJudgeFailure(reason: JudgeFailureReason): string {
   switch (reason) {
     case 'network':
       return 'Le juge est injoignable. Vérifiez votre connexion, puis réessayez.'
@@ -260,33 +266,23 @@ function buyVowelAnnouncement(prevGame: Game, nextGame: Game, letter: Vowel, by:
 }
 
 /**
- * `resolve/verdict` ne porte pas `by` : contrairement aux autres actions à
- * un seul auteur, l'auteur se retrouve via le joueur courant de `prevGame`,
- * inchangé depuis `resolve/start` puisque la phase « resolving » ne fait
- * tourner la main qu'au verdict lui-même.
+ * `resolve/attempt` termine toujours la manche quand la réponse est juste
+ * (`matchesAnswer`, tranché par le reducer) : `roundOverPhrase` couvre donc le
+ * seul cas correct. `by` vient directement de l'action, et non du joueur courant
+ * de `prevGame` : c'est ce qui permet de nommer l'auteur d'une tentative qui a
+ * fait tourner la main.
+ *
+ * `action.attempt` n'est **jamais** rendu ici : pour un bot, il vaut la
+ * solution (voir `game/bot.ts`), et l'écrire dans une annonce la divulguerait.
  */
-function verdictAnnouncement(prevGame: Game, nextGame: Game, correct: boolean): string {
-  if (!correct) {
-    const author = currentPlayerOf(prevGame)
-    const phrase =
-      author.kind.type === 'human'
-        ? 'Mauvaise réponse.'
-        : `Mauvaise réponse de ${author.name}.`
-    return withTurnAnnounce(phrase, prevGame, nextGame)
-  }
-  // Un verdict correct termine toujours la manche (`finishRound`) : jamais de phrase à part.
-  return roundOverPhrase(nextGame)
-}
-
-/**
- * Un bot ne consulte jamais le juge : `BOT_ATTEMPT` (voir `game/bot.ts`) est
- * un texte de remplacement interne, jamais une vraie réponse, et son verdict
- * est tiré par le driver sans appel réseau. « Envoyé au juge » serait donc
- * un mensonge pour un bot.
- */
-function resolveStartAnnouncement(game: Game, by: PlayerId): string {
-  const speaker = botSpeaker(game, by)
-  return speaker === null ? 'Proposition envoyée au juge.' : `${speaker.name} propose une réponse.`
+function resolveAttemptAnnouncement(prevGame: Game, nextGame: Game, by: PlayerId): string {
+  if (nextGame.progress.kind === 'round-over') return roundOverPhrase(nextGame)
+  const author = prevGame.players.find((candidate) => candidate.id === by)
+  const phrase =
+    author === undefined || author.kind.type === 'human'
+      ? 'Mauvaise réponse.'
+      : `Mauvaise réponse de ${author.name}.`
+  return withTurnAnnounce(phrase, prevGame, nextGame)
 }
 
 function passAnnouncement(prevGame: Game, nextGame: Game, by: PlayerId): string {
@@ -303,10 +299,6 @@ function passAnnouncement(prevGame: Game, nextGame: Game, by: PlayerId): string 
  */
 function heardAnnouncement(prev: GameState, next: GameState, action: GameAction): Announcement {
   if (next === prev) return { status: '', alert: '' }
-  if (action.type === 'config/set-resolve-enabled') return { status: '', alert: '' }
-  if (action.type === 'resolve/failed') {
-    return { status: '', alert: announceJudgeFailure(action.reason) }
-  }
   if (next.kind !== 'playing') return { status: '', alert: '' }
   const nextGame = next.game
 
@@ -323,10 +315,8 @@ function heardAnnouncement(prev: GameState, next: GameState, action: GameAction)
       return { status: consonantAnnouncement(prevGame, nextGame, action.letter, action.by), alert: '' }
     case 'letter/buy-vowel':
       return { status: buyVowelAnnouncement(prevGame, nextGame, action.letter, action.by), alert: '' }
-    case 'resolve/start':
-      return { status: resolveStartAnnouncement(nextGame, action.by), alert: '' }
-    case 'resolve/verdict':
-      return { status: verdictAnnouncement(prevGame, nextGame, action.correct), alert: '' }
+    case 'resolve/attempt':
+      return { status: resolveAttemptAnnouncement(prevGame, nextGame, action.by), alert: '' }
     case 'turn/pass':
       return { status: passAnnouncement(prevGame, nextGame, action.by), alert: '' }
     case 'round/next':
@@ -364,10 +354,12 @@ function alreadyOnScreen(next: GameState, action: GameAction): boolean {
 }
 
 /**
- * Diff de deux états, dépendant de l'action : `resolve/failed` (échec
- * technique, la main ne bouge pas) et un verdict négatif en solo produisent
- * des couples `(prev, next)` identiques mais des annonces opposées, d'où le
- * troisième paramètre obligatoire.
+ * Diff de deux états, dépendant de l'action : celle-ci porte la lettre jouée
+ * et l'identité de son auteur, deux informations qu'aucune comparaison de
+ * `prev` et `next` ne fait apparaître — le plateau ne dit pas quelle lettre
+ * vient d'être tentée quand elle est absente de la réponse, et le siège
+ * courant ne suffit pas à nommer l'auteur d'un coup qui a fait tourner la
+ * main. D'où le troisième paramètre obligatoire.
  *
  * Seul endroit où se décide le partage entre les deux publics : la phrase
  * entendue est calculée d'abord, sans rien savoir de l'écran, puis `visible`

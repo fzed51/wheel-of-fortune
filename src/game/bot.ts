@@ -3,7 +3,6 @@ import type { Rng } from './rng'
 import { pick } from './rng'
 import {
   canBuyVowel,
-  canResolve,
   canSpin,
   currentPlayerOf,
   isStuck,
@@ -28,20 +27,14 @@ const VOYELLES_PAR_FREQUENCE: readonly Vowel[] = ['E', 'A', 'I', 'U', 'O']
 
 /**
  * Ce que le bot ne peut pas inventer lui-même : un identifiant de rotation
- * monotone et un identifiant de requête. Ils viennent du driver, comme pour un
- * joueur humain — le reducer ne doit pas pouvoir distinguer les deux.
+ * monotone. Il vient du driver, comme pour un joueur humain — le reducer ne
+ * doit pas pouvoir distinguer les deux. `requestId` a disparu avec le juge
+ * LLM sur ce chemin : `resolve/attempt` ne part plus vers aucun réseau, il n'y
+ * a donc plus de requête à identifier.
  */
 export interface BotTicket {
   readonly spinId: number
-  readonly requestId: string
 }
-
-/**
- * Texte de tentative d'un bot. Il ne contient **jamais** la solution : l'état de
- * la partie est affiché, et y écrire la réponse la divulguerait au joueur.
- * C'est le driver qui décide si la tentative est bonne, via `resolve/verdict`.
- */
-export const BOT_ATTEMPT = 'tentative du bot'
 
 function choisirConsonne(round: RoundState, facile: boolean, rng: Rng): Consonant | null {
   const restantes = remainingConsonants(round)
@@ -56,16 +49,19 @@ function choisirVoyelle(round: RoundState): Vowel | null {
   return VOYELLES_PAR_FREQUENCE.find((letter) => restantes.includes(letter)) ?? restantes[0] ?? null
 }
 
+/** Un bot facile réussit moins souvent qu'un bot normal à avancement égal : voir `decideBotAction`. */
+export const BOT_EASY_RESOLVE_HANDICAP = 0.75
+
 /**
  * Décision d'un bot, **pure** et à aléa injecté. Les candidats sont exactement
  * ceux que `legalActions` autorise : le bot est donc structurellement incapable
  * de bloquer la partie, et ne renvoie `null` que là où il n'a rien à décider
- * (rotation en cours, verdict attendu, manche terminée) ou quand c'est à un
- * humain de jouer.
+ * (rotation en cours, manche terminée) ou quand c'est à un humain de jouer.
  *
- * Deux points d'équité avec le joueur : le bot respecte `config.resolveEnabled`
- * — sans juge configuré, personne ne résout — et il emprunte les mêmes actions,
- * donc le même chemin de code dans le reducer.
+ * Un seul point d'équité avec le joueur : le bot emprunte les mêmes actions
+ * que l'humain, donc le même chemin de code dans le reducer — `resolve/attempt`
+ * compris, dont le verdict est tranché par `matchesAnswer`, sans faveur ni
+ * pénalité pour un bot.
  */
 export function decideBotAction(game: Game, rng: Rng, ticket: BotTicket): GameAction | null {
   if (game.progress.kind !== 'round') return null
@@ -88,14 +84,26 @@ export function decideBotAction(game: Game, rng: Rng, ticket: BotTicket): GameAc
   const avancement = progressRatio(round)
   // Un bot facile attend d'en voir bien plus avant de se risquer à répondre.
   const seuilResolution = facile ? 0.85 : 0.7
-  const resoudre = (): GameAction => ({
-    type: 'resolve/start',
-    by,
-    attempt: BOT_ATTEMPT,
-    requestId: ticket.requestId,
-  })
-
-  if (canResolve(game) && avancement >= seuilResolution) return resoudre()
+  // Le bot ne tente que lorsqu'il « sait » : il tire d'abord s'il a trouvé, et
+  // ne propose alors QUE la vraie solution (`round.puzzle.answer`, jamais un
+  // texte de remplacement). Une tentative sciemment fausse laisserait
+  // `botTurnKey` identique avant et après l'action (mêmes `round.index`,
+  // `player.id`, `phase.kind`, `guessed.length`, `pot`) : l'effet du driver ne
+  // se replanifierait pas, et le bot resterait muet, la partie figée. Jusqu'ici
+  // seule la phase `resolving` interposait un `botTurnKey === null` entre deux
+  // décisions ; elle a disparu du contrat.
+  //
+  // Le bot facile garde un handicap multiplicatif : `decideBotAction` lui
+  // impose déjà un seuil de tentative plus haut (0,85 contre 0,7), sans lui il
+  // réussirait *plus* souvent qu'un bot normal, l'inverse de ce qu'annonce son
+  // nom.
+  const handicap = facile ? BOT_EASY_RESOLVE_HANDICAP : 1
+  if (avancement >= seuilResolution && rng() < avancement * handicap) {
+    // Cette action **contient la solution**. Elle n'est ni persistée ni
+    // rendue nulle part — à condition que `announce.ts` ne la laisse pas
+    // fuiter, ce qu'un test dédié vérifie.
+    return { type: 'resolve/attempt', by, attempt: round.puzzle.answer }
+  }
 
   // Acheter tôt : une voyelle révélée oriente les consonnes suivantes. On garde
   // de la marge pour ne pas se retrouver sans cagnotte.
@@ -111,15 +119,20 @@ export function decideBotAction(game: Game, rng: Rng, ticket: BotTicket): GameAc
     return { type: 'wheel/spin', by, spin: pickSpinOutcome(rng, ticket.spinId) }
   }
 
-  // À partir d'ici, tourner est impossible : on reprend tout ce qui reste, sans
-  // condition de stratégie. C'est ce qui garantit qu'une action légale n'est
-  // jamais laissée de côté, donc qu'aucune partie ne se figera sur un bot.
+  // À partir d'ici, tourner est impossible : la voyelle reste une option
+  // stratégique tant qu'elle est finançable, sans condition d'avancement — on
+  // ne laisse pas une marge ou un seuil de côté juste parce que la roue est
+  // hors jeu.
   if (canBuyVowel(game)) {
     const letter = choisirVoyelle(round)
     if (letter !== null) return { type: 'letter/buy-vowel', by, letter }
   }
 
-  if (canResolve(game)) return resoudre()
+  // Sortie de secours : plus aucune consonne à tirer, pas de voyelle
+  // abordable. Proposer la solution sans condition ferait gagner le bot à
+  // toutes les fins de manche serrées, alors que le tirage ci-dessus ne l'a
+  // pas jugé assez sûr de lui ; `isStuck` ne teste plus `canResolve` (voir
+  // `rules.ts`), donc `turn/pass` reste la seule issue légale ici.
   if (isStuck(game)) return { type: 'turn/pass', by }
 
   return null
@@ -160,29 +173,4 @@ export function botTurnKey(state: GameState): string | null {
   const player = currentPlayerOf(game)
   if (player.kind.type !== 'bot') return null
   return `${round.index}:${player.id}:${round.phase.kind}:${round.guessed.length}:${player.pot}`
-}
-
-/** Un bot facile réussit moins souvent qu'un bot normal à avancement égal : voir `botResolveIsCorrect`. */
-export const BOT_EASY_RESOLVE_HANDICAP = 0.75
-
-/**
- * Tirage du verdict d'une tentative de bot. Ce n'est pas le juge LLM qui
- * tranche — `BOT_ATTEMPT` est un texte de remplacement, l'envoyer à un juge
- * n'aurait aucun sens — c'est le driver qui décide, via ce tirage.
- *
- * La chance d'avoir trouvé est **la part de l'énigme que le bot voit** : il
- * reste faillible sans accéder à la solution ni introduire un niveau de
- * difficulté supplémentaire. Le handicap du bot facile est nécessaire parce
- * que `decideBotAction` lui impose déjà un seuil de tentative plus haut (0,85
- * contre 0,7) : sans lui, un bot facile réussirait *plus* souvent qu'un bot
- * normal, l'inverse de ce qu'annonce son nom.
- */
-export function botResolveIsCorrect(game: Game, rng: Rng): boolean {
-  if (game.progress.kind !== 'round') return false
-  const player = currentPlayerOf(game)
-  // Garde d'équité, échec fermé : un driver fautif ne doit pas pouvoir faire
-  // réussir un humain sans juge.
-  if (player.kind.type !== 'bot') return false
-  const handicap = player.kind.level === 'easy' ? BOT_EASY_RESOLVE_HANDICAP : 1
-  return rng() < progressRatio(game.progress.round) * handicap
 }
