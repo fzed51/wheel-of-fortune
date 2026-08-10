@@ -6,7 +6,7 @@ import { reduce } from '../game/engine'
 import type { Rng } from '../game/rng'
 import { bonusPlayerOf } from '../game/rules'
 import type { GameState, PlayerId } from '../game/types'
-import { SPIN_MS } from '../game/wheel'
+import { SPIN_MAX_MS } from '../game/wheel'
 import type { Judge, JudgeErrorReason } from '../llm/judge'
 import { clearGame, saveGame } from '../storage/persist'
 
@@ -149,9 +149,9 @@ export function useGameEffects(
 
   /**
    * Vrai chien de garde de la roue : filet, pas concurrent. Dans le cas normal,
-   * l'animation de `Wheel` a déjà appelé `settleSpin` avant `SPIN_MS + 500`, et
-   * le reducer voit un `spinId` déjà consommé — cet effet ne fait alors rien. Ce
-   * qu'il rattrape, c'est ce que l'animation ne peut pas garantir : onglet en
+   * l'animation de `Wheel` a déjà appelé `settleSpin` avant `SPIN_MAX_MS + 500`,
+   * et le reducer voit un `spinId` déjà consommé — cet effet ne fait alors rien.
+   * Ce qu'il rattrape, c'est ce que l'animation ne peut pas garantir : onglet en
    * arrière-plan dont la promesse de fin ne se résout qu'au retour, roue
    * démontée en pleine rotation, navigateur sans Web Animations API.
    */
@@ -159,7 +159,7 @@ export function useGameEffects(
     if (spinningId === null || spinnerId === null) return
     const timer = setTimeout(() => {
       dispatch({ type: 'wheel/settled', by: spinnerId, spinId: spinningId })
-    }, SPIN_MS + SPIN_WATCHDOG_MARGIN_MS)
+    }, SPIN_MAX_MS + SPIN_WATCHDOG_MARGIN_MS)
     return () => {
       clearTimeout(timer)
     }

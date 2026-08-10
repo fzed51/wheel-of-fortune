@@ -147,6 +147,7 @@ export default function GameRoute() {
 
       {round !== null && (
         <Wheel
+          angle={game.wheelAngle}
           // Lu directement sur `round.phase`, jamais via une variable
           // intermédiaire : TypeScript ne transporte pas le rétrécissement de
           // `phase.kind` à travers un alias.

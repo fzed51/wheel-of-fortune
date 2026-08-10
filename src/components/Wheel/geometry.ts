@@ -1,37 +1,9 @@
 import { SEGMENT_ANGLE, SEGMENT_COUNT } from '../../game/wheel'
-import type { SpinOutcome } from '../../game/types'
 
 /** Rayon extérieur du disque, dans le repère `viewBox="0 0 100 100"` centré en (50, 50). */
 const RADIUS = 48
 /** Rayon du texte des libellés, à l'intérieur du disque. */
 const LABEL_RADIUS = 36
-
-/** Normalise un angle en degrés dans `[0, 360)`, sans boucle `while`. */
-function normalizeDegrees(degrees: number): number {
-  return ((degrees % 360) + 360) % 360
-}
-
-/**
- * Angle de rotation horaire, dans `[0, 360)`, qui amène le point de tirage du
- * segment sous l'aiguille. `offset` décale à l'intérieur du segment.
- */
-export function seatAngle(out: SpinOutcome): number {
-  const center = out.index * SEGMENT_ANGLE + SEGMENT_ANGLE / 2
-  return normalizeDegrees(-(center + out.offset))
-}
-
-/**
- * Prochaine rotation **absolue**. Toujours strictement croissante et congruente
- * à `seatAngle(out)` modulo 360.
- */
-export function nextRotation(current: number, out: SpinOutcome, turns = 4): number {
-  const base = current + turns * 360
-  const target = seatAngle(out)
-  // Plus petit delta positif ou nul qui rend `base + delta` congruent à `target` (mod 360) :
-  // c'est ce qui garantit la stricte croissance même quand le tirage retombe sur le même segment.
-  const delta = normalizeDegrees(target - base)
-  return base + delta
-}
 
 /**
  * Convertit un angle mesuré depuis midi, sens horaire, en coordonnées du

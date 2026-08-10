@@ -1,54 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { SEGMENT_COUNT } from '../../game/wheel'
-import type { SpinOutcome } from '../../game/types'
-import { arcPath, labelAnchor, nextRotation, seatAngle } from './geometry'
-
-function outcomeFor(index: number, offset = 0): SpinOutcome {
-  return { index, offset, spinId: 1 }
-}
-
-describe('seatAngle', () => {
-  it('reste dans [0, 360) pour les 24 segments, aux deux bornes du décalage', () => {
-    for (let index = 0; index < SEGMENT_COUNT; index += 1) {
-      for (const offset of [6.5, -6.5]) {
-        const angle = seatAngle(outcomeFor(index, offset))
-        expect(angle).toBeGreaterThanOrEqual(0)
-        expect(angle).toBeLessThan(360)
-      }
-    }
-  })
-
-  it('vaut la valeur attendue pour le segment 0 sans décalage', () => {
-    expect(seatAngle(outcomeFor(0, 0))).toBeCloseTo(352.5)
-  })
-
-  it('vaut la valeur attendue pour le segment 6 sans décalage', () => {
-    expect(seatAngle(outcomeFor(6, 0))).toBeCloseTo(262.5)
-  })
-})
-
-describe('nextRotation', () => {
-  it('produit une rotation strictement croissante bornée par quatre tours', () => {
-    const current = 100
-    const rotation = nextRotation(current, outcomeFor(3, 2))
-    expect(rotation).toBeGreaterThanOrEqual(current + 1440)
-    expect(rotation).toBeLessThan(current + 1800)
-  })
-
-  it('est congruente à seatAngle modulo 360', () => {
-    const outcome = outcomeFor(11, -3)
-    const rotation = nextRotation(50, outcome)
-    const expected = seatAngle(outcome)
-    expect(rotation % 360).toBeCloseTo(expected)
-  })
-
-  it('avance la rotation d’exactement 1440° pour deux tirages successifs du même segment', () => {
-    const outcome = outcomeFor(5, 1)
-    const first = nextRotation(0, outcome)
-    const second = nextRotation(first, outcome)
-    expect(second - first).toBe(1440)
-  })
-})
+import { arcPath, labelAnchor } from './geometry'
 
 describe('arcPath', () => {
   it('fait démarrer le segment 0 exactement à (50, 2)', () => {

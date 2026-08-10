@@ -166,7 +166,7 @@ describe('GameRoute', () => {
   it('« Tourner » fait sortir la phase de spinning et ne fige pas la partie', async () => {
     // jsdom n'implémente pas `Element.prototype.animate` : `useWheelSpin`
     // dégrade alors vers un règlement différé d'environ 300 ms (bien avant le
-    // chien de garde de `useGameEffects`, qui n'intervient qu'à `SPIN_MS + 500`).
+    // chien de garde de `useGameEffects`, qui n'intervient qu'à `SPIN_MAX_MS + 500`).
     // Sans timers factices, `findByRole` verrait l'élément déjà monté et
     // résoudrait avant les 300 ms, sans jamais prouver la sortie de `spinning`.
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true })
@@ -176,7 +176,9 @@ describe('GameRoute', () => {
       monterApp('/jeu')
 
       await user.click(screen.getByRole('button', { name: 'Tourner' }))
-      expect(screen.getByRole('status')).toHaveTextContent('La roue tourne…')
+      // Le préfixe seul, pas la phrase entière : l'annonce se termine désormais
+      // par l'étiquette de force du lancer, tirée au hasard faute de jauge ici.
+      expect(screen.getByRole('status')).toHaveTextContent('La roue tourne')
 
       // Confortablement au-delà du règlement dégradé de la roue, et très en
       // dessous du chien de garde : ce qu'on observe est donc bien la roue qui
@@ -187,7 +189,7 @@ describe('GameRoute', () => {
 
       // Sans le règlement de la roue, le statut resterait bloqué sur l'annonce
       // de lancement : la phase serait toujours `spinning`.
-      expect(screen.getByRole('status')).not.toHaveTextContent('La roue tourne…')
+      expect(screen.getByRole('status')).not.toHaveTextContent('La roue tourne')
     } finally {
       vi.useRealTimers()
     }

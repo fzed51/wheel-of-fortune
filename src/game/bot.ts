@@ -213,7 +213,8 @@ export function decideBotAction(game: Game, rng: Rng, ticket: BotTicket): GameAc
 /**
  * Pause de lisibilité avant qu'un bot ne joue son coup — pas une simulation de
  * réflexion : le joueur doit voir la main changer avant que l'action n'arrive.
- * Le tirage de roue a sa propre durée (`SPIN_MS` dans `game/wheel.ts`), qui
+ * Le tirage de roue a sa propre durée (entre `SPIN_MIN_MS` et `SPIN_MAX_MS`
+ * dans `game/wheel.ts`), qui
  * s'ajoute par-dessus plutôt que de s'y substituer. Elle vit ici, et non dans
  * le driver, pour que les tests avancent leurs horloges de la valeur exacte au
  * lieu d'en recopier une.

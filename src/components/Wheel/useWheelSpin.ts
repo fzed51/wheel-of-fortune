@@ -1,28 +1,32 @@
 import { useEffect, useRef } from 'react'
 import type { RefObject } from 'react'
-import { nextRotation } from './geometry'
-import { SPIN_LAUNCH_MS, SPIN_MS } from '../../game/wheel'
-import type { SpinOutcome } from '../../game/types'
+import type { SpinLanding } from '../../game/types'
 
-/** Léger dépassement avant l'arrêt final, pour que le rebond se sente sans rejouer un tour complet. */
-const OVERSHOOT_DEGREES = 3
-/** Deux tours de lancement à vitesse constante, avant le ralentissement. */
-const LAUNCH_TURNS_DEGREES = 720
 /** Repli sans WAAPI/mouvement réduit : délai avant de considérer la roue arrêtée. */
 const REDUCED_MOTION_SETTLE_MS = 300
+/** Constante de la décroissance exponentielle de la course : plus haut, l'arrêt est plus sec. */
+const DECAY_K = 3.4
+/** Nombre de points de la trajectoire échantillonnée, entre le lancer et l'arrêt. */
+const KEYFRAME_SAMPLES = 24
 
 /**
- * Anime la rotation de la roue vers le segment tiré, et appelle `onSettled`
- * une fois l'arrêt effectif. La ref renvoyée se pose sur le `<div>` rotor —
- * jamais un `<g>` interne du SVG : un `transform` sur un `<g>` n'est pas
- * fiablement promu en couche composite, et beaucoup de moteurs repeignent
- * tout le SVG à chaque image, ce qui saccade sur Android milieu de gamme.
+ * Anime la course réelle décidée par le moteur (`spin.travel`, `spin.durationMs`),
+ * et appelle `onSettled` une fois l'arrêt effectif. La ref renvoyée se pose sur
+ * le `<div>` rotor — jamais un `<g>` interne du SVG : un `transform` sur un `<g>`
+ * n'est pas fiablement promu en couche composite, et beaucoup de moteurs
+ * repeignent tout le SVG à chaque image, ce qui saccade sur Android milieu de
+ * gamme.
  */
-export function useWheelSpin(spin: SpinOutcome | null, onSettled: () => void): RefObject<HTMLDivElement | null> {
+export function useWheelSpin(
+  angle: number,
+  spin: SpinLanding | null,
+  onSettled: () => void,
+): RefObject<HTMLDivElement | null> {
   const rotorRef = useRef<HTMLDivElement | null>(null)
   // Rotation absolue cumulée : ne jamais remettre à zéro sous peine de faire
-  // sauter la roue en arrière au tirage suivant.
-  const rotationRef = useRef(0)
+  // sauter la roue en arrière au tirage suivant. `null` tant que l'effet ne l'a
+  // pas hydratée depuis `angle` — voir `??=` ci-dessous.
+  const rotationRef = useRef<number | null>(null)
   const animationRef = useRef<Animation | null>(null)
 
   // « Latest ref » : assignées pendant le rendu, lues seulement depuis l'effet
@@ -32,6 +36,8 @@ export function useWheelSpin(spin: SpinOutcome | null, onSettled: () => void): R
   onSettledRef.current = onSettled
   const spinRef = useRef(spin)
   spinRef.current = spin
+  const angleRef = useRef(angle)
+  angleRef.current = angle
 
   useEffect(() => {
     // Annule toute animation en cours avant d'en lancer une autre : sans ça,
@@ -39,14 +45,27 @@ export function useWheelSpin(spin: SpinOutcome | null, onSettled: () => void): R
     // concurrentes, dont deux promesses `finished` qui joueraient le tour deux fois.
     animationRef.current?.cancel()
 
-    const currentSpin = spinRef.current
-    if (currentSpin === null) return
+    // Hydratation depuis l'angle de repos de l'état, une seule fois : un
+    // remontage (retour de l'étape bonus) ne doit pas faire sauter la roue à
+    // zéro alors que le modèle sait déjà où elle s'est arrêtée.
+    rotationRef.current ??= angleRef.current
 
+    const currentSpin = spinRef.current
     const element = rotorRef.current
     if (element === null) return
 
+    if (currentSpin === null) {
+      // Hors rotation : la roue doit rester exactement où `rotationRef` la
+      // laisse. Sans ça elle se dessinerait à 0° au premier rendu, en
+      // désaccord avec l'état, et le premier lancer sauterait au démarrage.
+      // Idempotent : après une animation terminée, `commitStyles()` a déjà
+      // posé cette valeur.
+      element.style.transform = `rotate(${rotationRef.current}deg)`
+      return
+    }
+
     const from = rotationRef.current
-    const to = nextRotation(from, currentSpin)
+    const to = from + currentSpin.travel
     rotationRef.current = to
 
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -71,19 +90,18 @@ export function useWheelSpin(spin: SpinOutcome | null, onSettled: () => void): R
     element.style.willChange = 'transform'
     element.style.contain = 'paint'
 
-    const animation = element.animate(
-      [
-        { offset: 0, transform: `rotate(${from}deg)`, easing: 'linear' },
-        {
-          offset: SPIN_LAUNCH_MS / SPIN_MS,
-          transform: `rotate(${from + LAUNCH_TURNS_DEGREES}deg)`,
-          easing: 'cubic-bezier(.17,.67,.12,1)',
-        },
-        { offset: 0.94, transform: `rotate(${to + OVERSHOOT_DEGREES}deg)` },
-        { offset: 1, transform: `rotate(${to}deg)` },
-      ],
-      { duration: SPIN_MS, fill: 'forwards' },
-    )
+    // Décroissance exponentielle échantillonnée en keyframes : une vraie roue
+    // freinée par friction ralentit ainsi, pas en accélérant d'abord comme le
+    // ferait un easing générique. `denom` normalise la progression pour que le
+    // dernier échantillon (t = 1) vaille exactement 1, donc que la course
+    // parcourue soit exactement `travel`.
+    const denom = 1 - Math.exp(-DECAY_K)
+    const frames = Array.from({ length: KEYFRAME_SAMPLES + 1 }, (_, i) => {
+      const t = i / KEYFRAME_SAMPLES
+      const progress = (1 - Math.exp(-DECAY_K * t)) / denom
+      return { offset: t, transform: `rotate(${from + currentSpin.travel * progress}deg)`, easing: 'linear' }
+    })
+    const animation = element.animate(frames, { duration: currentSpin.durationMs, fill: 'forwards' })
     animationRef.current = animation
 
     // Un onglet en arrière-plan bride les animations : `finished` pourrait ne

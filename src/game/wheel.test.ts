@@ -207,4 +207,19 @@ describe('angleForLanding', () => {
       }
     }
   })
+
+  it('reste dans [0, 360) pour les 24 segments, aux deux bornes du décalage', () => {
+    for (let index = 0; index < SEGMENT_COUNT; index += 1) {
+      for (const offset of [6.5, -6.5]) {
+        const angle = angleForLanding(index, offset)
+        expect(angle).toBeGreaterThanOrEqual(0)
+        expect(angle).toBeLessThan(360)
+      }
+    }
+  })
+
+  it('vaut la valeur attendue pour le segment 0 et le segment 6 sans décalage', () => {
+    expect(angleForLanding(0, 0)).toBeCloseTo(352.5)
+    expect(angleForLanding(6, 0)).toBeCloseTo(262.5)
+  })
 })

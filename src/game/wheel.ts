@@ -36,18 +36,6 @@ export const ZERO_COUNT = WHEEL.filter((segment) => segment.kind === 'cash' && s
 /** Marge laissée aux bords du segment pour que l'aiguille reste sans ambiguïté. */
 const OFFSET_BOUND = SEGMENT_ANGLE / 2 - 2
 
-/**
- * Durées de l'animation de rotation, lues à deux endroits qui ne se connaissent
- * pas : l'animation WAAPI de `components/Wheel/useWheelSpin.ts` et le chien de
- * garde de `hooks/useGameEffects.ts`, qui dispatche `wheel/settled` si
- * l'animation ne se termine jamais (onglet en arrière-plan, composant démonté).
- * Deux copies dériveraient, et un chien de garde plus court que l'animation
- * couperait la rotation avant la fin. `game/wheel.ts` est le seul module que
- * les deux peuvent importer sans qu'un `hooks/` dépende d'un `components/`.
- */
-export const SPIN_MS = 3500
-export const SPIN_LAUNCH_MS = 900
-
 export function segmentAt(index: number): Segment {
   const segment = WHEEL[index]
   if (segment === undefined) {
@@ -64,6 +52,17 @@ export const TRAVEL_SPAN_DEGREES = 1440
 
 /** Imprécision humaine du lancer : au plus une case en trop ou en moins autour de la cible. */
 export const JITTER_DEGREES = SEGMENT_ANGLE
+
+/**
+ * Bornes de durée de l'animation de rotation, lues à deux endroits qui ne se
+ * connaissent pas : l'animation WAAPI de `components/Wheel/useWheelSpin.ts` et
+ * le chien de garde de `hooks/useGameEffects.ts`, qui dispatche `wheel/settled`
+ * si l'animation ne se termine jamais (onglet en arrière-plan, composant
+ * démonté). Deux copies dériveraient, et un chien de garde plus court que
+ * l'animation la plus longue couperait une rotation avant la fin. `game/wheel.ts`
+ * est le seul module que les deux peuvent importer sans qu'un `hooks/` dépende
+ * d'un `components/`.
+ */
 
 /** Durée minimale de l'animation, pour un lancer au ralenti. */
 export const SPIN_MIN_MS = 2600
