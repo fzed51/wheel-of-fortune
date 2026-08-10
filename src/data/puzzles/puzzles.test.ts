@@ -28,8 +28,12 @@ const FORMAT_ID = /^[a-z]{3}-\d{3}$/
 const ALL_PUZZLES: readonly Puzzle[] = [...PACK_PUZZLES, ...PACK_QUESTIONS]
 
 describe('catalogue', () => {
-  it('compte au moins vingt énigmes', () => {
-    expect(PACK_PUZZLES.length).toBeGreaterThanOrEqual(20)
+  it('compte au moins soixante énigmes', () => {
+    // Seuil relevé de 20 à 60 avec le catalogue : un plancher resté sous le
+    // contenu réel ne protège plus rien, une catégorie entière pourrait
+    // disparaître sans faire rougir personne. Ajouter des énigmes ne le casse
+    // jamais — seule une suppression le fait, et c'est exactement le but.
+    expect(PACK_PUZZLES.length).toBeGreaterThanOrEqual(60)
   })
 
   it('n’a que des identifiants uniques et au format attendu', () => {
