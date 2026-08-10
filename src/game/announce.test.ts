@@ -5,6 +5,8 @@ import {
   avecLettres,
   avecPhase,
   avecPot,
+  bonus,
+  bot,
   cash,
   courant,
   demarrer,
@@ -14,6 +16,8 @@ import {
   jouer,
   manche,
   proposer,
+  question,
+  repondre,
   resoudre,
   tourner,
 } from '../test/game'
@@ -145,7 +149,7 @@ describe('announceTransition — démarrage et enchaînement de manche', () => {
     const prev = { kind: 'no-game' as const }
     const action = {
       type: 'game/start' as const,
-      config: { roundCount: 3, vowelCost: 250, minRoundPrize: 500, bonusPrize: 500 },
+      config: { roundCount: 3, vowelCost: 250, minRoundPrize: 500, bonusPrize: 500, bonusEnabled: false },
       players: [joueur('Alice')],
       puzzle: enigme('terre'),
       firstPlayer: 0,
@@ -162,7 +166,7 @@ describe('announceTransition — démarrage et enchaînement de manche', () => {
     const prev = { kind: 'no-game' as const }
     const action = {
       type: 'game/start' as const,
-      config: { roundCount: 3, vowelCost: 250, minRoundPrize: 500, bonusPrize: 500 },
+      config: { roundCount: 3, vowelCost: 250, minRoundPrize: 500, bonusPrize: 500, bonusEnabled: false },
       players: [joueur('Alice')],
       puzzle: enigme('terre'),
       firstPlayer: 0,
@@ -548,5 +552,200 @@ describe('announceTransition — fin de manche et de partie', () => {
       status: 'Partie terminée. Égalité entre Vous et Bot 1 avec 500 euros.',
       alert: '',
     })
+  })
+})
+
+describe('announceTransition — entrée en étape bonus', () => {
+  it('annonce la manche finale gagnée, le montant du bonus et la question, sans révéler la réponse attendue', () => {
+    const gagnee = resoudre(
+      demarrer({ config: { roundCount: 1 }, answer: 'quelle est la capitale', bonusAnswer: 'CANBERRA' }),
+      'quelle est la capitale',
+    )
+    const action = { type: 'round/next' as const, puzzle: enigme('x'), firstPlayer: 0 }
+    const next = jouer(gagnee, action)
+    expect(jeu(next).progress.kind).toBe('bonus')
+
+    const announcement = announceTransition(gagnee, next, action)
+    expect(announcement.status).toBe(
+      'Manche finale gagnée. La question donne droit à un bonus de 500 euros : QUELLE EST LA CAPITALE. À vous de répondre.',
+    )
+    // La réponse attendue ne doit jamais transiter par cette phrase : c'est
+    // elle qu'il reste à trouver, pas l'énoncé qui est, lui, déjà résolu.
+    expect(announcement.status).not.toContain('CANBERRA')
+    expect(foldForCompare(announcement.status)).not.toContain(foldForCompare('CANBERRA'))
+  })
+
+  it('nomme le bot quand c’est lui qui a gagné la manche finale', () => {
+    const bot1 = bot('Bot 1', 'easy')
+    const gagnee = resoudre(
+      demarrer({
+        config: { roundCount: 1 },
+        answer: 'quelle est la capitale',
+        bonusAnswer: 'CANBERRA',
+        players: [joueur('Alice'), bot1],
+        firstPlayer: 1,
+      }),
+      'quelle est la capitale',
+    )
+    const action = { type: 'round/next' as const, puzzle: enigme('x'), firstPlayer: 0 }
+    const next = jouer(gagnee, action)
+    expect(announceTransition(gagnee, next, action).status).toBe(
+      'Manche finale gagnée. La question donne droit à un bonus de 500 euros : QUELLE EST LA CAPITALE. Au tour de Bot 1 de répondre.',
+    )
+  })
+
+  it('masque la phrase à l’écran : la carte bonus porte déjà la question et le montant', () => {
+    const gagnee = resoudre(
+      demarrer({ config: { roundCount: 1 }, answer: 'quelle est la capitale', bonusAnswer: 'CANBERRA' }),
+      'quelle est la capitale',
+    )
+    const action = { type: 'round/next' as const, puzzle: enigme('x'), firstPlayer: 0 }
+    const next = jouer(gagnee, action)
+    expect(announceTransition(gagnee, next, action).visible).toBe('')
+  })
+})
+
+describe('announceTransition — réponse à la question bonus', () => {
+  it('nomme l’auteur bot sans jamais rendre sa tentative ni la réponse attendue', () => {
+    const bot1 = bot('Bot 1', 'easy')
+    const attempt = 'ZBRAXOFINGUE'
+    let etat = demarrer({
+      config: { roundCount: 1 },
+      bonusAnswer: 'CANBERRA',
+      players: [joueur('Alice'), bot1],
+      firstPlayer: 1,
+    })
+    etat = resoudre(etat, manche(etat).puzzle.answer)
+    etat = jouer(etat, { type: 'round/next', puzzle: enigme('x'), firstPlayer: 0 })
+    expect(bonus(etat).by).toBe(bot1.id)
+
+    const action = { type: 'bonus/answer' as const, by: bonus(etat).by, attempt, requestId: 'req-1' }
+    const next = jouer(etat, action)
+    expect(jeu(next).progress.kind).toBe('bonus')
+
+    const announcement = announceTransition(etat, next, action)
+    const visible = announcement.visible ?? announcement.status
+    expect(announcement.status).toBe("Bot 1 a proposé une réponse. Le juge l'examine…")
+
+    for (const text of [announcement.status, announcement.alert, visible]) {
+      expect(text).not.toContain(attempt)
+      expect(text).not.toContain('CANBERRA')
+    }
+    const foldedAttempt = foldForCompare(attempt)
+    const foldedExpected = foldForCompare('CANBERRA')
+    for (const text of [announcement.status, announcement.alert, visible]) {
+      expect(foldForCompare(text)).not.toContain(foldedAttempt)
+      expect(foldForCompare(text)).not.toContain(foldedExpected)
+    }
+  })
+})
+
+describe('announceTransition — verdict du juge, étape bonus', () => {
+  it('annonce le montant crédité, et la fin de partie mentionne le total avec le bonus', () => {
+    let etat = demarrer({ config: { roundCount: 1 }, bonusAnswer: 'CANBERRA' })
+    etat = resoudre(etat, manche(etat).puzzle.answer)
+    etat = jouer(etat, { type: 'round/next', puzzle: enigme('x'), firstPlayer: 0 })
+    const prev = repondre(etat, 'canberra', 'req-1')
+    const action = { type: 'bonus/verdict' as const, requestId: 'req-1', correct: true }
+    const next = jouer(prev, action)
+    expect(announceTransition(prev, next, action).status).toBe(
+      'Bonne réponse ! Bonus de 500 euros crédité. Partie terminée. Vous gagnez avec 1 000 euros (dont 500 euros de bonus).',
+    )
+  })
+
+  it('révèle la réponse attendue sur un verdict perdant, sans mentionner de bonus dans le total', () => {
+    let etat = demarrer({ config: { roundCount: 1 }, bonusAnswer: 'CANBERRA' })
+    etat = resoudre(etat, manche(etat).puzzle.answer)
+    etat = jouer(etat, { type: 'round/next', puzzle: enigme('x'), firstPlayer: 0 })
+    const prev = repondre(etat, 'sydney', 'req-1')
+    const action = { type: 'bonus/verdict' as const, requestId: 'req-1', correct: false }
+    const next = jouer(prev, action)
+    expect(announceTransition(prev, next, action).status).toBe(
+      'Mauvaise réponse. La bonne réponse était CANBERRA. Partie terminée. Vous gagnez avec 500 euros.',
+    )
+  })
+
+  it('le bonus gagné casse une égalité de totaux, et la fin de partie nomme le bon vainqueur pour le bon montant', () => {
+    const bot1 = bot('Bot 1', 'easy')
+    const alice = joueur('Alice')
+    // Bot 1 gagne la première manche (500 euros), Alice gagne la manche
+    // finale (500 euros aussi) : les totaux sont à égalité avant le bonus.
+    let etat = demarrer({
+      config: { roundCount: 2 },
+      players: [alice, bot1],
+      firstPlayer: 1,
+    })
+    etat = resoudre(etat, manche(etat).puzzle.answer)
+    etat = jouer(etat, {
+      type: 'round/next',
+      puzzle: question('quelle est la capitale', 'CANBERRA', 'finale'),
+      firstPlayer: 0,
+    })
+    etat = resoudre(etat, manche(etat).puzzle.answer)
+    etat = jouer(etat, { type: 'round/next', puzzle: enigme('x'), firstPlayer: 0 })
+    expect(jeu(etat).progress.kind).toBe('bonus')
+    expect(jeu(etat).players.map((player) => player.total)).toEqual([500, 500])
+    expect(bonus(etat).by).toBe(alice.id)
+
+    const prev = repondre(etat, 'canberra', 'req-1')
+    const action = { type: 'bonus/verdict' as const, requestId: 'req-1', correct: true }
+    const next = jouer(prev, action)
+    const nextGame = jeu(next)
+    // Le reducer calcule `winners` après le crédit du bonus : Alice bascule
+    // seule en tête, Bot 1 reste à 500 — l'égalité de départ est cassée.
+    expect(nextGame.progress.kind === 'game-over' && nextGame.progress.winners).toEqual([alice.id])
+    expect(announceTransition(prev, next, action).status).toBe(
+      'Bonne réponse ! Bonus de 500 euros crédité. Partie terminée. Vous gagnez avec 1 000 euros (dont 500 euros de bonus).',
+    )
+  })
+})
+
+describe('announceTransition — échec technique du juge, étape bonus', () => {
+  it('reprend la phrase d’échec réseau, sans révéler la réponse attendue, et invite à réessayer', () => {
+    let etat = demarrer({ config: { roundCount: 1 }, bonusAnswer: 'CANBERRA' })
+    etat = resoudre(etat, manche(etat).puzzle.answer)
+    etat = jouer(etat, { type: 'round/next', puzzle: enigme('x'), firstPlayer: 0 })
+    etat = repondre(etat, 'sydney', 'req-1')
+    const action = { type: 'bonus/failed' as const, requestId: 'req-1', reason: 'network' }
+    const next = jouer(etat, action)
+    const status = announceTransition(etat, next, action).status
+    expect(status).toBe(
+      'Le juge est injoignable. Vérifiez votre connexion, puis réessayez. Aucune pénalité, vous pouvez retaper votre réponse.',
+    )
+    expect(status).not.toContain('CANBERRA')
+  })
+
+  it('retombe sur la phrase réseau pour une raison inconnue plutôt que de rester muette', () => {
+    let etat = demarrer({ config: { roundCount: 1 }, bonusAnswer: 'CANBERRA' })
+    etat = resoudre(etat, manche(etat).puzzle.answer)
+    etat = jouer(etat, { type: 'round/next', puzzle: enigme('x'), firstPlayer: 0 })
+    etat = repondre(etat, 'sydney', 'req-1')
+    const action = { type: 'bonus/failed' as const, requestId: 'req-1', reason: 'n’importe quoi' }
+    const next = jouer(etat, action)
+    expect(announceTransition(etat, next, action).status).toBe(
+      'Le juge est injoignable. Vérifiez votre connexion, puis réessayez. Aucune pénalité, vous pouvez retaper votre réponse.',
+    )
+  })
+})
+
+describe('announceTransition — renoncement à la question bonus', () => {
+  it('annonce le renoncement puis la fin de partie, sans mention de bonus dans le total', () => {
+    let etat = demarrer({ config: { roundCount: 1 }, bonusAnswer: 'CANBERRA' })
+    etat = resoudre(etat, manche(etat).puzzle.answer)
+    etat = jouer(etat, { type: 'round/next', puzzle: enigme('x'), firstPlayer: 0 })
+    const action = { type: 'bonus/skip' as const, by: bonus(etat).by }
+    const next = jouer(etat, action)
+    expect(announceTransition(etat, next, action).status).toBe(
+      'Vous renoncez à la question bonus. Partie terminée. Vous gagnez avec 500 euros.',
+    )
+  })
+})
+
+describe('announceTransition — réglage du bonus', () => {
+  it('ne produit aucune annonce : ce n’est pas un coup de partie', () => {
+    const prev = demarrer()
+    const action = { type: 'config/set-bonus-enabled' as const, enabled: false }
+    const next = jouer(prev, action)
+    expect(announceTransition(prev, next, action)).toEqual({ status: '', alert: '' })
   })
 })

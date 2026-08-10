@@ -1,27 +1,34 @@
 // @vitest-environment jsdom
+import { StrictMode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, screen } from '@testing-library/react'
+import { act, renderHook, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { BOT_DELAY_MS } from '../game/bot'
 import { CONSONANTS } from '../game/puzzle'
 import { HUMAN_ID } from '../game/setup'
 import { SPIN_MS } from '../game/wheel'
+import { useGameEffects } from '../hooks/useGameEffects'
 import { useAnnouncements } from '../hooks/useAnnouncer'
-import { clearAllData, loadGame, saveGame, saveSettings } from '../storage/persist'
+import { createJudge } from '../llm'
+import { clearAllData, loadGame, loadMistralKey, saveGame, saveMistralKey, saveSettings } from '../storage/persist'
 import { STORAGE_KEYS } from '../storage/keys'
 import { DEFAULT_SETTINGS } from '../storage/settings'
 import {
   avecLettres,
   avecPhase,
   avecPot,
+  bonus as fixtureBonus,
   bot,
   cash,
   demarrer,
   jeu,
+  jouer,
   joueur as fixtureJoueur,
+  manche,
+  resoudre,
 } from '../test/game'
 import { monter } from '../test/app'
-import { useGameCommands, useGameState } from './selectors'
+import { useGameCommands, useGameState, useJudgeFailure } from './selectors'
 
 /**
  * Suite du provider : ce qui est testé ici, c'est le câblage entre le stockage,
@@ -55,13 +62,52 @@ function Annonces() {
   )
 }
 
+/**
+ * Partie amenée jusqu'à l'étape bonus : `roundCount: 1` fait de la seule
+ * manche la manche finale (`isFinalRound(0, 1)`), et l'énigme de départ porte
+ * `bonusAnswer`. La résoudre correctement fait entrer `round/next` en étape
+ * bonus — le `puzzle` qu'il reçoit est ignoré par le reducer sur ce chemin
+ * (voir `engine.ts`), sa valeur ne compte donc pas.
+ */
+function versEtapeBonus(expected: string, joueurs = [fixtureJoueur('Alice')]) {
+  const debut = demarrer({ config: { roundCount: 1 }, bonusAnswer: expected, players: joueurs })
+  const resolue = resoudre(debut, manche(debut).puzzle.answer)
+  return jouer(resolue, { type: 'round/next', puzzle: manche(debut).puzzle, firstPlayer: 0 })
+}
+
+/** Pendant de `versEtapeBonus`, une tentative déjà envoyée : phase `judging`. */
+function versJugementBonus(
+  expected: string,
+  attempt: string,
+  joueurs = [fixtureJoueur('Alice')],
+  requestId = 'req-1',
+) {
+  const enAttente = versEtapeBonus(expected, joueurs)
+  return jouer(enAttente, {
+    type: 'bonus/answer',
+    by: fixtureBonus(enAttente).by,
+    attempt,
+    requestId,
+  })
+}
+
+/**
+ * Réponse volontairement éloignée de toute réponse attendue plausible dans ces
+ * tests : `matchesAnswer` doit toujours la rejeter, pour forcer le chemin
+ * réseau (ou son échec) plutôt que la confirmation locale.
+ */
+const REPONSE_BONUS_ELOIGNEE = 'la ville de Canberra'
+
 function Sonde() {
   const state = useGameState()
-  const { startGame, nextRound, spin, playLetter, pass, resolve } = useGameCommands()
+  const { startGame, nextRound, spin, playLetter, pass, resolve, answerBonus, skipBonus } =
+    useGameCommands()
+  const judgeFailure = useJudgeFailure()
   rendus.push(state.kind)
 
   const partie = state.kind === 'playing' ? state.game : null
   const manche = partie !== null && partie.progress.kind === 'round' ? partie.progress.round : null
+  const bonus = partie !== null && partie.progress.kind === 'bonus' ? partie.progress.bonus : null
   const siege0 = partie?.players[0]
 
   // La vraie réponse est lue sur l'état courant au moment du clic : la
@@ -75,6 +121,17 @@ function Sonde() {
 
   function resoudreIncorrectement() {
     resolve('ceci ne peut correspondre à aucune énigme')
+  }
+
+  // Même logique que `resoudreCorrectement` : la réponse attendue n'est
+  // connue qu'à l'exécution, elle diffère par test.
+  function repondreBonusCorrectement() {
+    if (bonus === null) return
+    answerBonus(bonus.expected)
+  }
+
+  function repondreBonusIncorrectement() {
+    answerBonus(REPONSE_BONUS_ELOIGNEE)
   }
 
   return (
@@ -121,6 +178,26 @@ function Sonde() {
       <div role="group" aria-label="Énigme de type question">
         {manche === null ? '' : Object.hasOwn(manche.puzzle, 'bonusAnswer') ? 'oui' : 'non'}
       </div>
+      <div role="group" aria-label="Phase du bonus">
+        {bonus?.phase.kind ?? ''}
+      </div>
+      <div role="group" aria-label="Échec du juge">
+        {judgeFailure ?? ''}
+      </div>
+      <button type="button" onClick={repondreBonusCorrectement}>
+        Répondre correctement au bonus
+      </button>
+      <button type="button" onClick={repondreBonusIncorrectement}>
+        Répondre incorrectement au bonus
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          skipBonus()
+        }}
+      >
+        Passer le bonus
+      </button>
       <button
         type="button"
         onClick={() => {
@@ -191,6 +268,7 @@ function Sonde() {
 function champ(nom: string): string {
   return screen.getByRole('group', { name: nom }).textContent ?? ''
 }
+
 
 beforeEach(() => {
   // `persist.ts` garde un repli en mémoire, vivant tant que le module est chargé :
@@ -617,6 +695,168 @@ describe('GameProvider', () => {
       } finally {
         vi.useRealTimers()
       }
+    })
+  })
+
+  describe('étape bonus', () => {
+    it('gagne le bonus par confirmation locale, sans le moindre appel réseau', async () => {
+      // Point central de l'étape, comme pour « Résoudre » : `matchesAnswer`
+      // tranche localement une réponse tapée telle quelle, aucune clé ni
+      // aucun réseau n'entrent en jeu.
+      const fetchMock = vi.fn()
+      vi.stubGlobal('fetch', fetchMock)
+      saveGame(jeu(versEtapeBonus('PARIS')))
+      const user = userEvent.setup()
+      monter(<Sonde />)
+      expect(champ('Type de progression')).toBe('bonus')
+
+      await user.click(screen.getByRole('button', { name: 'Répondre correctement au bonus' }))
+
+      expect(champ('Type de progression')).toBe('game-over')
+      expect(fetchMock).not.toHaveBeenCalled()
+    })
+
+    it('un bot gagnant la manche finale termine la partie sans aucun appel réseau', () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true })
+      try {
+        const fetchMock = vi.fn()
+        vi.stubGlobal('fetch', fetchMock)
+        saveGame(jeu(versEtapeBonus('PARIS', [bot('Bot 1')])))
+        monter(<Sonde />)
+        expect(champ('Phase du bonus')).toBe('awaiting-answer')
+
+        // Un cycle pour la réponse du bot (`bonus/answer`), un second pour son
+        // verdict (`bonus/verdict`) : voir `botTurnKey` dans `game/bot.ts`, qui
+        // change entre les deux phases pour justement redéclencher le minuteur.
+        act(() => {
+          vi.advanceTimersByTime(BOT_DELAY_MS)
+        })
+        expect(champ('Phase du bonus')).toBe('judging')
+
+        act(() => {
+          vi.advanceTimersByTime(BOT_DELAY_MS)
+        })
+
+        expect(champ('Type de progression')).toBe('game-over')
+        expect(fetchMock).not.toHaveBeenCalled()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('un échec du juge laisse le bonus répondable', async () => {
+      // Aucune clé enregistrée : `getJudge` rend `null`, la panne est
+      // « unauthorized » avant tout appel réseau.
+      saveGame(jeu(versEtapeBonus('CANBERRA')))
+      const user = userEvent.setup()
+      monter(<Sonde />)
+
+      await user.click(screen.getByRole('button', { name: 'Répondre incorrectement au bonus' }))
+
+      expect(champ('Phase du bonus')).toBe('awaiting-answer')
+      expect(champ('Échec du juge')).toBe('unauthorized')
+
+      // La phase redevenue répondable, une nouvelle tentative doit encore
+      // fonctionner : sans ce second temps, un test qui ne vérifierait que le
+      // retour en `awaiting-answer` laisserait passer une commande qui aurait
+      // cessé de fonctionner après un premier échec.
+      await user.click(screen.getByRole('button', { name: 'Répondre correctement au bonus' }))
+
+      expect(champ('Type de progression')).toBe('game-over')
+    })
+
+    it("l'humain ne peut pas répondre à la place du bot", async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true })
+      try {
+        const user = userEvent.setup({ delay: null })
+        saveGame(jeu(versEtapeBonus('PARIS', [bot('Bot 1')])))
+        monter(<Sonde />)
+
+        await user.click(screen.getByRole('button', { name: 'Répondre correctement au bonus' }))
+
+        expect(champ('Phase du bonus')).toBe('awaiting-answer')
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('skipBonus termine la partie', async () => {
+      saveGame(jeu(versEtapeBonus('PARIS')))
+      const user = userEvent.setup()
+      monter(<Sonde />)
+
+      await user.click(screen.getByRole('button', { name: 'Passer le bonus' }))
+
+      expect(champ('Type de progression')).toBe('game-over')
+    })
+
+    it('une réponse lexicalement éloignée de l’attendu part au juge, dont le verdict est appliqué', async () => {
+      saveMistralKey('clé-de-test')
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ choices: [{ message: { content: '{"correct": true}' } }] }),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      saveGame(jeu(versEtapeBonus('CANBERRA')))
+      const user = userEvent.setup()
+      monter(<Sonde />)
+
+      await user.click(screen.getByRole('button', { name: 'Répondre incorrectement au bonus' }))
+
+      await waitFor(() => {
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+      })
+      await waitFor(() => {
+        expect(champ('Type de progression')).toBe('game-over')
+      })
+    })
+
+    it("StrictMode double le montage de l'effet sans doubler l'appel au juge", async () => {
+      // Ce test ne peut pas passer par `GameProvider` : `toPersisted`
+      // (`storage/snapshot.ts`, `PersistedBonus`) ne persiste jamais la phase
+      // `judging`, par choix délibéré — un rechargement en pleine attente de
+      // verdict ne doit rien coûter au joueur, il retape sa réponse. Un
+      // premier montage du provider ne peut donc jamais démarrer en
+      // `judging`, et `StrictMode` (voir la doc de `useGameEffects`) ne
+      // double-invoque les effets qu'à l'exact premier montage d'un composant,
+      // jamais sur une mise à jour ultérieure (un clic, par exemple). La seule
+      // façon de mettre le garde-fou (`sentJudgeRequestIds`) réellement à
+      // l'épreuve est donc de monter `useGameEffects` lui-même avec un état
+      // déjà en `judging` dès le premier rendu.
+      saveMistralKey('clé-de-test')
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ choices: [{ message: { content: '{"correct": true}' } }] }),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+
+      const state = versJugementBonus('CANBERRA', REPONSE_BONUS_ELOIGNEE)
+      const dispatch = vi.fn()
+      const getJudge = () =>
+        createJudge({ apiKey: loadMistralKey(), model: DEFAULT_SETTINGS.mistralModel })
+
+      renderHook(
+        () =>
+          useGameEffects(state, dispatch, {
+            rng: () => 0,
+            nextSpinId: () => 1,
+            newRequestId: () => 'req-x',
+            getJudge,
+            onJudgeFailure: () => {},
+          }),
+        { wrapper: StrictMode },
+      )
+
+      await waitFor(() => {
+        expect(dispatch).toHaveBeenCalledWith({ type: 'bonus/verdict', requestId: 'req-1', correct: true })
+      })
+      // Un seul verdict dispatché, un seul appel réseau : le second montage
+      // simulé par `StrictMode` a bien trouvé `req-1` déjà dans le `Set` et
+      // s'est arrêté avant tout appel à `getJudge`.
+      expect(dispatch).toHaveBeenCalledTimes(1)
+      expect(fetchMock).toHaveBeenCalledTimes(1)
     })
   })
 })

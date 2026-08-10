@@ -1,5 +1,6 @@
 import { isLetter, lettersOf, normalizeAnswer } from '../game/puzzle'
 import type {
+  BonusResult,
   GameConfig,
   Letter,
   Player,
@@ -10,7 +11,7 @@ import type {
 import { asPuzzleId } from '../game/types'
 import { SEGMENT_COUNT } from '../game/wheel'
 import { SCHEMA_VERSION } from './keys'
-import type { PersistedGame, PersistedPhase, PersistedRound } from './snapshot'
+import type { PersistedBonus, PersistedGame, PersistedPhase, PersistedRound } from './snapshot'
 import {
   BOT_LEVELS,
   DEFAULT_SETTINGS,
@@ -111,7 +112,8 @@ function isConfig(value: unknown): value is GameConfig {
     value.roundCount >= 1 &&
     isCount(value.vowelCost) &&
     isCount(value.minRoundPrize) &&
-    typeof value.bonusPrize === 'number'
+    typeof value.bonusPrize === 'number' &&
+    typeof value.bonusEnabled === 'boolean'
   )
 }
 
@@ -137,6 +139,33 @@ function isPersistedRound(value: unknown): value is PersistedRound {
     isGuessed(value.guessed) &&
     isPersistedPhase(value.phase) &&
     isCount(value.passes)
+  )
+}
+
+/** `question` porte déjà sa propre validation via `isPuzzle` : une question sans réponse serait injouable. */
+function isPersistedBonus(value: unknown, playerIds: ReadonlySet<string>): value is PersistedBonus {
+  if (!isRecord(value)) return false
+  return (
+    isText(value.by) && playerIds.has(value.by) && isPuzzle(value.question) && isText(value.expected)
+  )
+}
+
+/** `amount` forfaitaire, jamais nul ni négatif : un gain à zéro n'aurait pas de sens pour `won`. */
+function isBonusOutcome(value: unknown): value is BonusResult['outcome'] {
+  if (!isRecord(value)) return false
+  if (value.kind === 'lost' || value.kind === 'skipped') return true
+  if (value.kind !== 'won') return false
+  return isCount(value.amount) && value.amount > 0
+}
+
+function isPersistedBonusResult(value: unknown, playerIds: ReadonlySet<string>): value is BonusResult {
+  if (!isRecord(value)) return false
+  return (
+    isPuzzle(value.question) &&
+    isText(value.expected) &&
+    isText(value.by) &&
+    playerIds.has(value.by) &&
+    isBonusOutcome(value.outcome)
   )
 }
 
@@ -174,6 +203,8 @@ function isPersistedGame(value: unknown): value is PersistedGame {
   if (!isArrayOf(value.playedPuzzleIds, isText)) return false
   if (!isRecord(progress)) return false
 
+  const ids = new Set<string>(players.map((player) => player.id))
+
   if (progress.kind === 'round') {
     const round = progress.round
     if (!isCount(progress.currentPlayer) || progress.currentPlayer >= players.length) return false
@@ -187,12 +218,19 @@ function isPersistedGame(value: unknown): value is PersistedGame {
     return summary.index < config.roundCount && history.length === summary.index
   }
 
+  if (progress.kind === 'bonus') {
+    // Le résumé de la manche finale a déjà été poussé dans `history` (voir
+    // `round/next` du reducer), avant l'entrée dans l'étape : `roundCount`
+    // exact, jamais `roundCount - 1`.
+    return isPersistedBonus(progress.bonus, ids) && history.length === config.roundCount
+  }
+
   if (progress.kind === 'game-over') {
     const winners = progress.winners
     if (!isArrayOf(winners, isText)) return false
-    const ids = new Set<string>(players.map((player) => player.id))
     if (winners.some((winner) => !ids.has(winner))) return false
-    return history.length === config.roundCount
+    if (history.length !== config.roundCount) return false
+    return progress.bonus === null || isPersistedBonusResult(progress.bonus, ids)
   }
 
   return false

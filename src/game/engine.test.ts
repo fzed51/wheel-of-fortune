@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { GameAction } from './actions'
+import { isFinalRound } from './bonus'
 import { initialState, reduce } from './engine'
 import { CONSONANTS } from './puzzle'
 import { createRng, pick } from './rng'
 import {
+  bonusPlayerOf,
   canSpin,
   currentPlayerOf,
   isStuck,
@@ -22,6 +24,7 @@ import {
   acheter,
   avecLettres,
   avecPot,
+  bonus,
   cash,
   courant,
   demarrer,
@@ -33,6 +36,7 @@ import {
   manche,
   proposer,
   question,
+  repondre,
   resoudre,
   tourner,
 } from '../test/game'
@@ -53,7 +57,7 @@ describe('game/start', () => {
     const puzzle = enigme('le vent')
     const state = reduce(initialState, {
       type: 'game/start',
-      config: { roundCount: 3, vowelCost: 250, minRoundPrize: 500, bonusPrize: 500 },
+      config: CONFIG,
       players: [joueur('Alice')],
       puzzle,
       firstPlayer: 0,
@@ -605,11 +609,355 @@ describe('scénario complet', () => {
   })
 })
 
+const ENONCE_FINALE = "quelle est la capitale de l'australie"
+const REPONSE_FINALE = 'CANBERRA'
+
+/**
+ * Mène jusqu'à l'étape bonus par de vraies actions plutôt que par un état
+ * fabriqué à la main : `roundCount: 1` fait de la première manche la manche
+ * finale, la question y est gagnée par le joueur courant (Alice, siège 0).
+ */
+function versBonus(expected = REPONSE_FINALE): GameState {
+  const depart = demarrer({
+    answer: ENONCE_FINALE,
+    bonusAnswer: expected,
+    config: { roundCount: 1 },
+  })
+  const gagne = resoudre(depart, manche(depart).puzzle.answer)
+  return jouer(gagne, { type: 'round/next', puzzle: enigme('mon chat'), firstPlayer: 0 })
+}
+
+/**
+ * Même chemin, mais sur une manche finale d'index 1 (`roundCount: 2`), dont le
+ * multiplicateur ×2 n'est pas ×1 : sert à distinguer le forfait bonus, jamais
+ * multiplié, d'un gain de manche qui le serait.
+ */
+function versBonusManche2(expected = REPONSE_FINALE): GameState {
+  const depart = demarrer({ config: { roundCount: 2 } })
+  const manche1 = jouer(resoudre(depart, manche(depart).puzzle.answer), {
+    type: 'round/next',
+    puzzle: question('mon chat', expected),
+    firstPlayer: 0,
+  })
+  const gagne = resoudre(manche1, manche(manche1).puzzle.answer)
+  return jouer(gagne, { type: 'round/next', puzzle: enigme('la mer'), firstPlayer: 0 })
+}
+
+describe('entrée dans l’étape bonus', () => {
+  it('une manche finale gagnée sur une question mène au bonus, avec le bon gagnant et la bonne réponse attendue', () => {
+    const depart = demarrer({
+      answer: ENONCE_FINALE,
+      bonusAnswer: REPONSE_FINALE,
+      config: { roundCount: 1 },
+    })
+    const gagnant = courant(depart).id
+    const enonceInitial = manche(depart).puzzle.answer
+    const gagne = resoudre(depart, enonceInitial)
+    const suivante = jouer(gagne, { type: 'round/next', puzzle: enigme('mon chat'), firstPlayer: 0 })
+    const progress = jeu(suivante).progress
+    expect(progress.kind).toBe('bonus')
+    if (progress.kind === 'bonus') {
+      expect(progress.bonus.by).toBe(gagnant)
+      expect(progress.bonus.expected).toBe(REPONSE_FINALE)
+      expect(progress.bonus.question.answer).toBe(enonceInitial)
+    }
+  })
+
+  it('ne calcule pas encore les vainqueurs à l’entrée du bonus : winners n’existe pas dans ce progress', () => {
+    const state = versBonus()
+    const progress = jeu(state).progress
+    expect(progress.kind).toBe('bonus')
+    // `Object.hasOwn` et pas `toBeUndefined()` : la clé doit être absente, pas
+    // seulement vide — c'est ce qui permet au verdict de créer ou de casser une
+    // égalité entre les totaux figés à la fin de la dernière manche.
+    expect(Object.hasOwn(progress, 'winners')).toBe(false)
+  })
+
+  it('une manche finale annulée termine la partie sans bonus, même sur une question', () => {
+    let state = avecLettres(
+      demarrer({ answer: ENONCE_FINALE, bonusAnswer: REPONSE_FINALE, config: { roundCount: 1 } }),
+      [...CONSONANTS],
+    )
+    state = jouer(state, { type: 'turn/pass', by: courant(state).id })
+    state = jouer(state, { type: 'turn/pass', by: courant(state).id })
+    expect(manche(state).phase.kind).toBe('blocked')
+
+    const suivante = jouer(state, { type: 'round/next', puzzle: enigme('mon chat'), firstPlayer: 0 })
+    const progress = jeu(suivante).progress
+    expect(progress.kind).toBe('game-over')
+    if (progress.kind === 'game-over') expect(progress.bonus).toBeNull()
+  })
+
+  it('un juge indisponible (bonusEnabled: false) termine directement la partie, sans bonus', () => {
+    const depart = demarrer({
+      answer: ENONCE_FINALE,
+      bonusAnswer: REPONSE_FINALE,
+      config: { roundCount: 1, bonusEnabled: false },
+    })
+    const gagne = resoudre(depart, manche(depart).puzzle.answer)
+    const suivante = jouer(gagne, { type: 'round/next', puzzle: enigme('mon chat'), firstPlayer: 0 })
+    const progress = jeu(suivante).progress
+    expect(progress.kind).toBe('game-over')
+    if (progress.kind === 'game-over') expect(progress.bonus).toBeNull()
+  })
+
+  it('une énigme finale ordinaire (sans bonusAnswer) termine directement la partie', () => {
+    const depart = demarrer({ config: { roundCount: 1 } })
+    const gagne = resoudre(depart, manche(depart).puzzle.answer)
+    const suivante = jouer(gagne, { type: 'round/next', puzzle: enigme('mon chat'), firstPlayer: 0 })
+    expect(jeu(suivante).progress.kind).toBe('game-over')
+  })
+
+  it('une manche non finale gagnée sur une question enchaîne une manche ordinaire, jamais le bonus', () => {
+    // `roundCount: 3` par défaut : la manche 0 n'est pas la dernière.
+    const depart = demarrer({ answer: ENONCE_FINALE, bonusAnswer: REPONSE_FINALE })
+    const gagne = resoudre(depart, manche(depart).puzzle.answer)
+    const suivante = jouer(gagne, { type: 'round/next', puzzle: enigme('mon chat'), firstPlayer: 0 })
+    expect(jeu(suivante).progress.kind).toBe('round')
+  })
+})
+
+describe('les quatre actions de l’étape bonus', () => {
+  it('bonus/answer fait passer en jugement, avec la tentative et le requestId', () => {
+    const state = versBonus()
+    const jugee = repondre(state, 'PARIS', 'req-9')
+    const phase = bonus(jugee).phase
+    expect(phase.kind).toBe('judging')
+    if (phase.kind === 'judging') {
+      expect(phase.attempt).toBe('PARIS')
+      expect(phase.requestId).toBe('req-9')
+    }
+  })
+
+  it('ignore une réponse envoyée par un autre joueur que le gagnant de la manche finale', () => {
+    const state = versBonus()
+    const intrus = joueurNomme(state, 'Bob').id
+    const rejet = reduce(state, {
+      type: 'bonus/answer',
+      by: intrus,
+      attempt: REPONSE_FINALE,
+      requestId: 'req-1',
+    })
+    expect(rejet).toBe(state)
+  })
+
+  it('ignore une tentative vide ou faite d’espaces', () => {
+    const state = versBonus()
+    const by = bonus(state).by
+    expect(reduce(state, { type: 'bonus/answer', by, attempt: '   ', requestId: 'req-1' })).toBe(
+      state,
+    )
+    expect(reduce(state, { type: 'bonus/answer', by, attempt: '', requestId: 'req-1' })).toBe(
+      state,
+    )
+  })
+
+  it('ignore une seconde réponse envoyée pendant le jugement de la première (double clic)', () => {
+    const state = versBonus()
+    const jugee = repondre(state, REPONSE_FINALE)
+    const rejeu = reduce(jugee, {
+      type: 'bonus/answer',
+      by: bonus(state).by,
+      attempt: 'AUTRE',
+      requestId: 'req-2',
+    })
+    expect(rejeu).toBe(jugee)
+  })
+
+  it('un verdict correct crédite exactement le forfait, jamais multiplié par le multiplicateur de la manche finale', () => {
+    // Manche finale d'index 1 : son multiplicateur ×2 n'est pas ×1, ce qui
+    // distingue un crédit multiplié (bogué) d'un forfait fixe (correct).
+    const state = versBonusManche2()
+    const avant = joueurNomme(state, 'Alice').total
+    const jugee = jouer(repondre(state, REPONSE_FINALE), {
+      type: 'bonus/verdict',
+      requestId: 'req-1',
+      correct: true,
+    })
+    expect(joueurNomme(jugee, 'Alice').total).toBe(avant + CONFIG.bonusPrize)
+    expect(joueurNomme(jugee, 'Alice').total).not.toBe(avant + CONFIG.bonusPrize * 2)
+  })
+
+  it('un verdict incorrect termine la partie sans créditer personne', () => {
+    const state = versBonus()
+    const avantAlice = joueurNomme(state, 'Alice').total
+    const avantBob = joueurNomme(state, 'Bob').total
+    const jugee = jouer(repondre(state, 'FAUX'), {
+      type: 'bonus/verdict',
+      requestId: 'req-1',
+      correct: false,
+    })
+    const progress = jeu(jugee).progress
+    expect(progress.kind).toBe('game-over')
+    expect(joueurNomme(jugee, 'Alice').total).toBe(avantAlice)
+    expect(joueurNomme(jugee, 'Bob').total).toBe(avantBob)
+    if (progress.kind === 'game-over' && progress.bonus !== null) {
+      expect(progress.bonus.outcome.kind).toBe('lost')
+    }
+  })
+
+  it('le bonus peut créer une égalité entre deux joueurs auparavant séparés', () => {
+    // Bob remporte deux manches ordinaires (1000), Alice la finale-question
+    // (500) : avant le bonus, Bob mène. Le forfait de 500 ramène Alice à égalité.
+    let state = demarrer({ config: { roundCount: 3 }, firstPlayer: 1 })
+    state = resoudre(state, manche(state).puzzle.answer)
+    state = jouer(state, { type: 'round/next', puzzle: enigme('mon chat'), firstPlayer: 1 })
+    state = resoudre(state, manche(state).puzzle.answer)
+    state = jouer(state, {
+      type: 'round/next',
+      puzzle: question(ENONCE_FINALE, REPONSE_FINALE),
+      firstPlayer: 0,
+    })
+    state = resoudre(state, manche(state).puzzle.answer)
+    state = jouer(state, { type: 'round/next', puzzle: enigme('la mer'), firstPlayer: 0 })
+    expect(jeu(state).progress.kind).toBe('bonus')
+    expect(joueurNomme(state, 'Alice').total).toBe(500)
+    expect(joueurNomme(state, 'Bob').total).toBe(1000)
+
+    const jugee = jouer(repondre(state, REPONSE_FINALE), {
+      type: 'bonus/verdict',
+      requestId: 'req-1',
+      correct: true,
+    })
+    const progress = jeu(jugee).progress
+    expect(progress.kind).toBe('game-over')
+    if (progress.kind === 'game-over') {
+      expect([...progress.winners].sort()).toEqual([asPlayerId('alice'), asPlayerId('bob')])
+    }
+  })
+
+  it('le bonus peut casser une égalité entre deux joueurs', () => {
+    // Bob remporte la première manche (500), Alice la finale-question (500) :
+    // égalité avant le bonus. Le forfait fait basculer Alice seule en tête.
+    let state = demarrer({ config: { roundCount: 2 }, firstPlayer: 1 })
+    state = resoudre(state, manche(state).puzzle.answer)
+    state = jouer(state, {
+      type: 'round/next',
+      puzzle: question(ENONCE_FINALE, REPONSE_FINALE),
+      firstPlayer: 0,
+    })
+    state = resoudre(state, manche(state).puzzle.answer)
+    state = jouer(state, { type: 'round/next', puzzle: enigme('la mer'), firstPlayer: 0 })
+    expect(jeu(state).progress.kind).toBe('bonus')
+    expect(joueurNomme(state, 'Alice').total).toBe(500)
+    expect(joueurNomme(state, 'Bob').total).toBe(500)
+
+    const jugee = jouer(repondre(state, REPONSE_FINALE), {
+      type: 'bonus/verdict',
+      requestId: 'req-1',
+      correct: true,
+    })
+    const progress = jeu(jugee).progress
+    expect(progress.kind).toBe('game-over')
+    if (progress.kind === 'game-over') {
+      expect(progress.winners).toEqual([asPlayerId('alice')])
+    }
+  })
+
+  it('ignore un verdict dont le requestId est périmé', () => {
+    const state = versBonus()
+    const jugee = repondre(state, REPONSE_FINALE)
+    const rejet = reduce(jugee, { type: 'bonus/verdict', requestId: 'req-perime', correct: true })
+    expect(rejet).toBe(jugee)
+  })
+
+  it('ignore un verdict hors de la phase de jugement', () => {
+    const state = versBonus() // encore en awaiting-answer
+    const rejet = reduce(state, { type: 'bonus/verdict', requestId: 'req-1', correct: true })
+    expect(rejet).toBe(state)
+  })
+
+  it('un échec de juge ramène en attente de réponse, sans pénalité, et bonus/answer redevient légale', () => {
+    const state = versBonus()
+    const avantAlice = joueurNomme(state, 'Alice').total
+    const jugee = repondre(state, REPONSE_FINALE)
+    const echoue = reduce(jugee, { type: 'bonus/failed', requestId: 'req-1', reason: 'panne du juge' })
+    expect(bonus(echoue).phase.kind).toBe('awaiting-answer')
+    expect(joueurNomme(echoue, 'Alice').total).toBe(avantAlice)
+    expect(legalActions(jeu(echoue))).toContain('bonus/answer')
+  })
+
+  it('ignore un échec de juge dont le requestId est périmé', () => {
+    const state = versBonus()
+    const jugee = repondre(state, REPONSE_FINALE)
+    const rejet = reduce(jugee, { type: 'bonus/failed', requestId: 'req-perime', reason: 'panne' })
+    expect(rejet).toBe(jugee)
+  })
+
+  it('le forfait (bonus/skip) termine la partie sans créditer personne', () => {
+    const state = versBonus()
+    const avantAlice = joueurNomme(state, 'Alice').total
+    const skip = reduce(state, { type: 'bonus/skip', by: bonus(state).by })
+    const progress = jeu(skip).progress
+    expect(progress.kind).toBe('game-over')
+    expect(joueurNomme(skip, 'Alice').total).toBe(avantAlice)
+    if (progress.kind === 'game-over' && progress.bonus !== null) {
+      expect(progress.bonus.outcome.kind).toBe('skipped')
+    }
+  })
+
+  it('ignore un forfait envoyé par un autre joueur que le gagnant', () => {
+    const state = versBonus()
+    const intrus = joueurNomme(state, 'Bob').id
+    expect(reduce(state, { type: 'bonus/skip', by: intrus })).toBe(state)
+  })
+
+  it('le forfait termine la partie même pendant le jugement d’une réponse : un juge cassé ne bloque jamais la fin', () => {
+    const state = versBonus()
+    const jugee = repondre(state, REPONSE_FINALE)
+    const skip = reduce(jugee, { type: 'bonus/skip', by: bonus(state).by })
+    expect(jeu(skip).progress.kind).toBe('game-over')
+  })
+
+  it('ignore toute action bonus/* hors de l’étape bonus', () => {
+    const state = demarrer()
+    const actions: readonly GameAction[] = [
+      { type: 'bonus/answer', by: courant(state).id, attempt: 'x', requestId: 'req-1' },
+      { type: 'bonus/verdict', requestId: 'req-1', correct: true },
+      { type: 'bonus/failed', requestId: 'req-1', reason: 'panne' },
+      { type: 'bonus/skip', by: courant(state).id },
+    ]
+    for (const action of actions) {
+      expect(reduce(state, action), `action ${action.type} acceptée à tort`).toBe(state)
+    }
+  })
+})
+
+describe('config/set-bonus-enabled', () => {
+  it('change la valeur du réglage', () => {
+    const state = demarrer()
+    const desactive = reduce(state, { type: 'config/set-bonus-enabled', enabled: false })
+    expect(jeu(desactive).config.bonusEnabled).toBe(false)
+  })
+
+  it('renvoie la même référence quand la valeur ne change pas', () => {
+    const state = demarrer() // bonusEnabled: true par défaut, voir CONFIG
+    const inchange = reduce(state, { type: 'config/set-bonus-enabled', enabled: true })
+    expect(inchange).toBe(state)
+  })
+
+  it('ne referme pas une étape bonus déjà ouverte, ni ne recalcule sa phase', () => {
+    const state = versBonus()
+    const desactive = reduce(state, { type: 'config/set-bonus-enabled', enabled: false })
+    expect(jeu(desactive).progress.kind).toBe('bonus')
+    expect(jeu(desactive).config.bonusEnabled).toBe(false)
+  })
+})
+
 const ENIGMES = ['le vent', 'mon chat', 'la mer', 'au revoir', 'bonne nuit', 'petit ours'] as const
 
+/**
+ * `game.history.length + 1` et pas `game.history.length` : au moment d'un
+ * `round/next`, `history` n'a pas encore reçu le résumé de la manche qui
+ * s'achève (`game.history.length` est son index), donc la manche à venir
+ * porte l'index suivant. Sans le `+ 1`, la manche finale ne serait jamais une
+ * question et la branche bonus ne serait jamais fuzzée.
+ */
 function enigmeSuivante(game: Game): Puzzle {
-  const answer = ENIGMES[(game.history.length + 1) % ENIGMES.length] ?? 'le vent'
-  return enigme(answer, `fuzz-${game.history.length + 1}`)
+  const index = game.history.length + 1
+  const answer = ENIGMES[index % ENIGMES.length] ?? 'le vent'
+  const id = `fuzz-${index}`
+  return isFinalRound(index, game.config.roundCount) ? question(answer, 'REPONSE', id) : enigme(answer, id)
 }
 
 /**
@@ -628,6 +976,35 @@ function actionPour(
       type,
       puzzle: enigmeSuivante(game),
       firstPlayer: Math.floor(rng() * game.players.length),
+    }
+  }
+
+  // Les quatre actions de l'étape bonus, à traiter avant la garde
+  // `progress.kind !== 'round'` ci-dessous : l'étape bonus n'est pas une manche.
+  if (
+    type === 'bonus/answer' ||
+    type === 'bonus/verdict' ||
+    type === 'bonus/failed' ||
+    type === 'bonus/skip'
+  ) {
+    if (game.progress.kind !== 'bonus') throw new Error(`Type ${type} hors étape bonus`)
+    const bonusState = game.progress.bonus
+    switch (type) {
+      case 'bonus/answer':
+        return { type, by: bonusState.by, attempt: bonusState.expected, requestId: `req-${tick}` }
+      case 'bonus/skip':
+        return { type, by: bonusState.by }
+      case 'bonus/verdict': {
+        if (bonusState.phase.kind !== 'judging') throw new Error('Verdict hors jugement')
+        // `requestId` de la phase courante, jamais inventé : sinon l'action est
+        // rejetée et le fuzz tourne sur place. Tiré sur le `rng` de la partie,
+        // jamais `Math.random`, pour rester reproductible depuis la graine.
+        return { type, requestId: bonusState.phase.requestId, correct: rng() < 0.5 }
+      }
+      case 'bonus/failed': {
+        if (bonusState.phase.kind !== 'judging') throw new Error('Échec hors jugement')
+        return { type, requestId: bonusState.phase.requestId, reason: 'panne simulée du juge' }
+      }
     }
   }
 
@@ -682,6 +1059,17 @@ function verifierInvariants(game: Game, totauxPrecedents: readonly number[]): vo
     expect(game.progress.currentPlayer).toBeGreaterThanOrEqual(0)
     expect(game.progress.currentPlayer).toBeLessThan(game.players.length)
     expect(() => currentPlayerOf(game)).not.toThrow()
+  }
+
+  if (game.progress.kind === 'bonus') {
+    // Le joueur du bonus est toujours un joueur connu, et la réponse attendue
+    // n'y est jamais vide : un état bonus orphelin ou infondé serait un bug du
+    // moteur, pas une variation légitime du fuzz.
+    expect(bonusPlayerOf(game), 'joueur du bonus introuvable').not.toBeNull()
+    expect(
+      game.progress.bonus.expected.trim().length,
+      'réponse attendue vide en étape bonus',
+    ).toBeGreaterThan(0)
   }
 }
 

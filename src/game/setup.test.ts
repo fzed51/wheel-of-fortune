@@ -12,7 +12,7 @@ import {
 } from './setup'
 import type { Setup } from './setup'
 
-const BASE: Setup = { roundCount: 3, opponents: 0, botLevel: 'normal' }
+const BASE: Setup = { roundCount: 3, opponents: 0, botLevel: 'normal', bonusEnabled: true }
 
 describe('configFrom', () => {
   it('reprend le nombre de manches, fige le reste dont le forfait bonus', () => {
@@ -22,7 +22,12 @@ describe('configFrom', () => {
       vowelCost: VOWEL_COST,
       minRoundPrize: MIN_ROUND_PRIZE,
       bonusPrize: BONUS_PRIZE,
+      bonusEnabled: true,
     })
+  })
+
+  it('recopie bonusEnabled : sans juge, pas d’étape bonus', () => {
+    expect(configFrom({ ...BASE, bonusEnabled: false }).bonusEnabled).toBe(false)
   })
 
   it.each([

@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { CONSONANTS } from '../game/puzzle'
-import { clearAllData, saveGame } from '../storage/persist'
+import type { GameState, Player } from '../game/types'
+import { clearAllData, saveGame, saveMistralKey } from '../storage/persist'
 import {
   avecLettres,
   avecPhase,
@@ -11,12 +12,39 @@ import {
   cash,
   courant,
   demarrer,
+  enigme,
   jeu,
   joueur,
   jouer,
+  manche,
   resoudre,
 } from '../test/game'
 import { monterApp } from '../test/app'
+
+/**
+ * Amène la partie jusqu'à l'étape bonus (`progress.kind === 'bonus'`, phase
+ * `awaiting-answer`) : une manche finale résolue, dont l'énigme porte une
+ * réponse bonus, enchaînée sur `round/next`. `roundCount: 1` fait de cette
+ * unique manche la manche finale — le chemin le plus court vers cette étape.
+ */
+function versEtapeBonus(options: {
+  readonly bonusAnswer: string
+  readonly answer?: string
+  readonly players?: readonly Player[]
+}): GameState {
+  const state = demarrer({
+    config: { roundCount: 1 },
+    answer: options.answer ?? 'le vent',
+    bonusAnswer: options.bonusAnswer,
+    players: options.players ?? [joueur('Alice')],
+  })
+  const resolue = resoudre(state, manche(state).puzzle.answer)
+  return jouer(resolue, {
+    type: 'round/next',
+    puzzle: enigme('la mer', 'suite-bonus'),
+    firstPlayer: 0,
+  })
+}
 
 /**
  * Écran de jeu. Aucune assertion ne dépend de l'énigme tirée ni du segment de
@@ -314,10 +342,9 @@ describe('GameRoute', () => {
   })
 
   /**
-   * Le plus important des trois : la réponse attendue de l'étape bonus ne
-   * doit fuiter nulle part dans le DOM — ni en texte visible, ni dans un
-   * attribut, ni dans un `aria-label`. L'étape bonus qui l'affichera n'existe
-   * pas encore : à ce stade, cette valeur n'a rien à faire à l'écran.
+   * La réponse attendue n'a rien à faire à l'écran tant que la manche finale
+   * est en cours — l'étape bonus, seule à la connaître, n'a pas encore
+   * commencé ici (`progress.kind === 'round'`).
    */
   it('n’affiche jamais la réponse attendue de la question, sous aucune forme', () => {
     saveGame(
@@ -326,5 +353,136 @@ describe('GameRoute', () => {
     const { container } = monterApp('/jeu')
 
     expect(container.innerHTML).not.toContain('ZBRAXOFINGUE')
+  })
+
+  describe('étape bonus', () => {
+    /**
+     * Le plus important de cette suite : `expected` vit dans `game.progress`
+     * (donc dans React DevTools et dans `localStorage`), mais ne doit jamais
+     * atteindre le DOM — ni en texte visible, ni dans un attribut, ni dans un
+     * `aria-label`. Une future prop `expected` ajoutée par erreur à
+     * `BonusQuestion` ferait tomber ce test.
+     */
+    it('n’affiche jamais la réponse attendue, sous aucune forme, pendant l’étape bonus', () => {
+      saveGame(jeu(versEtapeBonus({ bonusAnswer: 'ZBRAXOFINGUE' })))
+      const { container } = monterApp('/jeu')
+
+      expect(container.innerHTML).not.toContain('ZBRAXOFINGUE')
+    })
+
+    it('affiche la carte de la question bonus avec l’énoncé, le montant et le nom du joueur', () => {
+      saveGame(jeu(versEtapeBonus({ bonusAnswer: 'la loire', answer: 'le vent' })))
+      monterApp('/jeu')
+
+      expect(screen.getByRole('heading', { name: 'Question bonus' })).toBeInTheDocument()
+      // `normalizeAnswer` met l'énoncé en majuscules : c'est la même chaîne
+      // que celle déjà affichée par le plateau pendant la manche.
+      expect(screen.getByText('LE VENT')).toBeInTheDocument()
+      // Deux occurrences : le tableau des scores affiche déjà « Gains : 500
+      // euros » pour Alice — la carte bonus reprend le même montant.
+      expect(screen.getAllByText(/500 euros/)).toHaveLength(2)
+      expect(screen.getByText(/au tour de Alice/)).toBeInTheDocument()
+    })
+
+    /**
+     * `useRound()` rend `null` dès que `progress.kind !== 'round'` : la roue,
+     * le plateau, le clavier et la barre de commandes sont donc déjà
+     * conditionnés sur `round !== null` dans `GameRoute` et se retirent seuls,
+     * sans qu'aucune suppression ne soit nécessaire pour l'étape bonus.
+     * Ce test tomberait si l'un de ces quatre blocs redevenait visible.
+     */
+    it('ne montre ni roue, ni plateau, ni clavier, ni barre de commandes pendant l’étape bonus', () => {
+      saveGame(jeu(versEtapeBonus({ bonusAnswer: 'la loire' })))
+      monterApp('/jeu')
+
+      expect(screen.queryByRole('button', { name: 'Tourner' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Passer la main' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('group', { name: 'Clavier des lettres' })).not.toBeInTheDocument()
+      expect(screen.queryByText('Catégorie : Test')).not.toBeInTheDocument()
+    })
+
+    it('ne redirige pas vers /resultats pendant l’étape bonus', () => {
+      saveGame(jeu(versEtapeBonus({ bonusAnswer: 'la loire' })))
+      monterApp('/jeu')
+
+      // La redirection de fin de partie ne se déclenche que sur `game-over` :
+      // `bonus` en est un membre distinct de `GameProgress`, la carte de
+      // question doit donc rester affichée sur `/jeu`.
+      expect(screen.getByRole('heading', { name: 'Question bonus' })).toBeInTheDocument()
+      expect(screen.queryByRole('heading', { name: /Vainqueur|Égalité/ })).not.toBeInTheDocument()
+    })
+
+    it('« Répondre » appelle answerBonus : la réponse part vers le juge', async () => {
+      saveMistralKey('clé-test')
+      // Une promesse qui ne se règle jamais : la réponse part bien vers le
+      // juge (donc `answerBonus` a été appelé), sans qu'un verdict ne vienne
+      // perturber l'assertion en cours de route.
+      vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})))
+      saveGame(jeu(versEtapeBonus({ bonusAnswer: 'la loire' })))
+      const user = userEvent.setup()
+      monterApp('/jeu')
+
+      await user.type(screen.getByLabelText('Votre réponse'), 'une réponse')
+      await user.click(screen.getByRole('button', { name: 'Répondre' }))
+
+      // La preuve que `answerBonus` a bien été appelé : le champ devient en
+      // lecture seule et la boîte de verdict apparaît, ce que seule la
+      // transition vers la phase `judging` produit.
+      expect(await screen.findByText('Le juge examine votre réponse…')).toBeInTheDocument()
+    })
+
+    it('« Passer » appelle skipBonus : la partie se termine sans verdict', async () => {
+      saveGame(jeu(versEtapeBonus({ bonusAnswer: 'la loire' })))
+      const user = userEvent.setup()
+      monterApp('/jeu')
+
+      await user.click(screen.getByRole('button', { name: 'Passer' }))
+
+      // `skipBonus` dispatche `bonus/skip`, qui termine toujours la partie
+      // (`finishBonus`) : la route de jeu s'efface au profit des résultats.
+      expect(await screen.findByRole('heading', { name: /Vainqueur|Égalité/ })).toBeInTheDocument()
+    })
+
+    /**
+     * `phase: 'judging'` n'est volontairement **pas** persistée (voir
+     * `PersistedBonus` dans `storage/snapshot.ts`) : un verdict en vol
+     * abandonné à la fermeture de l'onglet redeviendrait `awaiting-answer` au
+     * rechargement, pour que le joueur retape sans avoir grillé sa question.
+     * La phase `judging` ne s'observe donc qu'en la déclenchant par un vrai
+     * clic sur « Répondre », jamais en la préfabriquant dans une sauvegarde.
+     */
+    it('affiche l’attente pendant que le juge délibère', async () => {
+      saveMistralKey('clé-test')
+      // Ne se règle jamais : la phase reste `judging` assez longtemps pour
+      // l'assertion, sans qu'un verdict ne vienne la faire progresser.
+      vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})))
+      saveGame(jeu(versEtapeBonus({ bonusAnswer: 'la loire' })))
+      const user = userEvent.setup()
+      monterApp('/jeu')
+
+      await user.type(screen.getByLabelText('Votre réponse'), 'une réponse fausse')
+      await user.click(screen.getByRole('button', { name: 'Répondre' }))
+
+      expect(await screen.findByText('Le juge examine votre réponse…')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Répondre' })).toHaveAttribute(
+        'aria-disabled',
+        'true',
+      )
+    })
+
+    it('affiche la phrase d’échec du juge après une panne réseau', async () => {
+      saveMistralKey('clé-test')
+      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('panne simulée')))
+      saveGame(jeu(versEtapeBonus({ bonusAnswer: 'la loire' })))
+      const user = userEvent.setup()
+      monterApp('/jeu')
+
+      await user.type(screen.getByLabelText('Votre réponse'), 'une réponse fausse')
+      await user.click(screen.getByRole('button', { name: 'Répondre' }))
+
+      expect(
+        await screen.findByText('Le juge est injoignable. Vérifiez votre connexion, puis réessayez.'),
+      ).toBeInTheDocument()
+    })
   })
 })

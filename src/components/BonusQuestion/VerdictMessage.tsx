@@ -13,11 +13,10 @@ export interface VerdictMessageProps {
 /**
  * Phrase d'attente ou d'échec du juge, **purement visuelle**.
  *
- * **Sans consommateur depuis que « Résoudre » est tranché localement** : le
- * verdict est synchrone, il n'y a plus ni attente ni panne à afficher sur ce
- * chemin. Conservé tel quel parce que l'étape suivante du chantier le remonte
- * dans le dialogue de la question bonus, seul appel au juge restant, où l'attente
- * et l'échec réseau existent bel et bien. Ne pas supprimer.
+ * C'est ici, dans la question bonus, que ce composant retrouve un
+ * consommateur : `Résoudre` tranche désormais localement et n'a plus ni
+ * attente ni panne à afficher, mais le juge reste sollicité pour cette
+ * dernière question, où l'attente et l'échec réseau existent bel et bien.
  *
  * Ni `role="status"` ni `role="alert"` ici, contrairement au réflexe : les deux
  * live regions du projet vivent dans le layout racine et `announceTransition`

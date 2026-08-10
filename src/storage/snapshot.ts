@@ -1,7 +1,10 @@
 import { reduce } from '../game/engine'
 import type {
+  BonusResult,
+  BonusState,
   Game,
   GameConfig,
+  GameProgress,
   Letter,
   Player,
   PlayerId,
@@ -36,10 +39,38 @@ export interface PersistedRound {
   readonly passes: number
 }
 
+/**
+ * Forme persistée de l'étape bonus, **sans `phase`** : un verdict en vol (le
+ * juge d'IA en train de répondre) ne survit pas au rechargement, exactement
+ * comme l'ancienne phase `resolving` avant que « Résoudre » ne devienne
+ * synchrone. Un rechargement pendant l'appel réseau ne doit **rien coûter**
+ * au joueur : `fromPersisted` reconstruit toujours `{ kind: 'awaiting-answer' }`,
+ * il retape sa réponse, la question bonus reste entière à gagner.
+ */
+export interface PersistedBonus {
+  readonly by: PlayerId
+  readonly question: Puzzle
+  readonly expected: string
+}
+
+/**
+ * Alias plutôt que type distinct : `BonusResult` ne porte aucun champ
+ * éphémère (ni `phase`, ni `requestId`, ni `attempt` — le verdict est déjà
+ * tranché quand ce type existe). Le dupliquer créerait deux formes à faire
+ * évoluer ensemble pour rien.
+ */
+export type PersistedBonusResult = BonusResult
+
 export type PersistedProgress =
   | { readonly kind: 'round'; readonly currentPlayer: number; readonly round: PersistedRound }
   | { readonly kind: 'round-over'; readonly summary: RoundSummary }
-  | { readonly kind: 'game-over'; readonly winners: readonly PlayerId[] }
+  | { readonly kind: 'bonus'; readonly bonus: PersistedBonus }
+  | {
+      readonly kind: 'game-over'
+      readonly winners: readonly PlayerId[]
+      /** `null` : partie finie sans étape bonus. */
+      readonly bonus: PersistedBonusResult | null
+    }
 
 export interface PersistedGame {
   readonly config: GameConfig
@@ -107,6 +138,24 @@ function copyPhase(phase: PersistedPhase): PersistedPhase {
   return { kind: phase.kind }
 }
 
+/** Ne recopie que `by`, `question` et `expected` : `phase` s'arrête ici, elle n'est jamais persistée. */
+function copyBonus(bonus: BonusState): PersistedBonus {
+  return { by: bonus.by, question: copyPuzzle(bonus.question), expected: bonus.expected }
+}
+
+function copyBonusOutcome(outcome: BonusResult['outcome']): BonusResult['outcome'] {
+  return outcome.kind === 'won' ? { kind: 'won', amount: outcome.amount } : { kind: outcome.kind }
+}
+
+function copyBonusResult(result: BonusResult): BonusResult {
+  return {
+    question: copyPuzzle(result.question),
+    expected: result.expected,
+    by: result.by,
+    outcome: copyBonusOutcome(result.outcome),
+  }
+}
+
 function shell(game: Game, progress: PersistedProgress): PersistedGame {
   return {
     config: { ...game.config },
@@ -130,6 +179,12 @@ function shell(game: Game, progress: PersistedProgress): PersistedGame {
  */
 export function toPersisted(game: Game): PersistedGame {
   const progress = game.progress
+  // Traitée avant le filtre générique ci-dessous : `BonusState` porte `phase`,
+  // que `shell` ne doit jamais écrire telle quelle (elle contiendrait `attempt`
+  // et `requestId` en cours de jugement).
+  if (progress.kind === 'bonus') {
+    return shell(game, { kind: 'bonus', bonus: copyBonus(progress.bonus) })
+  }
   if (progress.kind !== 'round') return shell(game, progress)
 
   const round = progress.round
@@ -176,6 +231,43 @@ export function toPersisted(game: Game): PersistedGame {
   })
 }
 
+/** Un `switch` exhaustif plutôt qu'une chaîne de ternaires : la 4ᵉ forme l'aurait rendue illisible. */
+function reviveProgress(progress: PersistedProgress): GameProgress {
+  switch (progress.kind) {
+    case 'round':
+      return {
+        kind: 'round',
+        currentPlayer: progress.currentPlayer,
+        round: {
+          index: progress.round.index,
+          puzzle: copyPuzzle(progress.round.puzzle),
+          guessed: [...progress.round.guessed],
+          phase: copyPhase(progress.round.phase),
+          passes: progress.round.passes,
+        },
+      }
+    case 'round-over':
+      return { kind: 'round-over', summary: copySummary(progress.summary) }
+    case 'bonus':
+      // La phase relue est toujours `awaiting-answer` : voir le docblock de `PersistedBonus`.
+      return {
+        kind: 'bonus',
+        bonus: {
+          by: progress.bonus.by,
+          question: copyPuzzle(progress.bonus.question),
+          expected: progress.bonus.expected,
+          phase: { kind: 'awaiting-answer' },
+        },
+      }
+    case 'game-over':
+      return {
+        kind: 'game-over',
+        winners: [...progress.winners],
+        bonus: progress.bonus === null ? null : copyBonusResult(progress.bonus),
+      }
+  }
+}
+
 /**
  * Élargit un enregistrement validé en partie jouable.
  *
@@ -185,27 +277,11 @@ export function toPersisted(game: Game): PersistedGame {
  * partagé laisserait une mutation extérieure atteindre l'état du jeu.
  */
 export function fromPersisted(persisted: PersistedGame): Game {
-  const progress = persisted.progress
   return {
     config: { ...persisted.config },
     players: persisted.players.map(copyPlayer),
     history: persisted.history.map(copySummary),
     playedPuzzleIds: [...persisted.playedPuzzleIds],
-    progress:
-      progress.kind === 'round'
-        ? {
-            kind: 'round',
-            currentPlayer: progress.currentPlayer,
-            round: {
-              index: progress.round.index,
-              puzzle: copyPuzzle(progress.round.puzzle),
-              guessed: [...progress.round.guessed],
-              phase: copyPhase(progress.round.phase),
-              passes: progress.round.passes,
-            },
-          }
-        : progress.kind === 'round-over'
-          ? { kind: 'round-over', summary: copySummary(progress.summary) }
-          : { kind: 'game-over', winners: [...progress.winners] },
+    progress: reviveProgress(persisted.progress),
   }
 }

@@ -1,6 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import { asPuzzleId } from '../game/types'
-import { cash, demarrer, jeu, manche, partieTerminee, proposer, resoudre, tourner } from '../test/game'
+import type { GameState } from '../game/types'
+import {
+  cash,
+  demarrer,
+  enigme,
+  jeu,
+  jouer,
+  manche,
+  partieTerminee,
+  proposer,
+  repondre,
+  resoudre,
+  tourner,
+} from '../test/game'
 import {
   decodeGame,
   decodePuzzleFile,
@@ -37,6 +50,33 @@ function sauvegarde(patch: (game: Brut) => void = () => undefined): string {
   return enveloppe(game)
 }
 
+/**
+ * Manche finale d'une partie à une seule manche, dont l'énigme est une
+ * question : atteint `{ kind: 'bonus' }` par de vraies actions plutôt qu'en
+ * bricolant l'état, qui pourrait ne jamais être produit par le reducer.
+ */
+function versEtapeBonus(expected = 'CANBERRA'): GameState {
+  const state = demarrer({ bonusAnswer: expected, config: { roundCount: 1 } })
+  const resolu = resoudre(state, manche(state).puzzle.answer)
+  return jouer(resolu, { type: 'round/next', puzzle: enigme('la mer', 'suite'), firstPlayer: 0 })
+}
+
+/** Étape bonus tranchée, gagnée : mène jusqu'à `game-over` avec `bonus.outcome.kind === 'won'`. */
+function versGameOverAvecBonusGagne(): GameState {
+  return jouer(repondre(versEtapeBonus(), 'Canberra', 'req-1'), {
+    type: 'bonus/verdict',
+    requestId: 'req-1',
+    correct: true,
+  })
+}
+
+/** Sauvegarde valide d'une étape bonus, éventuellement abîmée avant écriture. */
+function sauvegardeBonus(patch: (game: Brut) => void = () => undefined): string {
+  const game: Brut = JSON.parse(JSON.stringify(toPersisted(jeu(versEtapeBonus()))))
+  patch(game)
+  return enveloppe(game)
+}
+
 describe('enveloppe', () => {
   it('relit ce qu’elle a écrit', () => {
     expect(decodeRecord(encodeRecord({ bonjour: 1 }))).toEqual({ ok: true, value: { bonjour: 1 } })
@@ -55,6 +95,16 @@ describe('enveloppe', () => {
     })
     expect(decodeRecord('[]')).toEqual({ ok: false, reason: 'invalid' })
     expect(decodeRecord('"du texte"')).toEqual({ ok: false, reason: 'invalid' })
+  })
+
+  it('rejette une sauvegarde écrite en version 2, avant l’étape bonus', () => {
+    // Littéral volontaire : contrairement au test ci-dessus, celui-ci vérifie
+    // précisément que la version antérieure à ce bump est éconduite, pas
+    // n'importe quelle version étrangère — `SCHEMA_VERSION + 1` ne le prouverait pas.
+    expect(decodeRecord(JSON.stringify({ version: 2, value: {} }))).toEqual({
+      ok: false,
+      reason: 'version',
+    })
   })
 })
 
@@ -86,6 +136,15 @@ describe('decodeGame', () => {
       'config sans bonusPrize',
       (g) => {
         delete g.config.bonusPrize
+      },
+    ],
+    [
+      // `isConfig` doit l'exiger explicitement : sans ce contrôle, une config
+      // sans `bonusEnabled` passerait pour valide et le reducer ne saurait
+      // jamais s'il doit ouvrir l'étape bonus de la manche finale.
+      'config sans bonusEnabled',
+      (g) => {
+        delete g.config.bonusEnabled
       },
     ],
     ['manche au-delà du compte', (g) => (g.progress.round.index = 3)],
@@ -138,6 +197,54 @@ describe('decodeGame', () => {
   it('refuse un vainqueur qui n’est pas un joueur de la partie', () => {
     const persisted: Brut = JSON.parse(JSON.stringify(toPersisted(jeu(partieTerminee()))))
     persisted.progress.winners = ['fantome']
+    expect(decodeGame(enveloppe(persisted))).toEqual({ ok: false, reason: 'invalid' })
+  })
+})
+
+describe('decodeGame — étape bonus', () => {
+  it('accepte une étape bonus valide', () => {
+    const persisted = toPersisted(jeu(versEtapeBonus()))
+    expect(decodeGame(encodeRecord(persisted))).toEqual({ ok: true, value: persisted })
+  })
+
+  const abimeesBonus: readonly (readonly [string, (game: Brut) => void])[] = [
+    ['`by` qui n’est pas un joueur de la partie', (g) => (g.progress.bonus.by = 'fantome')],
+    ['`expected` vide', (g) => (g.progress.bonus.expected = '')],
+    [
+      // Le résumé de la manche finale est poussé dans `history` avant l'entrée
+      // dans l'étape bonus : un historique plus court signale une sauvegarde
+      // incohérente, pas une manche encore en cours.
+      'historique plus court que `roundCount`',
+      (g) => {
+        g.history = []
+      },
+    ],
+  ]
+
+  for (const [cas, patch] of abimeesBonus) {
+    it(`refuse une étape bonus avec ${cas}`, () => {
+      expect(decodeGame(sauvegardeBonus(patch))).toEqual({ ok: false, reason: 'invalid' })
+    })
+  }
+
+  it('accepte une partie terminée avec bonus gagné, montant compris', () => {
+    const persisted = toPersisted(jeu(versGameOverAvecBonusGagne()))
+    expect(decodeGame(encodeRecord(persisted))).toEqual({ ok: true, value: persisted })
+  })
+
+  it('refuse un bonus dont l’issue est inconnue', () => {
+    const persisted: Brut = JSON.parse(
+      JSON.stringify(toPersisted(jeu(versGameOverAvecBonusGagne()))),
+    )
+    persisted.progress.bonus.outcome = { kind: 'mystere' }
+    expect(decodeGame(enveloppe(persisted))).toEqual({ ok: false, reason: 'invalid' })
+  })
+
+  it('refuse un montant gagné négatif ou nul', () => {
+    const persisted: Brut = JSON.parse(
+      JSON.stringify(toPersisted(jeu(versGameOverAvecBonusGagne()))),
+    )
+    persisted.progress.bonus.outcome.amount = 0
     expect(decodeGame(enveloppe(persisted))).toEqual({ ok: false, reason: 'invalid' })
   })
 })

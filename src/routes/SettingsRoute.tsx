@@ -1,6 +1,8 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { BUTTON_GHOST, BUTTON_PRIMARY, CARD, FIELD, INPUT } from '../components/classes'
 import ThemeToggle from '../components/ThemeToggle'
+import { formatEuros } from '../game/announce'
+import { BONUS_PRIZE } from '../game/setup'
 import { useSettings } from '../hooks/useSettings'
 import { testMistralKey } from '../llm'
 import type { KeyTestResult } from '../llm'
@@ -171,19 +173,18 @@ export default function SettingsRoute() {
       </section>
 
       {/*
-        Cette section reste alors que la clé Mistral ne sert plus qu'à son
-        propre bouton « Tester la clé » : « Résoudre » est devenu une simple
-        comparaison de chaînes (`src/game/compare.ts`), déterministe, jouée
-        sans aucun juge. L'étape suivante du chantier rebranche cette clé sur
-        une question bonus posée à la manche finale — ne supprime pas cette
-        section sous prétexte qu'elle ne conditionne plus aucune règle.
+        « Résoudre » ne consulte plus aucun juge depuis l'étape B : c'est une
+        simple comparaison de chaînes (`src/game/compare.ts`), déterministe,
+        sans réseau. Le seul usage restant de cette clé est le verdict de la
+        question bonus de la manche finale — une question par partie, jouée
+        uniquement si le gagnant de cette manche choisit d'y répondre.
       */}
       <section className={CARD}>
         <h2 className="font-semibold text-fg">Clé d’API Mistral</h2>
         <p className="mt-1 text-sm text-fg-muted">
           {hasMistralKey
-            ? `Une clé est enregistrée sur cet appareil (${hint ?? '…'}). Elle ne sert qu’à vérifier l’accès à Mistral avec « Tester la clé » ci-dessous, aucune règle du jeu n’en dépend.`
-            : 'Aucune clé enregistrée. Le jeu se joue entièrement sans : cette clé ne sert qu’à tester l’accès à Mistral, si vous en enregistrez une.'}
+            ? `Une clé est enregistrée sur cet appareil (${hint ?? '…'}). Elle sert à juger la question bonus de la manche finale (${formatEuros(BONUS_PRIZE)} fixes), et au bouton « Tester la clé » ci-dessous.`
+            : `Aucune clé enregistrée. Le jeu se joue entièrement sans : cette clé ne fait qu’ouvrir la question bonus de la manche finale (${formatEuros(BONUS_PRIZE)} fixes), et sert à « Tester la clé » ci-dessous.`}
         </p>
 
         {/* Avertissement volontairement visible, pas une note en petits

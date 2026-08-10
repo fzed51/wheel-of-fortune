@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import { screen } from '@testing-library/react'
 import { formatEuros } from '../game/announce'
-import { VOWEL_COST } from '../game/setup'
+import { BONUS_PRIZE, VOWEL_COST } from '../game/setup'
 import { BANKRUPT_COUNT, PASS_COUNT, SEGMENT_COUNT, ZERO_COUNT } from '../game/wheel'
 import { monterApp } from '../test/app'
 
@@ -118,20 +118,29 @@ describe('HowToPlayRoute', () => {
     expect(item.textContent).toContain('Question')
   })
 
-  /**
-   * Ce test tombera le jour où l'étape bonus (gain associé à la question)
-   * sera livrée et que ce paragraphe sera réécrit pour l'annoncer — c'est le
-   * signal voulu : il rappelle qu'il reste un texte à compléter ici, pas
-   * seulement dans le moteur.
-   */
-  it('ne promet aucun gain associé à la question de la manche finale', () => {
+  it('annonce le montant fixe de la question bonus et sa condition : une clé d’API', () => {
     monterApp('/regles')
 
-    const item = screen.getByText(/manche finale porte une énigme/).closest('p')
+    // Le montant vient de la constante du moteur, jamais réécrit en dur ici :
+    // ce test tombe si `BONUS_PRIZE` change sans que l'écran suive.
+    const montant = formatEuros(BONUS_PRIZE).replace(/\s/g, '\\s')
+    const item = screen.getByText(new RegExp(`${montant} fixes`)).closest('p')
     if (item === null) {
-      throw new Error('Le paragraphe décrivant la manche finale est introuvable.')
+      throw new Error('Le paragraphe annonçant le montant de la question bonus est introuvable.')
     }
-    expect(item.textContent).not.toMatch(/gagn|rapporte|rapport|€|prime|récompense/i)
+    expect(item.textContent).toContain('jamais multiplié')
+
+    expect(
+      screen.getByText(/ne s’ouvre que si une clé d’API Mistral est enregistrée/),
+    ).toBeInTheDocument()
+  })
+
+  it('précise que la partie reste jouable sans clé, seule la question bonus en dépend', () => {
+    monterApp('/regles')
+
+    expect(
+      screen.getByText(/la partie va directement aux résultats après la manche finale/),
+    ).toBeInTheDocument()
   })
 
   it('structure l’écran en sections nommées par des titres de niveau 2', () => {

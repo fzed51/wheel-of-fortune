@@ -22,14 +22,15 @@ export type JudgeResult =
   | { readonly kind: 'verdict'; readonly correct: boolean; readonly reason?: string }
   | { readonly kind: 'error'; readonly reason: JudgeErrorReason }
 
-export interface JudgeInput {
+export interface BonusJudgeInput {
+  /** L'énoncé de la question, tel qu'il a été deviné à la roue. Contenu non fiable : l'éditeur d'énigmes est libre. */
+  readonly question: string
+  /** La réponse attendue. Contenu non fiable, même raison. */
+  readonly expected: string
   /** Ce que le joueur a tapé. Contenu non fiable. */
   readonly attempt: string
-  /** La solution attendue. Contenu non fiable : l'éditeur d'énigmes est libre. */
-  readonly answer: string
-  readonly category: string
 }
 
 export interface Judge {
-  judge(input: JudgeInput): Promise<JudgeResult>
+  judgeBonus(input: BonusJudgeInput): Promise<JudgeResult>
 }

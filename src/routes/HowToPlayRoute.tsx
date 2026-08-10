@@ -1,6 +1,6 @@
 import { CARD } from '../components/classes'
 import { formatEuros } from '../game/announce'
-import { MAX_OPPONENTS, MAX_ROUNDS, MIN_ROUNDS, MIN_ROUND_PRIZE, VOWEL_COST } from '../game/setup'
+import { BONUS_PRIZE, MAX_OPPONENTS, MAX_ROUNDS, MIN_ROUNDS, MIN_ROUND_PRIZE, VOWEL_COST } from '../game/setup'
 import { BANKRUPT_COUNT, PASS_COUNT, SEGMENT_COUNT, ZERO_COUNT } from '../game/wheel'
 
 /**
@@ -121,6 +121,30 @@ export default function HowToPlayRoute() {
       </section>
 
       <section className={CARD}>
+        <h2 className="font-semibold text-fg">Question bonus de la manche finale</h2>
+        <p className="mt-2 text-fg-muted">
+          Une fois la manche finale remportée, le gagnant peut tenter de répondre à sa question
+          pour {formatEuros(BONUS_PRIZE)} fixes. Ce montant est un forfait : il n’est jamais
+          multiplié par le multiplicateur de la manche, et il est versé directement au score
+          total. Il peut donc créer une égalité ou en défaire une — le classement final n’est
+          calculé qu’après cette étape.
+        </p>
+        <p className="mt-2 text-fg-muted">
+          Cette étape ne s’ouvre que si une clé d’API Mistral est enregistrée dans les Réglages.{' '}
+          <strong>Sans clé, la partie va directement aux résultats après la manche finale</strong> :
+          le reste du jeu, lui, se joue entièrement sans connexion, du premier tour au dernier.
+        </p>
+        <p className="mt-2 text-fg-muted">
+          Le verdict de cette seule question est jugé par un modèle de langage, parce qu’une
+          simple comparaison de texte ne suffit pas à reconnaître qu’« c’est Canberra » ou « la
+          ville de Canberra » répondent aussi bien que « Canberra » tout court. Un juge injoignable
+          n’est jamais compté comme une mauvaise réponse : la réponse peut être retapée sans
+          pénalité, ou le bouton « Passer » permet d’y renoncer et d’aller directement aux
+          résultats.
+        </p>
+      </section>
+
+      <section className={CARD}>
         <h2 className="font-semibold text-fg">Résoudre</h2>
         <p className="mt-2 text-fg-muted">
           Le bouton « Résoudre » ouvre une boîte pour taper la réponse complète de l’énigme. Le
@@ -190,8 +214,9 @@ export default function HowToPlayRoute() {
         <p className="mt-2 text-fg-muted">
           Partie en cours, énigmes personnelles, réglages et clé d’API restent uniquement dans le
           stockage local de ce navigateur. « Résoudre » compare la réponse localement, sans appel
-          réseau : le seul échange avec l’extérieur est le bouton « Tester la clé » des Réglages,
-          qui interroge Mistral pour vérifier que la clé enregistrée fonctionne.
+          réseau : les deux seuls échanges avec l’extérieur sont le bouton « Tester la clé » des
+          Réglages, et le verdict de la question bonus de la manche finale, tous deux adressés à
+          Mistral avec la clé enregistrée.
         </p>
         <p className="mt-3 rounded-lg border border-border bg-bg-soft p-3 text-sm text-fg">
           Sur iOS, une PWA installée depuis l’écran d’accueil a un stockage <strong>distinct</strong>{' '}

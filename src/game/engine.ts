@@ -1,8 +1,11 @@
 import type { GameAction } from './actions'
+import { isFinalRound, isQuestion } from './bonus'
 import { matchesAnswer } from './compare'
 import { countOccurrences, isConsonant, isSolved, isVowel } from './puzzle'
 import { canBuyVowel, canResolve, canSpin, isStuck, multiplierFor } from './rules'
 import type {
+  BonusResult,
+  BonusState,
   Game,
   GameState,
   Phase,
@@ -138,6 +141,44 @@ function turnOf(state: GameState, by: PlayerId): Turn | null {
   const player = game.players[seat]
   if (player === undefined || player.id !== by) return null
   return { game, round: game.progress.round, seat, player }
+}
+
+interface Bonus {
+  readonly game: Game
+  readonly bonus: BonusState
+  readonly player: Player
+}
+
+/** Pendant de `turnOf` pour l'étape bonus : `null` hors de cette étape, ou si son joueur a disparu. */
+function bonusOf(state: GameState): Bonus | null {
+  if (state.kind !== 'playing') return null
+  const game = state.game
+  if (game.progress.kind !== 'bonus') return null
+
+  const bonus = game.progress.bonus
+  const player = game.players.find((candidate) => candidate.id === bonus.by)
+  if (player === undefined) return null
+  return { game, bonus, player }
+}
+
+/**
+ * Construction partagée des trois sorties de l'étape bonus vers `game-over`.
+ * `winnersOf` n'est calculé **qu'ici**, jamais dans `round/next` en entrant en
+ * bonus : c'est ce qui permet au verdict de créer ou de casser une égalité
+ * entre les totaux figés à la fin de la dernière manche.
+ */
+function finishBonus(
+  game: Game,
+  players: readonly Player[],
+  bonus: BonusState,
+  outcome: BonusResult['outcome'],
+): GameState {
+  const result: BonusResult = { question: bonus.question, expected: bonus.expected, by: bonus.by, outcome }
+  return playing({
+    ...game,
+    players,
+    progress: { kind: 'game-over', winners: winnersOf(players), bonus: result },
+  })
 }
 
 export function reduce(state: GameState, action: GameAction): GameState {
@@ -316,12 +357,42 @@ export function reduce(state: GameState, action: GameAction): GameState {
       // Les cagnottes repartent à zéro, les banques sont acquises.
       const players = game.players.map((player) => ({ ...player, pot: 0 }))
 
-      if (summary.index + 1 >= game.config.roundCount) {
+      // `isFinalRound` plutôt que `summary.index + 1 >= game.config.roundCount` :
+      // strictement équivalent (`index >= roundCount - 1`), mais met le reducer
+      // et le tirage d'énigme de `GameProvider` sur la même définition de
+      // « manche finale ».
+      if (isFinalRound(summary.index, game.config.roundCount)) {
+        const expected = summary.puzzle.bonusAnswer
+        // `isQuestion` revérifie qu'`expected` ne se plie pas sur la chaîne vide
+        // (« ??? ») ; `expected !== undefined` reste la garde qui resserre le
+        // type à `string` pour la construction de `BonusState` ci-dessous.
+        if (
+          game.config.bonusEnabled &&
+          summary.outcome.kind === 'solved' &&
+          isQuestion(summary.puzzle) &&
+          expected !== undefined
+        ) {
+          // `winnersOf` n'est volontairement pas calculé ici : voir `finishBonus`.
+          return playing({
+            ...game,
+            players,
+            history,
+            progress: {
+              kind: 'bonus',
+              bonus: {
+                by: summary.outcome.by,
+                question: snapshotPuzzle(summary.puzzle),
+                expected,
+                phase: { kind: 'awaiting-answer' },
+              },
+            },
+          })
+        }
         return playing({
           ...game,
           players,
           history,
-          progress: { kind: 'game-over', winners: winnersOf(players) },
+          progress: { kind: 'game-over', winners: winnersOf(players), bonus: null },
         })
       }
 
@@ -336,6 +407,81 @@ export function reduce(state: GameState, action: GameAction): GameState {
           currentPlayer: seatOf(action.firstPlayer, players.length),
           round: { index: summary.index + 1, puzzle, guessed: [], phase: AWAITING, passes: 0 },
         },
+      })
+    }
+
+    case 'bonus/answer': {
+      const context = bonusOf(state)
+      if (context === null) return state
+      if (action.by !== context.bonus.by) return state
+      if (context.bonus.phase.kind !== 'awaiting-answer') return state
+      if (action.attempt.trim() === '') return state
+      return playing({
+        ...context.game,
+        progress: {
+          kind: 'bonus',
+          bonus: {
+            ...context.bonus,
+            phase: { kind: 'judging', attempt: action.attempt, requestId: action.requestId },
+          },
+        },
+      })
+    }
+
+    case 'bonus/verdict': {
+      const context = bonusOf(state)
+      if (context === null) return state
+      const phase = context.bonus.phase
+      // Un `requestId` périmé vient d'une tentative précédente (le joueur a
+      // retapé après un `bonus/failed`) : sans cette garde, un verdict qui
+      // arriverait en retard trancherait la partie sur une réponse abandonnée.
+      if (phase.kind !== 'judging' || phase.requestId !== action.requestId) return state
+
+      if (!action.correct) {
+        return finishBonus(context.game, context.game.players, context.bonus, { kind: 'lost' })
+      }
+      // Forfait, jamais multiplié par `multiplierFor` : ce n'est pas un gain de manche.
+      const amount = context.game.config.bonusPrize
+      const players = context.game.players.map((player) =>
+        player.id === context.bonus.by ? { ...player, total: player.total + amount } : player,
+      )
+      return finishBonus(context.game, players, context.bonus, { kind: 'won', amount })
+    }
+
+    case 'bonus/failed': {
+      const context = bonusOf(state)
+      if (context === null) return state
+      const phase = context.bonus.phase
+      if (phase.kind !== 'judging' || phase.requestId !== action.requestId) return state
+      // Aucune pénalité, aucun crédit, la partie ne se termine pas : un juge
+      // injoignable n'est pas une mauvaise réponse, le joueur retape.
+      return playing({
+        ...context.game,
+        progress: {
+          kind: 'bonus',
+          bonus: { ...context.bonus, phase: { kind: 'awaiting-answer' } },
+        },
+      })
+    }
+
+    case 'bonus/skip': {
+      const context = bonusOf(state)
+      if (context === null) return state
+      if (action.by !== context.bonus.by) return state
+      // Légale dans les deux phases : c'est l'invariant de terminaison qui
+      // garantit qu'un juge cassé n'empêche jamais la partie de finir.
+      return finishBonus(context.game, context.game.players, context.bonus, { kind: 'skipped' })
+    }
+
+    case 'config/set-bonus-enabled': {
+      if (state.kind !== 'playing') return state
+      if (state.game.config.bonusEnabled === action.enabled) return state
+      // La phase n'est pas recalculée : une étape bonus déjà ouverte le reste
+      // (le juge a pu disparaître entre-temps — c'est `bonus/skip` et
+      // `bonus/failed` qui traitent ce cas, pas cette action).
+      return playing({
+        ...state.game,
+        config: { ...state.game.config, bonusEnabled: action.enabled },
       })
     }
   }

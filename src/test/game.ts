@@ -3,6 +3,7 @@ import { initialState, reduce } from '../game/engine'
 import { normalizeAnswer } from '../game/puzzle'
 import { currentPlayerOf } from '../game/rules'
 import type {
+  BonusState,
   Consonant,
   Game,
   GameConfig,
@@ -23,12 +24,17 @@ import { WHEEL } from '../game/wheel'
  * `src/game` évite qu'un composant ne s'en serve par accident.
  */
 
-/** `minRoundPrize` volontairement plus bas que les gains courants, pour que les tests distinguent les deux. */
+/**
+ * `minRoundPrize` volontairement plus bas que les gains courants, pour que les
+ * tests distinguent les deux. `bonusEnabled: true` par défaut : les tests du
+ * cas « sans clé » passent `config: { bonusEnabled: false }`.
+ */
 export const CONFIG: GameConfig = {
   roundCount: 3,
   vowelCost: 250,
   minRoundPrize: 500,
   bonusPrize: 500,
+  bonusEnabled: true,
 }
 
 export function joueur(name: string, patch: Partial<Player> = {}): Player {
@@ -102,6 +108,14 @@ export function manche(state: GameState): RoundState {
   return game.progress.round
 }
 
+export function bonus(state: GameState): BonusState {
+  const game = jeu(state)
+  if (game.progress.kind !== 'bonus') {
+    throw new Error(`Aucune étape bonus en cours (progress : ${game.progress.kind})`)
+  }
+  return game.progress.bonus
+}
+
 export function courant(state: GameState): Player {
   return currentPlayerOf(jeu(state))
 }
@@ -159,6 +173,11 @@ export function acheter(state: GameState, letter: Vowel): GameState {
  */
 export function resoudre(state: GameState, attempt: string): GameState {
   return jouer(state, { type: 'resolve/attempt', by: courant(state).id, attempt })
+}
+
+/** Répond à l'étape bonus au nom de son joueur : `bonus(state).by`, jamais le joueur courant. */
+export function repondre(state: GameState, attempt: string, requestId = 'req-1'): GameState {
+  return jouer(state, { type: 'bonus/answer', by: bonus(state).by, attempt, requestId })
 }
 
 /** Partie menée jusqu'à `game-over` : chaque manche gagnée par résolution. */

@@ -41,11 +41,15 @@ const RACINE = resolve(import.meta.dirname, '..', '..')
 
 /**
  * Clé factice, écrite juste avant le contrôle de l'export pour vérifier qu'elle
- * n'y apparaît pas. Elle n'ouvre plus aucune fonctionnalité — « Résoudre » se
- * passe de clé depuis que le verdict est rendu localement — et aucun contrôle ne
- * déclenche d'appel à Mistral. Le profil Chrome est jeté à la fin.
+ * n'y apparaît pas, puis effacée juste après (voir plus bas). Elle n'ouvre plus
+ * aucune fonctionnalité de jeu — « Résoudre » se passe de clé depuis que le
+ * verdict est rendu localement — mais sa seule présence en stockage met
+ * `config.bonusEnabled` à vrai pour toute partie démarrée ensuite, d'où l'effacement.
  */
 const CLE_FACTICE = 'controle-navigateur-aucune-requete'
+
+/** Nom de clé recopié de `STORAGE_KEYS.mistral` (`src/storage/keys.ts`) : ce script est du JS brut, sans accès au module TypeScript source. */
+const CLE_STOCKAGE_MISTRAL = 'wof:mistral-key:1'
 
 const CONSONNES = ['S', 'R', 'T', 'N', 'L', 'M', 'D', 'P', 'C', 'V', 'B', 'F', 'G']
 
@@ -412,7 +416,7 @@ async function main() {
   })
 
   await controle('export : téléchargement d’un blob sous CSP', async () => {
-    await evaluate(client, `localStorage.setItem('wof:mistral-key:1', '${CLE_FACTICE}'); return true`)
+    await evaluate(client, `localStorage.setItem('${CLE_STOCKAGE_MISTRAL}', '${CLE_FACTICE}'); return true`)
     await goto(client, `${APP}enigmes`)
     await evaluate(
       client,
@@ -431,6 +435,20 @@ async function main() {
     exiger(!/mistral|settings|save/i.test(contenu), 'l’export contient autre chose que des énigmes', contenu.slice(0, 200))
     return { fichier: fichiers[0], entrees: JSON.parse(contenu).value.length }
   })
+
+  /*
+   * Effacement hors du `controle()` ci-dessus, pour qu'il ait lieu même si ce
+   * contrôle échoue : la clé a fini de servir dès que le fichier exporté a été
+   * lu, et la laisser en stockage ne serait pas un oubli inoffensif. Les
+   * contrôles suivants qui rechargent la page (« service worker », « hors
+   * ligne ») remonteraient alors `SettingsProvider`, qui relit le stockage au
+   * montage : `hasMistralKey` — donc `config.bonusEnabled` — passerait à vrai
+   * pour toute partie démarrée après. Le jour où un contrôle jouerait une
+   * partie jusqu'à la manche finale, l'étape bonus tenterait un vrai appel
+   * réseau vers Mistral avec cette clé invalide — exactement ce qu'un script
+   * de recette ne doit jamais faire par inadvertance.
+   */
+  await evaluate(client, `localStorage.removeItem('${CLE_STOCKAGE_MISTRAL}'); return true`)
 
   await controle('manifest et icônes', async () => {
     const manifest = await evaluate(

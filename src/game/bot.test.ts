@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { BOT_EASY_RESOLVE_HANDICAP, botTurnKey, decideBotAction } from './bot'
+import {
+  BONUS_BOT_ATTEMPT,
+  BONUS_BOT_SUCCESS,
+  BOT_EASY_RESOLVE_HANDICAP,
+  botBonusIsCorrect,
+  botTurnKey,
+  decideBotAction,
+} from './bot'
+import { foldForCompare } from './compare'
 import { initialState, reduce } from './engine'
 import { CONSONANTS } from './puzzle'
 import { createRng } from './rng'
@@ -10,6 +18,7 @@ import {
   avecLettres,
   avecPhase,
   avecPot,
+  bonus,
   bot,
   cash,
   courant,
@@ -19,9 +28,23 @@ import {
   jouer,
   joueur,
   manche,
+  repondre,
   resoudre,
   tourner,
 } from '../test/game'
+
+/**
+ * Amène une partie d'une seule manche jusqu'à l'étape bonus : la manche est
+ * gagnée par `resolve/attempt` sur la bonne réponse, ce qui fait de son
+ * gagnant (le premier siège, `firstPlayer` valant 0 par défaut) le joueur de
+ * l'étape bonus. `players[0]` décide donc à qui appartient l'étape bonus dans
+ * les tests ci-dessous.
+ */
+function versBonus(players: readonly Player[]): GameState {
+  const depart = demarrer({ players, config: { roundCount: 1 }, bonusAnswer: 'la bonne reponse' })
+  const gagnee = resoudre(depart, manche(depart).puzzle.answer)
+  return jouer(gagnee, { type: 'round/next', puzzle: enigme('la mer', 'suite'), firstPlayer: 0 })
+}
 
 const ENIGMES = ['le vent', 'mon chat', 'la mer', 'au revoir', 'bonne nuit'] as const
 
@@ -63,22 +86,28 @@ function partieAutomatique(
     // c'est ici que le typage se resserre.
     if (progress.kind === 'game-over') break
 
-    const phase = progress.round.phase
-    if (phase.kind === 'spinning') {
-      state = reduce(state, {
-        type: 'wheel/settled',
-        by: currentPlayerOf(game).id,
-        spinId: phase.spin.spinId,
-      })
-      continue
-    }
-    if (phase.kind === 'blocked') {
-      state = reduce(state, suivante())
-      continue
+    // La phase de manche n'existe que pour `progress.kind === 'round'` : ces
+    // fixtures ne portent jamais de `bonusAnswer`, donc l'étape bonus n'est
+    // jamais atteinte ici, mais le typage doit rester exhaustif sur les deux
+    // membres de `GameProgress` restants (`round` et `bonus`).
+    if (progress.kind === 'round') {
+      const phase = progress.round.phase
+      if (phase.kind === 'spinning') {
+        state = reduce(state, {
+          type: 'wheel/settled',
+          by: currentPlayerOf(game).id,
+          spinId: phase.spin.spinId,
+        })
+        continue
+      }
+      if (phase.kind === 'blocked') {
+        state = reduce(state, suivante())
+        continue
+      }
     }
 
     const legales = legalActions(game)
-    const action = decideBotAction(game, rng, { spinId: pas })
+    const action = decideBotAction(game, rng, { spinId: pas, requestId: `req-${pas}` })
     expect(action, `bot sans décision alors que ${legales.join(', ')} est légal`).not.toBeNull()
     if (action === null) throw new Error('bot sans décision')
 
@@ -112,7 +141,7 @@ describe('décisions figées', () => {
 
   it('un bot normal descend les fréquences du français', () => {
     const state = tourner(demarrer({ players: [bot('Bot')], answer: 'le vent' }), cash(500))
-    const action = decideBotAction(jeu(state), constant, { spinId: 1 })
+    const action = decideBotAction(jeu(state), constant, { spinId: 1, requestId: 'r' })
     expect(action).toEqual({
       type: 'letter/consonant',
       by: currentPlayerOf(jeu(state)).id,
@@ -125,7 +154,7 @@ describe('décisions figées', () => {
       demarrer({ players: [bot('Bot', 'easy')], answer: 'le vent' }),
       cash(500),
     )
-    const action = decideBotAction(jeu(state), createRng(7), { spinId: 1 })
+    const action = decideBotAction(jeu(state), createRng(7), { spinId: 1, requestId: 'r' })
     expect(action?.type).toBe('letter/consonant')
     if (action?.type === 'letter/consonant') {
       expect(remainingConsonants(manche(state))).toContain(action.letter)
@@ -139,7 +168,7 @@ describe('décisions figées', () => {
       'V',
       'N',
     ])
-    const action = decideBotAction(jeu(state), constant, { spinId: 3 })
+    const action = decideBotAction(jeu(state), constant, { spinId: 3, requestId: 'r' })
     expect(action?.type).toBe('wheel/spin')
   })
 
@@ -154,7 +183,7 @@ describe('décisions figées', () => {
       'N',
       'T',
     ])
-    const action = decideBotAction(jeu(state), constant, { spinId: 3 })
+    const action = decideBotAction(jeu(state), constant, { spinId: 3, requestId: 'r' })
     expect(action).toEqual({
       type: 'resolve/attempt',
       by: currentPlayerOf(jeu(state)).id,
@@ -174,13 +203,13 @@ describe('décisions figées', () => {
     // Sous le seuil facile (0,85), mais au-dessus du seuil normal (0,7) une fois
     // le tirage handicapé pris en compte.
     const rng = () => (avancement08 + avancement08 * BOT_EASY_RESOLVE_HANDICAP) / 2
-    expect(decideBotAction(jeu(normal), rng, { spinId: 1 })?.type).toBe('resolve/attempt')
-    expect(decideBotAction(jeu(facile), rng, { spinId: 1 })?.type).not.toBe('resolve/attempt')
+    expect(decideBotAction(jeu(normal), rng, { spinId: 1, requestId: 'r' })?.type).toBe('resolve/attempt')
+    expect(decideBotAction(jeu(facile), rng, { spinId: 1, requestId: 'r' })?.type).not.toBe('resolve/attempt')
   })
 
   it('achète une voyelle quand il a de la marge et la manche est jeune', () => {
     const state = avecPot(demarrer({ players: [bot('Bot')], answer: 'le vent' }), 0, 500)
-    const action = decideBotAction(jeu(state), constant, { spinId: 1 })
+    const action = decideBotAction(jeu(state), constant, { spinId: 1, requestId: 'r' })
     expect(action).toEqual({
       type: 'letter/buy-vowel',
       by: currentPlayerOf(jeu(state)).id,
@@ -198,7 +227,7 @@ describe('décisions figées', () => {
       ...CONSONANTS,
     ])
     expect(legalActions(jeu(state))).toEqual(['resolve/attempt', 'turn/pass'])
-    expect(decideBotAction(jeu(state), constant, { spinId: 1 })).toEqual({
+    expect(decideBotAction(jeu(state), constant, { spinId: 1, requestId: 'r' })).toEqual({
       type: 'turn/pass',
       by: currentPlayerOf(jeu(state)).id,
     })
@@ -206,7 +235,7 @@ describe('décisions figées', () => {
 
   it('ne joue jamais à la place d’un humain', () => {
     const state = demarrer({ players: [joueur('Alice'), bot('Bot')], firstPlayer: 0 })
-    expect(decideBotAction(jeu(state), constant, { spinId: 1 })).toBeNull()
+    expect(decideBotAction(jeu(state), constant, { spinId: 1, requestId: 'r' })).toBeNull()
   })
 
   it('ne décide rien pendant une rotation de la roue', () => {
@@ -216,7 +245,7 @@ describe('décisions figées', () => {
       by: currentPlayerOf(jeu(state)).id,
       spin: { index: cash(500), offset: 0, spinId: 1 },
     })
-    expect(decideBotAction(jeu(lance), constant, { spinId: 2 })).toBeNull()
+    expect(decideBotAction(jeu(lance), constant, { spinId: 2, requestId: 'r' })).toBeNull()
   })
 })
 
@@ -315,5 +344,115 @@ describe('botTurnKey', () => {
       attempt: 'réponse fausse',
     })
     expect(botTurnKey(apres)).not.toBe(avant)
+  })
+})
+
+describe('botTurnKey à l’étape bonus', () => {
+  it('rend une clé non nulle quand l’étape bonus appartient à un bot', () => {
+    const state = versBonus([bot('Bot 1'), joueur('Alice')])
+    expect(botTurnKey(state)).not.toBeNull()
+  })
+
+  it('rend null quand l’étape bonus appartient à un humain', () => {
+    const state = versBonus([joueur('Alice'), bot('Bot 1')])
+    expect(botTurnKey(state)).toBeNull()
+  })
+
+  it('change entre la réponse et le jugement : sans ça le bot répond puis reste muet, la partie figée', () => {
+    const state = versBonus([bot('Bot 1'), joueur('Alice')])
+    const avant = botTurnKey(state)
+    const enJugement = repondre(state, BONUS_BOT_ATTEMPT)
+    expect(jeu(enJugement).progress.kind).toBe('bonus')
+    expect(botTurnKey(enJugement)).not.toBeNull()
+    expect(botTurnKey(enJugement)).not.toBe(avant)
+  })
+})
+
+describe('decideBotAction à l’étape bonus', () => {
+  const constant = () => 0.2
+
+  it('répond avec le texte de remplacement, en attente de réponse', () => {
+    const state = versBonus([bot('Bot 1'), joueur('Alice')])
+    const action = decideBotAction(jeu(state), constant, { spinId: 1, requestId: 'ticket-req' })
+    expect(action).toEqual({
+      type: 'bonus/answer',
+      by: bonus(state).by,
+      attempt: BONUS_BOT_ATTEMPT,
+      requestId: 'ticket-req',
+    })
+  })
+
+  it('ne divulgue jamais la réponse attendue, ni sa forme pliée, dans sa tentative', () => {
+    const state = versBonus([bot('Bot 1'), joueur('Alice')])
+    const expected = bonus(state).expected
+    const action = decideBotAction(jeu(state), constant, { spinId: 1, requestId: 'r' })
+    expect(action?.type).toBe('bonus/answer')
+    if (action?.type !== 'bonus/answer') throw new Error('type inattendu')
+    expect(action.attempt).not.toBe(expected)
+    expect(foldForCompare(action.attempt)).not.toBe(foldForCompare(expected))
+  })
+
+  it('rend un verdict au jugement, avec le requestId de la phase et non celui du ticket', () => {
+    const state = versBonus([bot('Bot 1'), joueur('Alice')])
+    const enJugement = repondre(state, 'une tentative', 'req-de-la-phase')
+    const action = decideBotAction(jeu(enJugement), () => 0, {
+      spinId: 1,
+      requestId: 'ticket-different',
+    })
+    expect(action).toEqual({ type: 'bonus/verdict', requestId: 'req-de-la-phase', correct: true })
+  })
+
+  it('ne décide rien à l’étape bonus d’un humain', () => {
+    const state = versBonus([joueur('Alice'), bot('Bot 1')])
+    expect(decideBotAction(jeu(state), constant, { spinId: 1, requestId: 'r' })).toBeNull()
+  })
+})
+
+describe('botBonusIsCorrect', () => {
+  it('réussit strictement sous le seuil BONUS_BOT_SUCCESS', () => {
+    expect(botBonusIsCorrect(() => BONUS_BOT_SUCCESS - 0.01)).toBe(true)
+  })
+
+  it('échoue au seuil BONUS_BOT_SUCCESS lui-même (comparaison stricte, pas <=) et au-dessus', () => {
+    expect(botBonusIsCorrect(() => BONUS_BOT_SUCCESS)).toBe(false)
+    expect(botBonusIsCorrect(() => BONUS_BOT_SUCCESS + 0.01)).toBe(false)
+  })
+})
+
+describe('l’étape bonus jouée par un bot ne fige jamais la partie', () => {
+  it('atteint game-over en un nombre borné de pas, en enchaînant decideBotAction, reduce et botTurnKey', () => {
+    for (let seed = 1; seed <= 10; seed += 1) {
+      const rng = createRng(seed)
+      let state = versBonus([bot('Bot 1'), joueur('Alice')])
+      let pas = 0
+      // Clé avant le premier coup : un vrai driver replanifie son effet dès
+      // qu'elle change, exactement ce que la boucle vérifie à chaque tour.
+      let précédente = botTurnKey(state)
+
+      while (jeu(state).progress.kind !== 'game-over') {
+        pas += 1
+        if (pas > 20) throw new Error('étape bonus non terminée')
+
+        const action = decideBotAction(jeu(state), rng, { spinId: pas, requestId: `req-${pas}` })
+        expect(action, 'le bot doit toujours avoir une décision à l’étape bonus').not.toBeNull()
+        if (action === null) throw new Error('bot sans décision')
+
+        const apres = reduce(state, action)
+        expect(apres, `action ${action.type} rejetée par le reducer`).not.toBe(state)
+        state = apres
+
+        if (jeu(state).progress.kind !== 'game-over') {
+          const suivante = botTurnKey(state)
+          // La clé doit à la fois rester non nulle (le bot a encore la main) et
+          // avoir changé depuis le coup précédent : sinon l'effet du driver ne
+          // se replanifie pas, et le bot reste muet pour toujours.
+          expect(suivante, 'la clé doit rester non nulle jusqu’à la fin').not.toBeNull()
+          expect(suivante, 'la clé doit changer après chaque décision réelle').not.toBe(précédente)
+          précédente = suivante
+        }
+      }
+
+      expect(pas).toBe(2)
+    }
   })
 })

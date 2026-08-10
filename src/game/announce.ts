@@ -1,7 +1,7 @@
 import type { GameAction } from './actions'
 import type { Cell } from './puzzle'
 import { cellsOf, countOccurrences, revealedLetters } from './puzzle'
-import { activeRound, currentPlayerOf, multiplierFor } from './rules'
+import { activeRound, bonusPlayerOf, currentPlayerOf, multiplierFor } from './rules'
 import type { Consonant, Game, GameState, Letter, Player, PlayerId, RoundState, Vowel } from './types'
 
 /**
@@ -171,11 +171,96 @@ function gameOverPhrase(game: Game): string {
   const first = winnerPlayers[0]
   if (first === undefined) return 'Partie terminée.'
   const amount = formatEuros(first.total)
+  // Le bonus gagné est déjà crédité dans `total` par le reducer (voir
+  // `finishBonus` dans `engine.ts`) : sans cette précision, le total annoncé
+  // paraîtrait faux de 500 € face au tableau des scores, qui affichait encore
+  // le total sans bonus juste avant l'étape bonus.
+  const { bonus } = game.progress
+  const bonusNote =
+    bonus !== null && bonus.outcome.kind === 'won'
+      ? ` (dont ${formatEuros(bonus.outcome.amount)} de bonus)`
+      : ''
   if (winnerPlayers.length === 1) {
     const verb = first.kind.type === 'human' ? 'gagnez' : 'gagne'
-    return `Partie terminée. ${subjectName(first)} ${verb} avec ${amount}.`
+    return `Partie terminée. ${subjectName(first)} ${verb} avec ${amount}${bonusNote}.`
   }
-  return `Partie terminée. Égalité entre ${joinFr(winnerPlayers.map(subjectName))} avec ${amount}.`
+  return `Partie terminée. Égalité entre ${joinFr(winnerPlayers.map(subjectName))} avec ${amount}${bonusNote}.`
+}
+
+/**
+ * Entrée dans l'étape bonus : la question vient de la manche finale qui
+ * vient d'être gagnée, donc déjà entièrement révélée sur le plateau — rien à
+ * épeler ni à cacher, contrairement à `announcePuzzle` pendant une manche en
+ * cours. `expected` n'apparaît jamais ici : c'est la réponse qui reste à
+ * trouver.
+ */
+function bonusIntroPhrase(game: Game): string {
+  if (game.progress.kind !== 'bonus') return ''
+  const { bonus } = game.progress
+  const player = bonusPlayerOf(game)
+  const turn =
+    player === null
+      ? ''
+      : player.kind.type === 'human'
+        ? ' À vous de répondre.'
+        : ` Au tour de ${player.name} de répondre.`
+  return (
+    `Manche finale gagnée. La question donne droit à un bonus de ` +
+    `${formatEuros(game.config.bonusPrize)} : ${bonus.question.answer}.${turn}`
+  )
+}
+
+/**
+ * `action.attempt` n'est **jamais** rendu ici : pour un bot c'est un texte de
+ * remplacement (voir `game/bot.ts`), pour un humain du bruit — même motif que
+ * `resolveAttemptAnnouncement`. Le juge n'a pas encore tranché à ce stade, il
+ * n'y a donc rien d'autre à dire que « la tentative est partie ».
+ */
+function bonusAnswerAnnouncement(nextGame: Game, by: PlayerId): string {
+  const speaker = botSpeaker(nextGame, by)
+  const subject = speaker === null ? 'Vous avez proposé une réponse' : `${speaker.name} a proposé une réponse`
+  return `${subject}. Le juge l'examine…`
+}
+
+/**
+ * `bonus/verdict` finit toujours la partie (`finishBonus`) : la phrase de fin
+ * de partie est donc systématiquement accolée, gagnant ou perdant. Sur une
+ * perte, la réponse attendue est révélée — la partie est finie, la retenir
+ * n'a plus aucun sens.
+ */
+function bonusVerdictAnnouncement(nextGame: Game): string {
+  if (nextGame.progress.kind !== 'game-over') return ''
+  const result = nextGame.progress.bonus
+  if (result === null) return ''
+  if (result.outcome.kind === 'won') {
+    return `Bonne réponse ! Bonus de ${formatEuros(result.outcome.amount)} crédité. ${gameOverPhrase(nextGame)}`
+  }
+  return `Mauvaise réponse. La bonne réponse était ${result.expected}. ${gameOverPhrase(nextGame)}`
+}
+
+/** Les quatre raisons d'échec technique que `llm/judge.ts` peut produire. */
+function isJudgeFailureReason(value: string): value is JudgeFailureReason {
+  return value === 'network' || value === 'timeout' || value === 'bad-response' || value === 'unauthorized'
+}
+
+/**
+ * `action.reason` arrive en `string` brut (voir `actions.ts` : le moteur ne
+ * peut pas importer `llm/`, donc pas l'union fermée `JudgeFailureReason`).
+ * Une valeur hors des quatre connues retombe sur `network`, la moins fausse :
+ * le juge n'a de toute façon pas pu être joint. Aucune pénalité n'est jamais
+ * appliquée sur cette action (voir le reducer) : le joueur doit l'entendre,
+ * sinon il croira son bonus perdu.
+ */
+function bonusFailedAnnouncement(reason: string): string {
+  const judgeReason = isJudgeFailureReason(reason) ? reason : 'network'
+  return `${announceJudgeFailure(judgeReason)} Aucune pénalité, vous pouvez retaper votre réponse.`
+}
+
+/** `bonus/skip` finit toujours la partie (`finishBonus`), comme le verdict. */
+function bonusSkipAnnouncement(nextGame: Game, by: PlayerId): string {
+  const speaker = botSpeaker(nextGame, by)
+  const subject = speaker === null ? 'Vous renoncez' : `${speaker.name} renonce`
+  return `${subject} à la question bonus. ${gameOverPhrase(nextGame)}`
 }
 
 /**
@@ -190,6 +275,7 @@ function gameOverPhrase(game: Game): string {
  */
 function roundNextAnnouncement(nextGame: Game): string {
   if (nextGame.progress.kind === 'game-over') return gameOverPhrase(nextGame)
+  if (nextGame.progress.kind === 'bonus') return bonusIntroPhrase(nextGame)
   const last = nextGame.history[nextGame.history.length - 1]
   if (last !== undefined && last.outcome.kind === 'void') {
     return `Manche annulée, plus aucune lettre jouable. Réponse : ${last.puzzle.answer}.`
@@ -321,6 +407,19 @@ function heardAnnouncement(prev: GameState, next: GameState, action: GameAction)
       return { status: passAnnouncement(prevGame, nextGame, action.by), alert: '' }
     case 'round/next':
       return { status: roundNextAnnouncement(nextGame), alert: '' }
+    case 'bonus/answer':
+      return { status: bonusAnswerAnnouncement(nextGame, action.by), alert: '' }
+    case 'bonus/verdict':
+      return { status: bonusVerdictAnnouncement(nextGame), alert: '' }
+    case 'bonus/failed':
+      return { status: bonusFailedAnnouncement(action.reason), alert: '' }
+    case 'bonus/skip':
+      return { status: bonusSkipAnnouncement(nextGame, action.by), alert: '' }
+    case 'config/set-bonus-enabled':
+      // Réglage, pas un coup : suit l'apparition ou la disparition d'une clé
+      // d'API Mistral. L'annoncer interromprait le jeu pour un évènement que
+      // le joueur n'a pas provoqué depuis la partie en cours.
+      return { status: '', alert: '' }
   }
 }
 
@@ -332,7 +431,8 @@ function heardAnnouncement(prev: GameState, next: GameState, action: GameAction)
  * Si la mise en page change, c'est ici qu'il faut revenir : l'en-tête de
  * `routes/GameRoute.tsx` et `components/PuzzleBoard/` justifient le cas du
  * départ de manche, la carte « Manche terminée » de `routes/GameRoute.tsx`
- * celui de la fin de manche.
+ * celui de la fin de manche, la carte bonus de `src/components/` celui de
+ * l'entrée en étape bonus.
  */
 function alreadyOnScreen(next: GameState, action: GameAction): boolean {
   if (next.kind !== 'playing') return false
@@ -343,7 +443,15 @@ function alreadyOnScreen(next: GameState, action: GameAction): boolean {
   // Départ de partie : l'énigme toute fraîche est épelée dans `status`, l'œil
   // la lit déjà déroulée en blancs sur le plateau.
   if (action.type === 'game/start') return true
-  if (action.type !== 'round/next' || next.game.progress.kind !== 'round') return false
+  if (action.type !== 'round/next') return false
+  // Entrée en étape bonus : la carte bonus (`src/components/`) ne peut pas
+  // exister sans afficher la question et le montant en jeu — c'est tout son
+  // objet, le joueur doit les lire pour répondre. L'écran porte donc déjà,
+  // structurellement et pas par coïncidence de mise en page, exactement
+  // l'information de cette phrase ; contrairement à la manche annulée
+  // ci-dessous, qui elle n'apparaît nulle part ailleurs à l'écran.
+  if (next.game.progress.kind === 'bonus') return true
+  if (next.game.progress.kind !== 'round') return false
   // `round/next` peut aussi enchaîner sur une nouvelle manche après un blocage
   // (plus aucune lettre jouable) : dans ce cas précis, la phrase ne parle pas
   // de la nouvelle énigme mais de la réponse de la manche annulée — une

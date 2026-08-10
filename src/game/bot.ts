@@ -2,6 +2,7 @@ import type { GameAction } from './actions'
 import type { Rng } from './rng'
 import { pick } from './rng'
 import {
+  bonusPlayerOf,
   canBuyVowel,
   canSpin,
   currentPlayerOf,
@@ -27,13 +28,19 @@ const VOYELLES_PAR_FREQUENCE: readonly Vowel[] = ['E', 'A', 'I', 'U', 'O']
 
 /**
  * Ce que le bot ne peut pas inventer lui-même : un identifiant de rotation
- * monotone. Il vient du driver, comme pour un joueur humain — le reducer ne
- * doit pas pouvoir distinguer les deux. `requestId` a disparu avec le juge
- * LLM sur ce chemin : `resolve/attempt` ne part plus vers aucun réseau, il n'y
- * a donc plus de requête à identifier.
+ * monotone et un identifiant de requête. Ils viennent du driver, comme pour un
+ * joueur humain — le reducer ne doit pas pouvoir distinguer les deux.
+ *
+ * `requestId` avait disparu avec le juge LLM sur le chemin `resolve/attempt` :
+ * « Résoudre » ne part plus vers aucun réseau, il n'y avait donc plus de
+ * requête à identifier là. Il revient ici pour l'étape bonus, dont
+ * `bonus/answer` porte toujours un `requestId` (voir `BonusPhase` dans
+ * `types.ts`) — même si le bot ne consulte jamais de juge réseau pour son
+ * propre verdict, voir `botBonusIsCorrect`.
  */
 export interface BotTicket {
   readonly spinId: number
+  readonly requestId: string
 }
 
 function choisirConsonne(round: RoundState, facile: boolean, rng: Rng): Consonant | null {
@@ -53,6 +60,45 @@ function choisirVoyelle(round: RoundState): Vowel | null {
 export const BOT_EASY_RESOLVE_HANDICAP = 0.75
 
 /**
+ * Texte de tentative d'un bot à l'étape bonus. **Marqueur d'occupation**, pas
+ * une réponse : il ne doit ni divulguer `bonus.expected`, ni suggérer un
+ * verdict — celui-ci est tiré séparément par `botBonusIsCorrect`, sans lien
+ * avec le contenu de cette chaîne. Une formule du type « je ne sais pas »
+ * serait donc trompeuse le jour où `announce.ts` la rendrait à l'écran : le
+ * bot pourrait être déclaré gagnant juste après avoir affirmé ignorer la
+ * réponse.
+ *
+ * Volontairement **différent** de `bonus.expected` : contrairement à
+ * `resolve/attempt`, où le bot propose bien `round.puzzle.answer` (une
+ * tentative sciemment fausse y laisserait `botTurnKey` identique avant et
+ * après, figeant le bot — voir plus bas), la phase de l'étape bonus change
+ * déjà entre `awaiting-answer` et `judging`, ce qui suffit à faire avancer
+ * `botTurnKey`. Rien n'oblige donc à envoyer la vraie réponse ici, et
+ * `announce.ts` pourrait rendre `action.attempt` : l'envoyer ferait fuiter la
+ * solution dans une annonce, alors qu'elle n'est révélée nulle part ailleurs à
+ * l'écran pendant l'étape.
+ */
+export const BONUS_BOT_ATTEMPT = 'Réponse du bot.'
+
+/**
+ * Seuil de réussite du bot à l'étape bonus : `botBonusIsCorrect` rend vrai en
+ * dessous de ce seuil.
+ */
+export const BONUS_BOT_SUCCESS = 0.5
+
+/**
+ * Verdict du bot sur sa propre tentative à l'étape bonus. Hasard pur,
+ * indépendant du niveau du bot : au moment du bonus l'énoncé de la question
+ * est entièrement révélé, une pondération par `progressRatio` vaudrait
+ * toujours 1. Le bot ne passe jamais par un juge réseau — c'est lui-même qui
+ * tranche, comme le faisait l'ancien `botResolveIsCorrect` avant que
+ * « Résoudre » ne devienne un verdict déterministe du reducer.
+ */
+export function botBonusIsCorrect(rng: Rng): boolean {
+  return rng() < BONUS_BOT_SUCCESS
+}
+
+/**
  * Décision d'un bot, **pure** et à aléa injecté. Les candidats sont exactement
  * ceux que `legalActions` autorise : le bot est donc structurellement incapable
  * de bloquer la partie, et ne renvoie `null` que là où il n'a rien à décider
@@ -64,6 +110,32 @@ export const BOT_EASY_RESOLVE_HANDICAP = 0.75
  * pénalité pour un bot.
  */
 export function decideBotAction(game: Game, rng: Rng, ticket: BotTicket): GameAction | null {
+  if (game.progress.kind === 'bonus') {
+    const bonusPlayer = bonusPlayerOf(game)
+    // Garde d'équité, symétrique à celle sur `currentPlayerOf` plus bas : un
+    // driver fautif ne doit pas pouvoir jouer l'étape bonus à la place d'un
+    // humain.
+    if (bonusPlayer === null || bonusPlayer.kind.type !== 'bot') return null
+
+    const { phase } = game.progress.bonus
+    if (phase.kind === 'awaiting-answer') {
+      // `BONUS_BOT_ATTEMPT`, jamais `bonus.expected` : voir sa documentation,
+      // la réponse attendue ne doit fuiter dans aucune action ni annonce.
+      return {
+        type: 'bonus/answer',
+        by: bonusPlayer.id,
+        attempt: BONUS_BOT_ATTEMPT,
+        requestId: ticket.requestId,
+      }
+    }
+    // Le bot tranche lui-même son verdict, il ne passe jamais par un juge
+    // réseau — comme le faisait l'ancien `botResolveIsCorrect` avant que
+    // « Résoudre » ne devienne un verdict déterministe du reducer. Le
+    // `requestId` renvoyé est celui de la phase, pas celui du ticket : c'est
+    // lui que le reducer compare pour rejeter un verdict périmé.
+    return { type: 'bonus/verdict', requestId: phase.requestId, correct: botBonusIsCorrect(rng) }
+  }
+
   if (game.progress.kind !== 'round') return null
 
   const player = currentPlayerOf(game)
@@ -162,6 +234,16 @@ export const BOT_DELAY_MS = 800
 export function botTurnKey(state: GameState): string | null {
   if (state.kind !== 'playing') return null
   const { game } = state
+
+  if (game.progress.kind === 'bonus') {
+    const bonusPlayer = bonusPlayerOf(game)
+    if (bonusPlayer === null || bonusPlayer.kind.type !== 'bot') return null
+    // La phase entre dans la clé : c'est elle qui change entre la réponse et le
+    // verdict, sans quoi le bot répondrait puis resterait muet pour toujours,
+    // la partie figée en `judging`.
+    return `bonus:${bonusPlayer.id}:${game.progress.bonus.phase.kind}`
+  }
+
   if (game.progress.kind !== 'round') return null
   // Narrowing direct sur `game.progress.round`, sans passer par un alias
   // intermédiaire : TypeScript ne transporte pas le rétrécissement de

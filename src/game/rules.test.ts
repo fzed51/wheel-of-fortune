@@ -9,14 +9,17 @@ import {
   cash,
   courant,
   demarrer,
+  enigme,
   jeu,
   jouer,
   manche,
   proposer,
+  repondre,
   resoudre,
   tourner,
 } from '../test/game'
 import {
+  bonusPlayerOf,
   canBuyVowel,
   canGuess,
   canResolve,
@@ -32,6 +35,7 @@ import {
   remainingVowels,
 } from './rules'
 import { CONSONANTS } from './puzzle'
+import type { GameState, Player } from './types'
 
 describe('multiplierFor', () => {
   it('applique ×1, ×2 puis ×3 sur les trois manches', () => {
@@ -273,5 +277,74 @@ describe('cohérence avec le reducer', () => {
 
     const ruine = tourner(gagne, BANQUEROUTE)
     expect(acheter(ruine, 'A')).toBe(ruine)
+  })
+})
+
+/**
+ * Mène jusqu'à l'étape bonus par de vraies actions : `roundCount: 1` fait de
+ * la première manche la manche finale, gagnée par le joueur au siège
+ * `firstPlayer`.
+ */
+function versBonus(players?: readonly Player[], firstPlayer = 0): GameState {
+  const depart = demarrer({
+    answer: "quelle est la capitale de l'australie",
+    bonusAnswer: 'CANBERRA',
+    config: { roundCount: 1 },
+    players,
+    firstPlayer,
+  })
+  const gagne = resoudre(depart, manche(depart).puzzle.answer)
+  return jouer(gagne, { type: 'round/next', puzzle: enigme('mon chat'), firstPlayer: 0 })
+}
+
+describe('bonusPlayerOf', () => {
+  it('rend le joueur en étape bonus', () => {
+    const state = versBonus()
+    expect(bonusPlayerOf(jeu(state))?.name).toBe('Alice')
+  })
+
+  it('rend null hors de l’étape bonus', () => {
+    expect(bonusPlayerOf(jeu(demarrer()))).toBeNull()
+  })
+
+  it('ne lève jamais, à la différence de currentPlayerOf qui lève hors d’une manche', () => {
+    // `fini` est en `round-over`, ni une manche ni le bonus : c'est le seul
+    // endroit où la différence entre les deux sélecteurs est observable.
+    const depart = demarrer({ config: { roundCount: 1 } })
+    const fini = resoudre(depart, manche(depart).puzzle.answer)
+    expect(() => currentPlayerOf(jeu(fini))).toThrow()
+    expect(() => bonusPlayerOf(jeu(fini))).not.toThrow()
+    expect(bonusPlayerOf(jeu(fini))).toBeNull()
+  })
+})
+
+describe('legalActions en étape bonus', () => {
+  it('n’offre que répondre ou passer en awaiting-answer', () => {
+    const state = versBonus()
+    expect(legalActions(jeu(state))).toEqual(['bonus/answer', 'bonus/skip'])
+  })
+
+  it('n’offre que trancher, signaler l’échec ou passer en judging', () => {
+    const jugee = repondre(versBonus(), 'CANBERRA')
+    expect(legalActions(jeu(jugee))).toEqual(['bonus/verdict', 'bonus/failed', 'bonus/skip'])
+  })
+
+  it('n’est jamais vide en étape bonus, dans aucune des deux phases', () => {
+    const attente = versBonus()
+    expect(legalActions(jeu(attente)).length).toBeGreaterThan(0)
+    const jugement = repondre(attente, 'CANBERRA')
+    expect(legalActions(jeu(jugement)).length).toBeGreaterThan(0)
+  })
+})
+
+describe('isBotTurn en étape bonus', () => {
+  it('est vrai quand le joueur du bonus est un bot', () => {
+    const state = versBonus([bot('Bot')], 0)
+    expect(isBotTurn(jeu(state))).toBe(true)
+  })
+
+  it('est faux quand le joueur du bonus est humain', () => {
+    const state = versBonus()
+    expect(isBotTurn(jeu(state))).toBe(false)
   })
 })

@@ -74,11 +74,16 @@ export interface GameConfig {
   readonly minRoundPrize: number
   /**
    * Montant fixe de la question bonus de la manche finale. Jamais multiplié
-   * par `multiplierFor` : c'est un forfait, pas un gain de manche. Posé ici
-   * dès maintenant pour que l'étape C n'ait pas à retoucher `setup.ts` ;
-   * inutilisé tant que cette étape n'est pas livrée.
+   * par `multiplierFor` : c'est un forfait, pas un gain de manche.
    */
   readonly bonusPrize: number
+  /**
+   * Vrai si et seulement si un juge est disponible (une clé d'API Mistral est
+   * configurée). Le reducer ne sait rien d'une clé d'API : c'est ce booléen,
+   * décidé en amont, qui applique la règle « sans clé, pas d'étape bonus du
+   * tout » sans jamais faire entrer la clé elle-même dans l'état de jeu.
+   */
+  readonly bonusEnabled: boolean
 }
 
 export type Phase =
@@ -118,11 +123,50 @@ export interface RoundSummary {
     | { readonly kind: 'void'; readonly reason: 'blocked' }
 }
 
+/**
+ * Phase de l'étape bonus. `judging` porte `attempt` et `requestId` : le
+ * verdict (`bonus/verdict` ou `bonus/failed`) doit pouvoir être rapproché de
+ * la tentative qui l'a déclenché, et rejeter un verdict périmé (une réponse
+ * déjà retapée entre-temps) sans que le reducer connaisse le transport du juge.
+ */
+export type BonusPhase =
+  | { readonly kind: 'awaiting-answer' }
+  | { readonly kind: 'judging'; readonly attempt: string; readonly requestId: string }
+
+export interface BonusState {
+  /** Le gagnant de la manche finale, et lui seul : c'est lui qui a la main. */
+  readonly by: PlayerId
+  readonly question: Puzzle
+  /**
+   * Dénormalisée hors de `question.bonusAnswer` : l'entrée dans l'étape a déjà
+   * prouvé qu'elle existe. Même motif que la phase `awaiting-consonant`, qui
+   * porte `value` **et** `segment`.
+   */
+  readonly expected: string
+  readonly phase: BonusPhase
+}
+
+export interface BonusResult {
+  readonly question: Puzzle
+  readonly expected: string
+  readonly by: PlayerId
+  readonly outcome:
+    | { readonly kind: 'won'; readonly amount: number }
+    | { readonly kind: 'lost' }
+    | { readonly kind: 'skipped' }
+}
+
 /** « À qui le tour » n'existe que pendant une manche. */
 export type GameProgress =
   | { readonly kind: 'round'; readonly currentPlayer: number; readonly round: RoundState }
   | { readonly kind: 'round-over'; readonly summary: RoundSummary }
-  | { readonly kind: 'game-over'; readonly winners: readonly PlayerId[] }
+  | { readonly kind: 'bonus'; readonly bonus: BonusState }
+  | {
+      readonly kind: 'game-over'
+      readonly winners: readonly PlayerId[]
+      /** `null` : partie finie sans étape bonus (juge indisponible, ou dernière manche pas une question). */
+      readonly bonus: BonusResult | null
+    }
 
 export interface Game {
   readonly config: GameConfig

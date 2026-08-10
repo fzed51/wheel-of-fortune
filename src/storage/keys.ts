@@ -30,5 +30,12 @@ export const ALL_KEYS: readonly StorageKey[] = Object.values(STORAGE_KEYS)
  * à certains index ; une sauvegarde figée en `awaiting-consonant` sur un `Segment`
  * de l'ancien barème resterait valide pour `isSegment` (l'index reste dans les
  * bornes) mais ferait encaisser un montant qui n'existe plus sur la roue actuelle.
+ *
+ * 2 → 3 : l'étape bonus de la manche finale. Trois champs n'existent pas dans
+ * une sauvegarde antérieure : `config.bonusEnabled`, `progress.kind === 'bonus'`
+ * et `game-over.bonus`. `isConfig` exige désormais `bonusEnabled` ; sans ce
+ * bump, une sauvegarde de la version précédente tomberait en `fail('invalid')`
+ * — message qui laisse croire à une corruption plutôt qu'à une version dépassée,
+ * là où `fail('version')` est le chemin prévu (et testé) pour ce cas.
  */
-export const SCHEMA_VERSION = 2
+export const SCHEMA_VERSION = 3

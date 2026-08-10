@@ -27,8 +27,25 @@ describe('SettingsRoute', () => {
 
     expect(
       screen.getByText(
-        'Aucune clé enregistrée. Le jeu se joue entièrement sans : cette clé ne sert qu’à tester l’accès à Mistral, si vous en enregistrez une.',
+        'Aucune clé enregistrée. Le jeu se joue entièrement sans : cette clé ne fait qu’ouvrir la question bonus de la manche finale (500 euros fixes), et sert à « Tester la clé » ci-dessous.',
       ),
+    ).toBeInTheDocument()
+  })
+
+  it('n’affirme plus que « Résoudre » a besoin d’une clé d’API', () => {
+    monterApp('/reglages')
+
+    // « Résoudre » compare désormais localement, sans juge (`src/game/compare.ts`) :
+    // une régression qui referait dépendre cette action de la clé doit faire
+    // tomber ce test, pas seulement le vieux texte qu'il remplace.
+    expect(screen.queryByText(/Résoudre/)).not.toBeInTheDocument()
+  })
+
+  it('annonce que la clé sert à la question bonus de la manche finale, pour un montant fixe', () => {
+    monterApp('/reglages')
+
+    expect(
+      screen.getByText(/question bonus de la manche finale \(500 euros fixes\)/),
     ).toBeInTheDocument()
   })
 
@@ -59,7 +76,7 @@ describe('SettingsRoute', () => {
     await user.click(screen.getByRole('button', { name: 'Enregistrer la clé' }))
     expect(
       screen.queryByText(
-        'Aucune clé enregistrée. Le jeu se joue entièrement sans : cette clé ne sert qu’à tester l’accès à Mistral, si vous en enregistrez une.',
+        'Aucune clé enregistrée. Le jeu se joue entièrement sans : cette clé ne fait qu’ouvrir la question bonus de la manche finale (500 euros fixes), et sert à « Tester la clé » ci-dessous.',
       ),
     ).not.toBeInTheDocument()
 
@@ -67,7 +84,7 @@ describe('SettingsRoute', () => {
 
     expect(
       screen.getByText(
-        'Aucune clé enregistrée. Le jeu se joue entièrement sans : cette clé ne sert qu’à tester l’accès à Mistral, si vous en enregistrez une.',
+        'Aucune clé enregistrée. Le jeu se joue entièrement sans : cette clé ne fait qu’ouvrir la question bonus de la manche finale (500 euros fixes), et sert à « Tester la clé » ci-dessous.',
       ),
     ).toBeInTheDocument()
   })
@@ -150,7 +167,7 @@ describe('SettingsRoute', () => {
     })
     expect(
       screen.getByText(
-        'Aucune clé enregistrée. Le jeu se joue entièrement sans : cette clé ne sert qu’à tester l’accès à Mistral, si vous en enregistrez une.',
+        'Aucune clé enregistrée. Le jeu se joue entièrement sans : cette clé ne fait qu’ouvrir la question bonus de la manche finale (500 euros fixes), et sert à « Tester la clé » ci-dessous.',
       ),
     ).toBeInTheDocument()
     /*

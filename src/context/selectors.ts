@@ -2,7 +2,7 @@ import { createContext, useContext } from 'react'
 import type { GameAction } from '../game/actions'
 import type { JudgeErrorReason } from '../llm/judge'
 import type { Setup } from '../game/setup'
-import type { Game, GameState, Letter, Phase, Player, RoundState } from '../game/types'
+import type { BonusState, Game, GameState, Letter, Phase, Player, RoundState } from '../game/types'
 
 /**
  * Contextes et sélecteurs de la partie.
@@ -44,6 +44,15 @@ export interface GameCommands {
    * juge à attendre.
    */
   readonly resolve: (attempt: string) => void
+  /**
+   * Répond à la question de l'étape bonus. `by` vient de `bonus.by`, jamais du
+   * joueur courant : `currentPlayerOf` n'existe pas hors d'une manche, et
+   * c'est le gagnant de la manche finale qui a la main ici. Même garde que
+   * `spin` et `playLetter` contre un humain qui jouerait à la place d'un bot.
+   */
+  readonly answerBonus: (attempt: string) => void
+  /** Renonce à l'étape bonus : termine la partie sans gain ni pénalité pour cette question. */
+  readonly skipBonus: () => void
   /** Sortie de secours pour les actions qui n'ont besoin d'aucune impureté. */
   readonly dispatch: (action: GameAction) => void
 }
@@ -54,16 +63,12 @@ export const GameCommandsContext = createContext<GameCommands | null>(null)
  * Dernier échec technique d'un juge (réseau, clé révoquée, réponse illisible),
  * ou `null` en l'absence d'échec. « Résoudre » ne consulte plus aucun juge —
  * son verdict est un calcul synchrone du reducer, voir `resolve` ci-dessus —
- * donc ce contexte n'a **aucun producteur** pour l'instant : `GameProvider`
- * fournit toujours une valeur (`null`, immuable) pour que le type reste sûr,
- * mais rien ne la fait jamais varier. Il attend la question bonus de la
- * manche finale, seule fonctionnalité qui consultera encore un LLM et qui
- * rebranchera ce canal vers l'écran pour ses pannes techniques (réseau, clé
- * révoquée, réponse illisible) — ne pas le supprimer sous prétexte qu'il est
- * inerte. Valeur primitive, pas d'objet enveloppant : aucune mémoïsation à
- * faire, et `null` par défaut est déjà la bonne réponse hors provider —
- * contrairement à `useGameState`, ce lecteur n'a aucune raison de lever pour
- * « aucun échec ».
+ * mais l'étape bonus de la manche finale, elle, en consulte toujours un :
+ * c'est `useGameEffects` qui produit ce contexte, via `onJudgeFailure`, pour
+ * ses pannes techniques (réseau, clé révoquée, réponse illisible). Valeur
+ * primitive, pas d'objet enveloppant : aucune mémoïsation à faire, et `null`
+ * par défaut est déjà la bonne réponse hors provider — contrairement à
+ * `useGameState`, ce lecteur n'a aucune raison de lever pour « aucun échec ».
  */
 export const JudgeFailureContext = createContext<JudgeErrorReason | null>(null)
 
@@ -111,6 +116,12 @@ export function useRound(): RoundState | null {
 
 export function usePhase(): Phase | null {
   return useRound()?.phase ?? null
+}
+
+/** L'étape bonus en cours, ou `null` hors de cette étape. */
+export function useBonus(): BonusState | null {
+  const game = useGame()
+  return game !== null && game.progress.kind === 'bonus' ? game.progress.bonus : null
 }
 
 export function useCurrentPlayer(): Player | null {

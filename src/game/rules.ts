@@ -60,6 +60,19 @@ export function currentPlayerOf(game: Game): Player {
 }
 
 /**
+ * Joueur de l'étape bonus, ou `null` hors de cette étape. Ne **lève pas**,
+ * contrairement à `currentPlayerOf` : hors manche n'est plus un invariant violé
+ * depuis qu'un état légitime (`bonus`) existe entre la dernière manche et les
+ * résultats.
+ */
+export function bonusPlayerOf(game: Game): Player | null {
+  const progress = game.progress
+  if (progress.kind !== 'bonus') return null
+  const player = game.players.find((candidate) => candidate.id === progress.bonus.by)
+  return player ?? null
+}
+
+/**
  * Vrai si une manche est en cours et que le joueur courant est un bot. Sert à
  * l'interface et aux commandes du provider, croisé avec `canSpin`, `canResolve`
  * et `isStuck`, pour interdire à l'humain de jouer à la place d'un bot.
@@ -68,6 +81,8 @@ export function currentPlayerOf(game: Game): Player {
  * rendrait le bot incapable d'agir.
  */
 export function isBotTurn(game: Game): boolean {
+  const bonusPlayer = bonusPlayerOf(game)
+  if (bonusPlayer !== null) return bonusPlayer.kind.type === 'bot'
   const round = activeRound(game)
   return round !== null && currentPlayerOf(game).kind.type === 'bot'
 }
@@ -124,11 +139,22 @@ export function canResolve(game: Game): boolean {
   return awaiting(game) !== null
 }
 
-/** Actions réellement dispatchables. */
+/**
+ * Actions réellement dispatchables. `config/set-bonus-enabled` n'y figure
+ * pas : c'est un réglage, pas un coup — comme l'était `config/set-resolve-enabled`.
+ */
 export function legalActions(game: Game): readonly GameAction['type'][] {
   const progress = game.progress
   if (progress.kind === 'game-over') return []
   if (progress.kind === 'round-over') return ['round/next']
+  if (progress.kind === 'bonus') {
+    // `bonus/skip` est légale dans les deux phases : c'est l'invariant de
+    // terminaison. Sans elle, un juge cassé laisserait une liste d'actions
+    // dont chacune échoue, et la partie ne finirait jamais.
+    return progress.bonus.phase.kind === 'awaiting-answer'
+      ? ['bonus/answer', 'bonus/skip']
+      : ['bonus/verdict', 'bonus/failed', 'bonus/skip']
+  }
 
   switch (progress.round.phase.kind) {
     case 'spinning':

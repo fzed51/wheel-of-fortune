@@ -17,8 +17,9 @@ import { useAnnouncer } from '../hooks/useAnnouncer'
 import { useGameEffects } from '../hooks/useGameEffects'
 import { usePuzzles } from '../hooks/usePuzzles'
 import { useSettings } from '../hooks/useSettings'
+import { createJudge } from '../llm'
 import type { JudgeErrorReason } from '../llm/judge'
-import { loadGame } from '../storage/persist'
+import { loadGame, loadMistralKey } from '../storage/persist'
 import { GameCommandsContext, GameStateContext, JudgeFailureContext, LastEventContext } from './selectors'
 import type { GameCommands } from './selectors'
 
@@ -78,7 +79,7 @@ function initGameState(): GameState {
 
 export function GameProvider({ children }: { readonly children: ReactNode }) {
   const [state, rawDispatch] = useReducer(reduce, undefined, initGameState)
-  const { settings } = useSettings()
+  const { settings, hasMistralKey } = useSettings()
   const { pool, questions } = usePuzzles()
   const announcer = useAnnouncer()
 
@@ -90,7 +91,10 @@ export function GameProvider({ children }: { readonly children: ReactNode }) {
     roundCount: settings.roundCount,
     opponents: settings.opponents,
     botLevel: settings.botLevel,
+    bonusEnabled: hasMistralKey,
   })
+  // Lu par `getJudge`, au dernier moment : voir sa documentation.
+  const settingsRef = useRef(settings)
   const poolRef = useRef(pool)
   const questionsRef = useRef(questions)
 
@@ -103,7 +107,12 @@ export function GameProvider({ children }: { readonly children: ReactNode }) {
       roundCount: settings.roundCount,
       opponents: settings.opponents,
       botLevel: settings.botLevel,
+      bonusEnabled: hasMistralKey,
     }
+  }, [settings, hasMistralKey])
+
+  useEffect(() => {
+    settingsRef.current = settings
   }, [settings])
 
   useEffect(() => {
@@ -181,9 +190,9 @@ export function GameProvider({ children }: { readonly children: ReactNode }) {
     return spinIdRef.current
   }, [])
 
-  // Identifiant de requête pour une résolution : un compteur monotone suffit,
-  // il n'a besoin d'être unique que dans la session. Pas de `crypto.randomUUID` :
-  // un compteur est déterministe et se lit dans un test.
+  // Identifiant de requête pour une réponse à l'étape bonus : un compteur
+  // monotone suffit, il n'a besoin d'être unique que dans la session. Pas de
+  // `crypto.randomUUID` : un compteur est déterministe et se lit dans un test.
   const requestIdRef = useRef(0)
   const newRequestId = useCallback(() => {
     requestIdRef.current += 1
@@ -191,13 +200,30 @@ export function GameProvider({ children }: { readonly children: ReactNode }) {
   }, [])
 
   // Dernier échec technique d'un juge, pour le seul consommateur qui doit
-  // l'afficher : voir la documentation de `JudgeFailureContext`. « Résoudre »
-  // ne consulte plus aucun juge — le verdict est un calcul synchrone du
-  // reducer — donc ce state n'a plus aucun producteur : `setJudgeFailure`
-  // n'est volontairement pas déstructuré ci-dessous, sous peine de lint sur
-  // une variable jamais lue. L'étape suivante (question bonus de la manche
-  // finale) le rebranche à l'identique.
-  const [judgeFailure] = useState<JudgeErrorReason | null>(null)
+  // l'afficher : voir la documentation de `JudgeFailureContext`. Producteur
+  // unique : `onJudgeFailure`, passé à `useGameEffects` plus bas.
+  const [judgeFailure, setJudgeFailure] = useState<JudgeErrorReason | null>(null)
+
+  /**
+   * Fabrique le juge au dernier moment, à chaque appel, plutôt que de le
+   * garder dans un state ou une ref longue durée : ainsi la clé ne survit que
+   * le temps d'un appel, dans la closure d'un juge éphémère, au lieu de rester
+   * à demeure dans un objet que les outils de développement affichent.
+   */
+  const getJudge = useCallback(
+    () => createJudge({ apiKey: loadMistralKey(), model: settingsRef.current.mistralModel }),
+    [],
+  )
+
+  const onJudgeFailure = useCallback((reason: JudgeErrorReason) => {
+    setJudgeFailure(reason)
+  }, [])
+
+  // Le juge peut apparaître ou disparaître en pleine partie, quand l'utilisateur
+  // saisit ou efface sa clé dans les Réglages. Le reducer no-ope si rien ne change.
+  useEffect(() => {
+    dispatch({ type: 'config/set-bonus-enabled', enabled: hasMistralKey })
+  }, [dispatch, hasMistralKey])
 
   const startGame = useCallback(
     (overrides: Partial<Setup> = {}) => {
@@ -350,12 +376,56 @@ export function GameProvider({ children }: { readonly children: ReactNode }) {
     [dispatch],
   )
 
-  const commands = useMemo<GameCommands>(
-    () => ({ startGame, nextRound, spin, settleSpin, playLetter, pass, resolve, dispatch }),
-    [startGame, nextRound, spin, settleSpin, playLetter, pass, resolve, dispatch],
+  /**
+   * Répond à la question de l'étape bonus. `by` vient de `bonus.by`, jamais du
+   * joueur courant : `currentPlayerOf` n'existe pas hors d'une manche (voir sa
+   * documentation dans `rules.ts`), et c'est le gagnant de la manche finale
+   * qui a la main ici. Voir le commentaire de `spin` : même garde, même
+   * raison, contre un humain qui répondrait à la place d'un bot.
+   */
+  const answerBonus = useCallback(
+    (attempt: string) => {
+      const current = stateRef.current
+      if (current.kind !== 'playing' || current.game.progress.kind !== 'bonus') return
+      if (isBotTurn(current.game)) return
+      // Une ancienne panne ne doit pas rester affichée par-dessus ce nouvel essai,
+      // qui peut très bien réussir.
+      setJudgeFailure(null)
+      dispatch({
+        type: 'bonus/answer',
+        by: current.game.progress.bonus.by,
+        attempt,
+        requestId: newRequestId(),
+      })
+    },
+    [dispatch, newRequestId],
   )
 
-  useGameEffects(state, dispatch, { rng, nextSpinId, newRequestId })
+  /** Renonce à l'étape bonus. Voir le commentaire de `answerBonus` pour `by`. */
+  const skipBonus = useCallback(() => {
+    const current = stateRef.current
+    if (current.kind !== 'playing' || current.game.progress.kind !== 'bonus') return
+    if (isBotTurn(current.game)) return
+    dispatch({ type: 'bonus/skip', by: current.game.progress.bonus.by })
+  }, [dispatch])
+
+  const commands = useMemo<GameCommands>(
+    () => ({
+      startGame,
+      nextRound,
+      spin,
+      settleSpin,
+      playLetter,
+      pass,
+      resolve,
+      answerBonus,
+      skipBonus,
+      dispatch,
+    }),
+    [startGame, nextRound, spin, settleSpin, playLetter, pass, resolve, answerBonus, skipBonus, dispatch],
+  )
+
+  useGameEffects(state, dispatch, { rng, nextSpinId, newRequestId, getJudge, onJudgeFailure })
 
   return (
     <GameCommandsContext value={commands}>

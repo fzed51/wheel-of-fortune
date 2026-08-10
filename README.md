@@ -6,7 +6,7 @@ Jeu d'énigmes à lettres, en français, installable comme application. On tourn
 
 Ce n'est pas un tirage au sort : la roue ne fait que fixer la valeur du coup suivant. Tout le reste est du raisonnement sur les lettres.
 
-Application entièrement locale : rien n'est envoyé nulle part, à une exception près et une seule, le bouton « Tester la clé » des Réglages décrit plus bas.
+Application entièrement locale : rien n'est envoyé nulle part, à deux exceptions près — le bouton « Tester la clé » des Réglages et le verdict de la question bonus de la manche finale, décrits plus bas — et les deux exigent une clé d'API que rien n'oblige à enregistrer.
 
 ## Démarrer
 
@@ -46,9 +46,13 @@ C'est volontairement plus sévère qu'un arbitrage souple : aucune tolérance de
 
 **Le jeu est donc entièrement jouable sans clé d'API**, du premier au dernier tour.
 
-### La clé d'API
+### Le juge : la seule question qu'aucune comparaison de chaînes ne peut trancher
 
-Elle ne conditionne plus aucune règle : dans l'état actuel du dépôt, `src/llm/` n'est plus appelé que par le bouton « Tester la clé » des Réglages. Le module est conservé — le durcissement décrit plus bas avec — parce que l'étape suivante du chantier le rebranche sur une question bonus posée à la manche finale, elle réellement impossible à juger par comparaison de chaînes (« c'est Canberra », « la ville de Canberra » et « Canbera » sont toutes justes).
+Une fois la manche finale remportée, le gagnant peut tenter de répondre à sa question — catégorie « Question » — pour un montant fixe (`BONUS_PRIZE` de `src/game/setup.ts`), jamais multiplié par le coefficient de manche et versé directement au score total : il peut donc créer une égalité ou en défaire une, le classement n'étant calculé qu'après cette étape.
+
+C'est le **seul** moment où `src/llm/` est encore appelé (hors « Tester la clé » des Réglages) : « c'est Canberra », « la ville de Canberra » et « Canbera » répondent toutes correctement à « Canberra », et aucune comparaison de chaînes ne peut le voir — c'est exactement ce que `matchesAnswer` ne sait pas faire. Un juge injoignable n'est jamais compté comme une mauvaise réponse : le joueur retape sans pénalité, ou renonce via un bouton « Passer » qui va directement aux résultats. Un bot qui remporte la manche finale répond aussi, mais son verdict est tiré à une chance sur deux localement, sans le moindre appel réseau.
+
+**Sans clé d'API enregistrée, cette étape n'existe pas du tout** : la partie va directement aux résultats après la manche finale. Elle ne conditionne aucune règle du reste du jeu.
 
 Le modèle est [Mistral](https://mistral.ai) (`mistral-small-latest` par défaut, réglable). Quant à la clé elle-même :
 
@@ -94,7 +98,7 @@ Quelques principes qui expliquent la forme du code mieux que le code lui-même :
 
 Objectif tenu de bout en bout, pas ajouté après coup :
 
-- **partie entière au clavier physique** : les lettres, `Espace` pour tourner, `Entrée` pour ouvrir « Résoudre ». La boîte de dialogue passe par un `<dialog>` natif ouvert en `showModal()`, ce qui lui donne gratuitement le piège de focus, la fermeture par `Échap` et le retour du focus au déclencheur — trois choses qu'une boîte faite main devrait réécrire ;
+- **partie entière au clavier physique** : les lettres, `Espace` pour tourner, `Entrée` pour ouvrir « Résoudre ». La boîte « Résoudre » passe par un `<dialog>` natif ouvert en `showModal()`, ce qui lui donne gratuitement le piège de focus, la fermeture par `Échap` et le retour du focus au déclencheur — trois choses qu'une boîte faite main devrait réécrire. La question bonus de la manche finale, elle, n'est **pas** un dialogue : c'est une simple carte (`<section>`), parce qu'à cette étape le plateau, la roue et le clavier sont déjà masqués — rien à recouvrir, donc rien à piéger (voir le docblock de `BonusQuestion`) ;
 - clavier virtuel en `roving tabindex` : une seule tabulation pour le traverser, pas 26 ;
 - l'énigme est **épelée** pour le lecteur d'écran, jamais lue telle quelle — `LACLÉ` se prononcerait comme un mot ;
 - le SVG de la roue est `aria-hidden` : sa valeur passe par la live region ;
@@ -141,7 +145,9 @@ Une `Content-Security-Policy` est injectée en `<meta http-equiv>` **au build se
 
 `style-src-attr 'unsafe-inline'` est une obligation et non un confort : React écrit des attributs `style`, et `commitStyles()` de l'API Web Animations aussi — sans lui, la roue ne garde pas son angle d'arrêt. `frame-ancestors` et `report-to` sont absents volontairement : une balise `<meta>` les ignore, et les écrire donnerait l'illusion d'une protection.
 
-## Trois choses que le code ne peut pas expliquer seul
+## Quatre choses que le code ne peut pas expliquer seul
+
+**La réponse attendue de la question bonus vit dans l'état de la partie**, donc dans `localStorage` et dans React DevTools, pendant toute la manche finale — exactement comme `puzzle.answer` depuis le début. Ce n'est pas un oubli de sécurité à corriger : le bonus n'a jamais eu la prétention d'être un dispositif anti-triche, et n'en a pas plus besoin que le reste de l'énigme.
 
 **GitHub Pages ne permet pas de fixer `Cache-Control`.** Il sert avec un `max-age` court, de l'ordre de dix minutes : une mise à jour du service worker peut donc être vue avec ce retard. Le rappel de `update()` au retour au premier plan en limite l'effet. Un hébergeur acceptant un fichier `_headers` (`no-cache` sur `index.html`, `sw.js` et `manifest.webmanifest` ; `immutable` sur `/assets/*`, dont les noms sont hachés) serait strictement meilleur sur ce point — c'est le seul argument sérieux pour changer d'hébergeur plus tard.
 
@@ -151,7 +157,7 @@ Une `Content-Security-Policy` est injectée en `<meta http-equiv>` **au build se
 
 ## Tests
 
-531 tests sur 37 fichiers. Le moteur est couvert par des tests unitaires, un scénario de partie scripté et un fuzz d'invariants — c'est la partie du code où une régression est invisible à l'écran.
+719 tests sur 40 fichiers. Le moteur est couvert par des tests unitaires, un scénario de partie scripté et un fuzz d'invariants — c'est la partie du code où une régression est invisible à l'écran.
 
 Doctrine, appliquée sans exception :
 
@@ -184,7 +190,12 @@ Détail des contrôles, de ce qui n'est volontairement pas couvert, et des varia
 
 Honnêtement listé, pour que personne ne le découvre en production :
 
-- **la recette au navigateur n'est qu'à moitié faite.** `yarn check:browser` couvre désormais la CSP, le service worker, le hors-ligne, le manifest et l'accessibilité de l'arbre Chrome ; restent hors couverture l'audit Lighthouse, axe DevTools, l'installation réelle sur un appareil et la bannière de mise à jour, qui demande deux builds successifs ;
+- **la recette au navigateur n'est qu'à moitié faite.** `yarn check:browser` couvre désormais la CSP, le service worker, le hors-ligne, le manifest et l'accessibilité de l'arbre Chrome ; restent hors couverture l'audit Lighthouse, axe DevTools, l'installation réelle sur un appareil, la bannière de mise à jour (qui demande deux builds successifs) et l'étape bonus de la manche finale, que le script exclut par conception — il n'écrit qu'une clé factice et ne joue jamais de partie jusqu'à la manche finale, justement pour ne jamais appeler Mistral (détail dans [`scripts/browser-check/README.md`](scripts/browser-check/README.md)). À vérifier à la main, avec une vraie clé pour le chemin heureux :
+  - **sans clé d'API** : la manche finale se joue normalement, puis la partie va directement aux résultats, sans étape bonus et sans le moindre reproche à l'écran ;
+  - **avec clé** : manche finale gagnée → la question est posée ; une réponse en phrase (« c'est Canberra ») est acceptée ; une réponse hors sujet est refusée sans crédit ; une coupure réseau volontaire donne « juge injoignable », sans pénalité, et un nouvel essai reste possible ; le bouton « Passer » mène directement aux résultats ;
+  - **rechargement pendant l'attente du verdict** : retour à l'attente de réponse, le bonus reste entièrement à gagner ;
+  - **partie contre trois bots** : un bot remporte la manche finale, répond — une chance sur deux, sans le moindre appel réseau — et la partie se termine normalement ;
+  - **réponse exacte** : acceptée sans le moindre appel réseau, observable dans l'onglet Réseau du navigateur — c'est la confirmation locale de `matchesAnswer` qui joue, jamais le juge ;
 - le catalogue embarqué compte **20 énigmes**, assez pour jouer, pas assez pour ne pas se répéter longtemps ;
 - pas de son, pas de vibration ;
 - pas de multi local : le moteur est déjà écrit autour d'une liste de joueurs, mais rien ne le pilote ;

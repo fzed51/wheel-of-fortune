@@ -40,9 +40,17 @@ quelque chose, et il écrit dans un profil Chrome jetable.
   réglages.** Déjà couverts en jsdom, plus vite et plus solidement. Les rejouer ici
   ne coûterait que du temps.
 - **Le juge.** Une clé factice (`controle-navigateur-aucune-requete`) est écrite dans
-  le stockage pour rendre `Résoudre` disponible et pouvoir ouvrir la boîte. **Aucune
-  réponse n'est soumise, rien ne part vers Mistral.** Le pré-filtre, le contrat
-  `Judge` et le connecteur ont leurs propres tests.
+  le stockage juste avant le contrôle de l'export, pour vérifier qu'elle ne s'y
+  retrouve pas — elle ne conditionne plus `Résoudre`, rendu localement depuis que
+  `matchesAnswer` compare les chaînes sans réseau. Elle est effacée du stockage dès
+  ce contrôle terminé : la laisser mettrait `config.bonusEnabled` à vrai pour toute
+  partie démarrée par un contrôle ultérieur, et un futur contrôle qui jouerait
+  jusqu'à la manche finale déclencherait un vrai appel réseau vers Mistral avec une
+  clé invalide. **Aucun contrôle ne joue une partie jusqu'à la manche finale**, et
+  la clé n'est de toute façon plus là pour l'atteindre : l'étape bonus n'est donc
+  jamais sollicitée, aucune réponse n'est soumise, rien ne part vers Mistral. La
+  règle de comparaison (`matchesAnswer`, qui a remplacé l'ancien pré-filtre), le
+  contrat `Judge` et le connecteur ont leurs propres tests.
 - **La bannière de mise à jour du service worker.** Elle demande deux builds
   successifs servis à la même origine ; ça reste une vérification à la main.
 - **Lighthouse, axe, l'installation réelle sur un appareil.** Voir

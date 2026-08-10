@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Navigate } from 'react-router'
+import BonusQuestion from '../components/BonusQuestion'
 import Controls from '../components/Controls'
 import EventFeedback from '../components/EventFeedback'
 import Keyboard from '../components/Keyboard'
@@ -8,10 +9,19 @@ import ResolveDialog from '../components/ResolveDialog'
 import Scoreboard from '../components/Scoreboard'
 import Wheel from '../components/Wheel'
 import { BUTTON_PRIMARY, CARD } from '../components/classes'
-import { useCurrentPlayer, useGame, useGameCommands, useLastEvent, useRound } from '../context/selectors'
+import {
+  useBonus,
+  useCurrentPlayer,
+  useGame,
+  useGameCommands,
+  useJudgeFailure,
+  useLastEvent,
+  useRound,
+} from '../context/selectors'
 import { announcePuzzle, formatEuros } from '../game/announce'
 import { isQuestion } from '../game/bonus'
 import {
+  bonusPlayerOf,
   canResolve,
   canSpin,
   isBotTurn,
@@ -60,9 +70,12 @@ function blockedRoundMessage(round: RoundState): string {
 export default function GameRoute() {
   const game = useGame()
   const round = useRound()
+  const bonus = useBonus()
   const player = useCurrentPlayer()
-  const { playLetter, spin, pass, nextRound, settleSpin, resolve } = useGameCommands()
+  const { playLetter, spin, pass, nextRound, settleSpin, resolve, answerBonus, skipBonus } =
+    useGameCommands()
   const lastEvent = useLastEvent()
+  const judgeFailure = useJudgeFailure()
 
   // La boîte est un élément d'interface, pas un état de partie : le reducer
   // n'a aucune raison de savoir qu'un dialogue est affiché. `ResolveDialog` se
@@ -107,7 +120,13 @@ export default function GameRoute() {
         <h2 className="font-semibold text-fg">
           {/* `round.index` plutôt que `history.length` : à la fin d'une manche
               l'historique contient déjà celle qui vient de finir, et l'en-tête
-              annoncerait la manche suivante avant qu'elle ne commence. */}
+              annoncerait la manche suivante avant qu'elle ne commence. Pendant
+              l'étape bonus, ce même repli sur `history.length` reste juste :
+              elle ne démarre qu'une fois la dernière manche archivée, donc
+              `history.length` vaut alors `roundCount` — « Manche 3 sur 3 »
+              décrit correctement la dernière manche jouée, celle dont le
+              vainqueur répond maintenant à la question bonus. Un libellé dédié
+              n'apporterait rien que la carte `BonusQuestion` ne dise déjà. */}
           Manche {round !== null ? round.index + 1 : game.history.length} sur{' '}
           {game.config.roundCount}
           {round !== null && ` — gains ×${multiplierFor(round.index)}`}
@@ -204,6 +223,23 @@ export default function GameRoute() {
             Manche suivante
           </button>
         </section>
+      )}
+
+      {bonus !== null && (
+        <BonusQuestion
+          // `answer`, jamais `bonusAnswer` : le champ `answer` d'un `Puzzle`
+          // porte le texte affiché, et pour une énigme-question ce texte
+          // *est* la question — `expected` (la réponse attendue) n'est en
+          // revanche jamais lu ici, sous aucune forme.
+          question={bonus.question.answer}
+          playerName={bonusPlayerOf(game)?.name ?? ''}
+          prize={formatEuros(game.config.bonusPrize)}
+          pending={bonus.phase.kind === 'judging'}
+          failure={judgeFailure}
+          botTurn={botTurn}
+          onSubmit={answerBonus}
+          onSkip={skipBonus}
+        />
       )}
 
       {round !== null && (

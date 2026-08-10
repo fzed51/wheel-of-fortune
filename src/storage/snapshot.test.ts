@@ -7,15 +7,18 @@ import {
   PASSE,
   avecLettres,
   avecPot,
+  bonus,
   cash,
   courant,
   demarrer,
+  enigme,
   jeu,
   jouer,
   joueur,
   manche,
   partieTerminee,
   proposer,
+  repondre,
   resoudre,
   tourner,
 } from '../test/game'
@@ -25,6 +28,18 @@ import { fromPersisted, toPersisted } from './snapshot'
 function enRotation(state: GameState, index: number): Game {
   const by = courant(state).id
   return jeu(jouer(state, { type: 'wheel/spin', by, spin: { index, offset: 12.5, spinId: 7 } }))
+}
+
+/**
+ * Manche finale d'une partie à une seule manche, dont l'énigme est une
+ * question : atteint `{ kind: 'bonus' }` par de vraies actions (résolution
+ * puis `round/next`), plutôt qu'en construisant l'état à la main — un état
+ * bricolé pourrait être un état que le reducer ne produit jamais.
+ */
+function versEtapeBonus(expected = 'CANBERRA'): GameState {
+  const state = demarrer({ bonusAnswer: expected, config: { roundCount: 1 } })
+  const resolu = resoudre(state, manche(state).puzzle.answer)
+  return jouer(resolu, { type: 'round/next', puzzle: enigme('la mer', 'suite'), firstPlayer: 0 })
 }
 
 describe('toPersisted', () => {
@@ -67,10 +82,26 @@ describe('toPersisted', () => {
   })
 
   it('n’écrit aucune donnée éphémère', () => {
-    const ecrit = JSON.stringify(toPersisted(enRotation(demarrer(), cash(400))))
+    // L'état en rotation ne porte ni `requestId` ni `attempt` : le seul état du
+    // moteur qui en porte est l'étape bonus en cours de jugement, ci-dessous.
+    const enJugement = jeu(repondre(versEtapeBonus(), 'Une réponse', 'req-9'))
+    expect(bonus({ kind: 'playing', game: enJugement }).phase.kind).toBe('judging')
+
+    const ecrit = [
+      JSON.stringify(toPersisted(enRotation(demarrer(), cash(400)))),
+      JSON.stringify(toPersisted(enJugement)),
+    ].join(' ')
     for (const champ of ['spinId', 'offset', 'requestId', 'attempt', 'spin']) {
       expect(ecrit, `${champ} ne doit pas être persisté`).not.toContain(champ)
     }
+  })
+
+  it('réduit l’étape bonus à `by`, `question` et `expected`, sans sa phase', () => {
+    const persisted = toPersisted(jeu(versEtapeBonus('CANBERRA')))
+    expect(persisted.progress).toEqual({
+      kind: 'bonus',
+      bonus: { by: expect.any(String), question: expect.any(Object), expected: 'CANBERRA' },
+    })
   })
 
   it('conserve la réponse attendue d’une question dans le puzzle persisté', () => {
@@ -120,6 +151,57 @@ describe('fromPersisted', () => {
     const game = jeu(partieTerminee())
     expect(game.progress.kind).toBe('game-over')
     expect(fromPersisted(toPersisted(game))).toEqual(game)
+  })
+
+  it('reconstitue une étape bonus, aller-retour compris, `bonusAnswer` du puzzle inclus', () => {
+    const game = jeu(versEtapeBonus('CANBERRA'))
+    expect(game.progress).toMatchObject({
+      kind: 'bonus',
+      bonus: { question: { bonusAnswer: 'CANBERRA' }, phase: { kind: 'awaiting-answer' } },
+    })
+    expect(fromPersisted(toPersisted(game))).toEqual(game)
+  })
+
+  it('ramène un verdict en vol à `awaiting-answer` après un aller-retour', () => {
+    const enJugement = repondre(versEtapeBonus(), 'Une réponse', 'req-9')
+    expect(bonus(enJugement).phase).toEqual({
+      kind: 'judging',
+      attempt: 'Une réponse',
+      requestId: 'req-9',
+    })
+
+    const rejoue = fromPersisted(toPersisted(jeu(enJugement)))
+    expect(rejoue.progress).toMatchObject({
+      kind: 'bonus',
+      bonus: { phase: { kind: 'awaiting-answer' } },
+    })
+  })
+
+  it('reconstitue une partie terminée avec bonus gagné, montant compris', () => {
+    const game = jeu(
+      jouer(repondre(versEtapeBonus('CANBERRA'), 'Canberra', 'req-1'), {
+        type: 'bonus/verdict',
+        requestId: 'req-1',
+        correct: true,
+      }),
+    )
+    expect(game.progress).toMatchObject({
+      kind: 'game-over',
+      bonus: { outcome: { kind: 'won', amount: expect.any(Number) } },
+    })
+    expect(fromPersisted(toPersisted(game))).toEqual(game)
+  })
+
+  it('reconstitue une partie terminée sans étape bonus, `bonus` à `null`', () => {
+    const game = jeu(partieTerminee())
+    if (game.progress.kind !== 'game-over') throw new Error('partie terminée attendue')
+    expect(game.progress.bonus).toBeNull()
+
+    const persisted = toPersisted(game)
+    if (persisted.progress.kind !== 'game-over') throw new Error('partie terminée attendue')
+    expect(Object.hasOwn(persisted.progress, 'bonus')).toBe(true)
+    expect(persisted.progress.bonus).toBeNull()
+    expect(fromPersisted(persisted)).toEqual(game)
   })
 
   it('recopie tout : muter l’enregistrement relu ne touche pas la partie', () => {
