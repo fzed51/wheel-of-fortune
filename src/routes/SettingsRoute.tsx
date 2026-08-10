@@ -37,8 +37,8 @@ function testFailureMessage(reason: KeyTestFailureReason): string {
 }
 
 /**
- * Réglages : apparence, clé d'API Mistral pour la résolution jugée par IA, et
- * remise à zéro des données. Les réglages de partie (manches, adversaires,
+ * Réglages : apparence, clé d'API Mistral (pour tester l'accès au service),
+ * et remise à zéro des données. Les réglages de partie (manches, adversaires,
  * niveau des bots) vivent sur l'accueil et ne sont pas dupliqués ici.
  */
 export default function SettingsRoute() {
@@ -170,12 +170,20 @@ export default function SettingsRoute() {
         </div>
       </section>
 
+      {/*
+        Cette section reste alors que la clé Mistral ne sert plus qu'à son
+        propre bouton « Tester la clé » : « Résoudre » est devenu une simple
+        comparaison de chaînes (`src/game/compare.ts`), déterministe, jouée
+        sans aucun juge. L'étape suivante du chantier rebranche cette clé sur
+        une question bonus posée à la manche finale — ne supprime pas cette
+        section sous prétexte qu'elle ne conditionne plus aucune règle.
+      */}
       <section className={CARD}>
-        <h2 className="font-semibold text-fg">Résolution jugée par IA</h2>
+        <h2 className="font-semibold text-fg">Clé d’API Mistral</h2>
         <p className="mt-1 text-sm text-fg-muted">
           {hasMistralKey
-            ? `Une clé est enregistrée sur cet appareil (${hint ?? '…'}) : « Résoudre » est disponible.`
-            : 'Aucune clé enregistrée : « Résoudre » reste indisponible.'}
+            ? `Une clé est enregistrée sur cet appareil (${hint ?? '…'}). Elle ne sert qu’à vérifier l’accès à Mistral avec « Tester la clé » ci-dessous, aucune règle du jeu n’en dépend.`
+            : 'Aucune clé enregistrée. Le jeu se joue entièrement sans : cette clé ne sert qu’à tester l’accès à Mistral, si vous en enregistrez une.'}
         </p>
 
         {/* Avertissement volontairement visible, pas une note en petits

@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { SEGMENT_ANGLE, SEGMENT_COUNT, WHEEL, pickSpinOutcome, segmentAt } from './wheel'
+import {
+  BANKRUPT_COUNT,
+  PASS_COUNT,
+  SEGMENT_ANGLE,
+  SEGMENT_COUNT,
+  WHEEL,
+  ZERO_COUNT,
+  pickSpinOutcome,
+  segmentAt,
+} from './wheel'
 
 describe('WHEEL', () => {
   it('compte 24 segments de 15 degrés', () => {
@@ -8,9 +17,15 @@ describe('WHEEL', () => {
     expect(SEGMENT_ANGLE).toBe(15)
   })
 
-  it('contient exactement deux banqueroutes et deux passes', () => {
-    expect(WHEEL.filter((s) => s.kind === 'bankrupt')).toHaveLength(2)
-    expect(WHEEL.filter((s) => s.kind === 'pass')).toHaveLength(2)
+  it('contient exactement deux banqueroutes, deux passes et une case à 0', () => {
+    // Les compteurs sont dérivés de WHEEL : comparer BANKRUPT_COUNT/PASS_COUNT/ZERO_COUNT
+    // aux valeurs attendues vaut mieux que recompter WHEEL nous-mêmes, ce qui ne
+    // vérifierait rien de plus que l'implémentation des compteurs.
+    expect(BANKRUPT_COUNT).toBe(2)
+    expect(PASS_COUNT).toBe(2)
+    expect(ZERO_COUNT).toBe(1)
+    expect(WHEEL.filter((s) => s.kind === 'bankrupt')).toHaveLength(BANKRUPT_COUNT)
+    expect(WHEEL.filter((s) => s.kind === 'pass')).toHaveLength(PASS_COUNT)
   })
 
   it('donne à chaque segment un index égal à sa position', () => {
@@ -19,10 +34,24 @@ describe('WHEEL', () => {
     })
   })
 
-  it('n’a que des montants strictement positifs sur les segments payants', () => {
-    for (const segment of WHEEL) {
-      if (segment.kind === 'cash') expect(segment.value).toBeGreaterThan(0)
+  it('n’a qu’une seule case à 0, toutes les autres cases payantes étant strictement positives et multiples de 50', () => {
+    const cashSegments = WHEEL.filter((segment) => segment.kind === 'cash')
+    const zeroSegments = cashSegments.filter((segment) => segment.value === 0)
+    expect(zeroSegments).toHaveLength(1)
+    for (const segment of cashSegments) {
+      expect(segment.value).toBeGreaterThanOrEqual(0)
+      expect(segment.value % 50).toBe(0)
+      if (segment.value !== 0) expect(segment.value).toBeGreaterThan(0)
     }
+  })
+
+  it('représente la case à 0 comme un segment cash, pas comme une variante à part', () => {
+    // C'est ce qui garantit le comportement voulu au reducer : gain = value × occurrences
+    // × multiplicateur = 0, la lettre est révélée et la main reste au joueur — contrairement
+    // à un segment 'pass', qui ferait passer la main sans révéler la lettre.
+    const zeroSegment = WHEEL.find((segment) => segment.kind === 'cash' && segment.value === 0)
+    expect(zeroSegment).toBeDefined()
+    expect(zeroSegment?.kind).toBe('cash')
   })
 })
 

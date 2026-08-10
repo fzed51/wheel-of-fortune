@@ -22,6 +22,16 @@ export interface Puzzle {
   readonly answer: string
   readonly category: string
   readonly source: 'pack' | 'custom'
+  /**
+   * Réponse attendue quand l'énoncé est une question. Absent pour une énigme
+   * ordinaire. Porté par le `Puzzle` : il voyage alors gratuitement avec chaque
+   * copie par valeur jusqu'au résumé de manche et à l'étape bonus. Optionnel et
+   * non obligatoire à dessein : `grep "source: '"` donne dix-huit sites de
+   * construction, dont quatorze dans des tests répartis sur toutes les zones du
+   * dépôt — un champ obligatoire les casserait tous et rendrait le travail en
+   * parallèle impossible.
+   */
+  readonly bonusAnswer?: string
 }
 
 export type Segment =
@@ -62,15 +72,19 @@ export interface GameConfig {
   readonly vowelCost: number
   /** Évite qu'une manche gagnée par des voyelles payées ne rapporte rien. */
   readonly minRoundPrize: number
-  /** Vrai si et seulement si un juge LLM est disponible. Le reducer ignore tout du juge. */
-  readonly resolveEnabled: boolean
+  /**
+   * Montant fixe de la question bonus de la manche finale. Jamais multiplié
+   * par `multiplierFor` : c'est un forfait, pas un gain de manche. Posé ici
+   * dès maintenant pour que l'étape C n'ait pas à retoucher `setup.ts` ;
+   * inutilisé tant que cette étape n'est pas livrée.
+   */
+  readonly bonusPrize: number
 }
 
 export type Phase =
   | { readonly kind: 'awaiting-action' }
   | { readonly kind: 'spinning'; readonly segment: Segment; readonly spin: SpinOutcome }
   | { readonly kind: 'awaiting-consonant'; readonly value: number; readonly segment: Segment }
-  | { readonly kind: 'resolving'; readonly attempt: string; readonly requestId: string }
   | { readonly kind: 'blocked' }
 
 export interface RoundState {
@@ -80,6 +94,15 @@ export interface RoundState {
   readonly puzzle: Puzzle
   readonly guessed: readonly Letter[]
   readonly phase: Phase
+  /**
+   * Passes consécutives depuis la dernière action qui a fait avancer la manche.
+   * Atteint le nombre de joueurs → manche bloquée.
+   *
+   * Explicite plutôt qu'émergent : depuis que proposer la réponse est toujours
+   * légal, aucun croisement de prédicats ne peut plus décider qu'une manche est
+   * ingagnable. Passer, c'est décliner ; chaque joueur a eu son tour.
+   */
+  readonly passes: number
 }
 
 export interface RoundSummary {

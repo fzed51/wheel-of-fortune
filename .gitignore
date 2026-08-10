@@ -99,6 +99,40 @@ node_modules/
 .env
 .env.*
 !.env.sample
+#   ██████  ██████   █████  ██████  ██   ██ ██ ███████ ██    ██
+#  ██      ██   ██ ██   ██ ██   ██ ██   ██ ██ ██       ██  ██
+#  ██      ██████  ███████ ██████  ███████ ██ █████     ████
+#  ██      ██   ██ ██   ██ ██      ██   ██ ██ ██         ██
+#   ██████ ██   ██ ██   ██ ██      ██   ██ ██ ██         ██
+#                      _
+#   __ _ _ _ __ _ _ __| |_  ___
+#  / _` | '_/ _` | '_ \ ' \/ -_)
+#  \__, |_| \__,_| .__/_||_\___|
+#  |___/         |_|
+#
+# Graphe de code régénérable à volonté par `graphify extract src --out .`,
+# et cache d'extraction incrémentale. Le `graph.json` pèse près d'un mégaoctet
+# pour un dépôt de cette taille : versionné, il polluerait chaque diff sans
+# jamais servir de source — il se requête, il ne se lit pas.
+/graphify-out/
+
+#  ██       ██████   ██████  █████  ██
+#  ██      ██    ██ ██      ██   ██ ██
+#  ██      ██    ██ ██      ███████ ██
+#  ██      ██    ██ ██      ██   ██ ██
+#  ███████  ██████   ██████ ██   ██ ███████
+#   _ _ ___ _ _  __| |_  _ ___
+#  | '_/ -_) ' \/ _` | || (_-<
+#  |_| \___|_||_\__,_|\_,_/__/
+#
+# Rendus HTML de consultation locale, produits à la demande. Ils décrivent un
+# état daté du dépôt : versionnés, ils vieilliraient en silence.
+/docs/local/
+
+# Copies de travail isolées créées par Claude Code. Elles contiennent le dépôt
+# entier : sans cette ligne, un `git add .` en committerait une dans elle-même.
+/.claude/worktrees/
+
 #   _           _ _     _
 #  | |__ _  _ _(_) |___| |
 #  | '_ \ || | | | / _ \_|

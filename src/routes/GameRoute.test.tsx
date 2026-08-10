@@ -1,10 +1,21 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, fireEvent, screen, within } from '@testing-library/react'
+import { act, fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { announceJudgeFailure } from '../game/announce'
-import { clearAllData, saveGame, saveMistralKey } from '../storage/persist'
-import { avecPhase, avecPot, bot, cash, demarrer, jeu, joueur, resoudre } from '../test/game'
+import { CONSONANTS } from '../game/puzzle'
+import { clearAllData, saveGame } from '../storage/persist'
+import {
+  avecLettres,
+  avecPhase,
+  bot,
+  cash,
+  courant,
+  demarrer,
+  jeu,
+  joueur,
+  jouer,
+  resoudre,
+} from '../test/game'
 import { monterApp } from '../test/app'
 
 /**
@@ -167,10 +178,9 @@ describe('GameRoute', () => {
       monterApp('/jeu')
 
       expect(screen.getByText(/^Au tour de Bot 1/u)).toBeInTheDocument()
-      // « Tourner » est le seul des trois boutons qu'un humain aurait ici :
-      // « Résoudre » exige en plus une clé enregistrée (absente ici) et
-      // « Passer la main » exige d'être bloqué. Les vérifier tous les trois
-      // ferait passer ce test même sans verrou de tour.
+      // « Passer la main » exige d'être bloqué (`isStuck`), ce qui n'est pas le
+      // cas ici : le vérifier ferait passer ce test même sans verrou de tour.
+      // « Tourner » suffit à prouver le verrou.
       expect(screen.getByRole('button', { name: 'Tourner' })).toHaveAttribute(
         'aria-disabled',
         'true',
@@ -184,7 +194,7 @@ describe('GameRoute', () => {
   })
 
   it('affiche le panneau de fin de manche et enchaîne sur la manche suivante', async () => {
-    saveGame(jeu(resoudre(demarrer({ players: [joueur('Alice')] }), true)))
+    saveGame(jeu(resoudre(demarrer({ players: [joueur('Alice')] }), 'le vent')))
     const user = userEvent.setup()
     monterApp('/jeu')
 
@@ -198,18 +208,7 @@ describe('GameRoute', () => {
     expect(screen.queryByRole('heading', { name: 'Manche terminée' })).not.toBeInTheDocument()
   })
 
-  it('sans clé enregistrée, « Résoudre » est inactif et renvoie aux Réglages', () => {
-    saveGame(jeu(demarrer({ players: [joueur('Alice')] })))
-    monterApp('/jeu')
-
-    expect(screen.getByRole('button', { name: 'Résoudre' })).toHaveAttribute('aria-disabled', 'true')
-    expect(
-      screen.getByText("Configurez une clé d'API dans les Réglages pour proposer une réponse."),
-    ).toBeInTheDocument()
-  })
-
-  it('avec une clé enregistrée, « Résoudre » ouvre la boîte et focalise le champ de réponse', async () => {
-    saveMistralKey('sk-une-cle')
+  it('« Résoudre » ouvre la boîte et focalise le champ de réponse', async () => {
     saveGame(jeu(demarrer({ players: [joueur('Alice')] })))
     const user = userEvent.setup()
     monterApp('/jeu')
@@ -222,11 +221,9 @@ describe('GameRoute', () => {
     expect(screen.getByLabelText('Votre réponse')).toHaveFocus()
   })
 
-  it('une proposition exacte termine la manche sans appeler le juge en réseau', async () => {
-    saveMistralKey('sk-une-cle')
-    // Le pré-filtre du juge tranche « correct » sur une égalité normalisée,
-    // sans toucher au réseau : c'est le moyen le plus simple de prouver une
-    // résolution réussie sans dépendre d'un `fetch` simulé.
+  it('une proposition exacte termine la manche sans appeler le réseau', async () => {
+    // Le verdict est un calcul synchrone du reducer (`matchesAnswer`) : aucun
+    // juge distant, aucun `fetch` — c'est ce que ce test vérifie.
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
     saveGame(jeu(demarrer({ players: [joueur('Alice')] })))
@@ -244,64 +241,90 @@ describe('GameRoute', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('un échec réseau du juge sur une proposition ambiguë laisse la boîte ouverte et ne coûte rien', async () => {
-    saveMistralKey('sk-une-cle')
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => {
-        throw new TypeError('Failed to fetch')
-      }),
-    )
-    // Réponse longue avec une seule lettre changée : assez proche pour sortir
-    // de la bande décidée localement par le pré-filtre (« LE VENT », trop
-    // court, s'y ferait trancher sans jamais atteindre le réseau) et passer la
-    // main au juge, dont l'appel échoue ici.
-    let state = demarrer({
-      players: [joueur('Alice')],
-      answer: 'la cle est sous le paillasson',
-    })
-    state = avecPot(state, 0, 1234)
-    saveGame(jeu(state))
+  it('une proposition fausse ferme la boîte et passe la main sans rien coûter', async () => {
+    saveGame(jeu(demarrer({ players: [joueur('Alice'), joueur('Bob')] })))
     const user = userEvent.setup()
     const { container } = monterApp('/jeu')
 
     await user.click(screen.getByRole('button', { name: 'Résoudre' }))
-    await user.type(screen.getByLabelText('Votre réponse'), 'la cle est sous le paillassom')
+    await user.type(screen.getByLabelText('Votre réponse'), 'une réponse fausse')
     await user.click(screen.getByRole('button', { name: 'Proposer' }))
 
-    // Scopé à la boîte : la même phrase est aussi portée par la live region
-    // d'alerte du layout racine (`announceTransition`), et matcherait deux
-    // fois sans ce cadrage.
-    const dialogue = container.querySelector('dialog')
-    expect(dialogue).not.toBeNull()
-    if (dialogue === null) throw new Error('dialogue introuvable')
-    expect(await within(dialogue).findByText(announceJudgeFailure('network'))).toBeInTheDocument()
-    // La boîte est réellement encore ouverte (état natif du `<dialog>`), pas
-    // seulement le message d'échec présent dans un fragment démonté.
-    expect(dialogue).toHaveProperty('open', true)
-    expect(screen.getByLabelText('Votre réponse')).toBeInTheDocument()
-    expect(screen.getByText(/cagnotte 1 234 euros/)).toBeInTheDocument()
-  })
-
-  it("Entrée n'ouvre pas la boîte « Résoudre » sans clé enregistrée", () => {
-    saveGame(jeu(demarrer({ players: [joueur('Alice')] })))
-    const { container } = monterApp('/jeu')
-
-    // `usePhysicalKeyboard` écoute `document` sans connaître la légalité de
-    // l'action : c'est `openResolve`, dans `GameRoute`, qui doit refuser
-    // l'ouverture faute de clé (`resolveEnabled` à `false` ici).
-    fireEvent.keyDown(document.body, { key: 'Enter' })
-
+    // Le verdict est immédiat : la boîte se ferme d'elle-même, gagnant ou non
+    // — `ResolveDialog` reste monté (la manche continue avec Bob), c'est son
+    // état natif `open` qui doit être retombé, pas sa présence dans le DOM.
     expect(container.querySelector('dialog')).toHaveProperty('open', false)
+    expect(await screen.findByText(/^Au tour de Bob/u)).toBeInTheDocument()
   })
 
-  it('Entrée ouvre la boîte « Résoudre » avec une clé enregistrée', () => {
-    saveMistralKey('sk-une-cle')
+  it('Entrée ouvre la boîte « Résoudre »', () => {
     saveGame(jeu(demarrer({ players: [joueur('Alice')] })))
     monterApp('/jeu')
 
     fireEvent.keyDown(document.body, { key: 'Enter' })
 
     expect(screen.getByLabelText('Votre réponse')).toHaveFocus()
+  })
+
+  /**
+   * `avecLettres` place la manche avec toutes les consonnes déjà proposées
+   * (scénario repris d'`engine.test.ts`) : sans consonne restante et sans
+   * cagnotte pour acheter une voyelle, `isStuck` devient vrai et « Passer la
+   * main » est légal. En solo, un seul `turn/pass` suffit à bloquer la manche
+   * puisque `passes` (1) atteint `players.length` (1) — c'est une vraie action
+   * du reducer, pas un `RoundState` fabriqué à la main.
+   */
+  it('affiche la carte de manche bloquée, révèle la réponse et enchaîne sur la manche suivante', async () => {
+    let state = avecLettres(demarrer({ players: [joueur('Alice')] }), [...CONSONANTS])
+    const by = courant(state).id
+    state = jouer(state, { type: 'turn/pass', by })
+    saveGame(jeu(state))
+    const user = userEvent.setup()
+    monterApp('/jeu')
+
+    expect(screen.getByRole('heading', { name: 'Manche bloquée' })).toBeInTheDocument()
+    expect(screen.getByText(/Réponse : LE VENT\./)).toBeInTheDocument()
+    // Plus aucune touche n'est jouable : les consonnes déjà proposées restent
+    // « déjà proposée », les voyelles restantes passent à « indisponible »
+    // (`canGuess` refuse tout hors `awaiting-consonant`/`awaiting-action`) —
+    // dans les deux cas, aucune n'a le libellé nu d'une touche disponible.
+    expect(screen.queryAllByRole('button', { name: /^Lettre [A-Z]$/u })).toHaveLength(0)
+
+    const boutonSuivant = screen.getByRole('button', { name: 'Manche suivante' })
+    await user.click(boutonSuivant)
+
+    expect(screen.getByRole('heading', { name: /^Manche 2 sur 3/ })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Manche bloquée' })).not.toBeInTheDocument()
+  })
+
+  it('annonce la manche finale quand l’énigme en cours est une question', () => {
+    saveGame(
+      jeu(demarrer({ players: [joueur('Alice')], answer: 'le vent', bonusAnswer: 'ZBRAXOFINGUE' })),
+    )
+    monterApp('/jeu')
+
+    expect(screen.getByText(/Manche finale/)).toBeInTheDocument()
+  })
+
+  it('ne mentionne pas la manche finale sur une énigme ordinaire', () => {
+    saveGame(jeu(demarrer({ players: [joueur('Alice')] })))
+    monterApp('/jeu')
+
+    expect(screen.queryByText(/Manche finale/)).not.toBeInTheDocument()
+  })
+
+  /**
+   * Le plus important des trois : la réponse attendue de l'étape bonus ne
+   * doit fuiter nulle part dans le DOM — ni en texte visible, ni dans un
+   * attribut, ni dans un `aria-label`. L'étape bonus qui l'affichera n'existe
+   * pas encore : à ce stade, cette valeur n'a rien à faire à l'écran.
+   */
+  it('n’affiche jamais la réponse attendue de la question, sous aucune forme', () => {
+    saveGame(
+      jeu(demarrer({ players: [joueur('Alice')], answer: 'le vent', bonusAnswer: 'ZBRAXOFINGUE' })),
+    )
+    const { container } = monterApp('/jeu')
+
+    expect(container.innerHTML).not.toContain('ZBRAXOFINGUE')
   })
 })

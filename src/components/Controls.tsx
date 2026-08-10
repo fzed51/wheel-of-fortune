@@ -5,8 +5,6 @@ export interface ControlsProps {
   readonly canSpin: boolean
   readonly canResolve: boolean
   readonly canPass: boolean
-  /** `false` quand aucun juge n'est configuré : « Résoudre » reste visible mais inactif. */
-  readonly resolveEnabled: boolean
   /** Prix d'une voyelle, affiché en indice — l'achat se fait sur le clavier. */
   readonly vowelCost: number
   /** La roue tourne : les commandes sont gelées le temps de l'animation. */
@@ -15,8 +13,6 @@ export interface ControlsProps {
   readonly onResolve: () => void
   readonly onPass: () => void
 }
-
-const RESOLVE_HINT_ID = 'controls-resolve-hint'
 
 /**
  * Barre d'actions. `aria-disabled`, jamais `disabled` : un bouton `disabled`
@@ -29,7 +25,6 @@ export default function Controls({
   canSpin,
   canResolve,
   canPass,
-  resolveEnabled,
   vowelCost,
   spinning,
   onSpin,
@@ -37,7 +32,7 @@ export default function Controls({
   onPass,
 }: ControlsProps) {
   const spinDisabled = spinning || !canSpin
-  const resolveDisabled = spinning || !canResolve || !resolveEnabled
+  const resolveDisabled = spinning || !canResolve
   const passDisabled = spinning || !canPass
 
   return (
@@ -57,7 +52,6 @@ export default function Controls({
         <button
           type="button"
           aria-disabled={resolveDisabled}
-          aria-describedby={resolveEnabled ? undefined : RESOLVE_HINT_ID}
           className={`${BUTTON_GHOST} min-h-11 flex-1`}
           onClick={() => {
             if (resolveDisabled) return
@@ -78,11 +72,6 @@ export default function Controls({
           Passer la main
         </button>
       </div>
-      {!resolveEnabled && (
-        <p id={RESOLVE_HINT_ID} className="text-sm text-fg-muted">
-          Configurez une clé d'API dans les Réglages pour proposer une réponse.
-        </p>
-      )}
       <p className="text-sm text-fg-muted">Voyelle : {formatEuros(vowelCost)}</p>
     </div>
   )

@@ -17,6 +17,7 @@ import {
   resoudre,
   tourner,
 } from '../test/game'
+import { foldForCompare } from './compare'
 import {
   announceJudgeFailure,
   announcePuzzle,
@@ -96,7 +97,8 @@ describe('announceTurn', () => {
   })
 
   it('rend une chaîne vide hors d’une manche', () => {
-    const fini = jouer(resoudre(demarrer({ config: { roundCount: 1 } }), true), {
+    const depart = demarrer({ config: { roundCount: 1 } })
+    const fini = jouer(resoudre(depart, manche(depart).puzzle.answer), {
       type: 'round/next',
       puzzle: manche(demarrer()).puzzle,
       firstPlayer: 0,
@@ -136,14 +138,6 @@ describe('announceTransition — état inchangé', () => {
     expect(next).toBe(prev)
     expect(announceTransition(prev, next, action)).toEqual({ status: '', alert: '' })
   })
-
-  it('ne rend rien pour un changement de réglage, même appliqué', () => {
-    const prev = demarrer()
-    const action = { type: 'config/set-resolve-enabled' as const, enabled: false }
-    const next = jouer(prev, action)
-    expect(next).not.toBe(prev)
-    expect(announceTransition(prev, next, action)).toEqual({ status: '', alert: '' })
-  })
 })
 
 describe('announceTransition — démarrage et enchaînement de manche', () => {
@@ -151,7 +145,7 @@ describe('announceTransition — démarrage et enchaînement de manche', () => {
     const prev = { kind: 'no-game' as const }
     const action = {
       type: 'game/start' as const,
-      config: { roundCount: 3, vowelCost: 250, minRoundPrize: 500, resolveEnabled: true },
+      config: { roundCount: 3, vowelCost: 250, minRoundPrize: 500, bonusPrize: 500 },
       players: [joueur('Alice')],
       puzzle: enigme('terre'),
       firstPlayer: 0,
@@ -168,7 +162,7 @@ describe('announceTransition — démarrage et enchaînement de manche', () => {
     const prev = { kind: 'no-game' as const }
     const action = {
       type: 'game/start' as const,
-      config: { roundCount: 3, vowelCost: 250, minRoundPrize: 500, resolveEnabled: true },
+      config: { roundCount: 3, vowelCost: 250, minRoundPrize: 500, bonusPrize: 500 },
       players: [joueur('Alice')],
       puzzle: enigme('terre'),
       firstPlayer: 0,
@@ -197,6 +191,20 @@ describe('announceTransition — roue', () => {
     const next = jouer(prev, action)
     expect(announceTransition(prev, next, action)).toEqual({
       status: "La roue s'arrête sur 500 euros.",
+      alert: '',
+    })
+  })
+
+  it('annonce le segment à 0 : la lettre compte mais ne rapporte rien, sans changer de joueur', () => {
+    const prev = jouer(demarrer(), {
+      type: 'wheel/spin',
+      by: courant(demarrer()).id,
+      spin: { index: cash(0), offset: 0, spinId: 1 },
+    })
+    const action = { type: 'wheel/settled' as const, by: courant(prev).id, spinId: 1 }
+    const next = jouer(prev, action)
+    expect(announceTransition(prev, next, action)).toEqual({
+      status: "La roue s'arrête sur 0 euro : la lettre compte, mais ne rapporte rien.",
       alert: '',
     })
   })
@@ -265,6 +273,18 @@ describe('announceTransition — consonne', () => {
     const next = jouer(prev, action)
     expect(announceTransition(prev, next, action)).toEqual({
       status: 'R, 2 fois. Cagnotte : 1 000 euros.',
+      alert: '',
+    })
+  })
+
+  it('annonce une consonne trouvée sur un segment à 0 sans dire un gain absurde, et garde la main', () => {
+    const prev = tourner(demarrer({ answer: 'terre' }), cash(0))
+    const action = { type: 'letter/consonant' as const, by: courant(prev).id, letter: 'R' as const }
+    const next = jouer(prev, action)
+    // La cagnotte reste à 0 : le segment n'a rien rapporté, la phrase le dit
+    // sans jamais prétendre à un gain — ni « gagnez 0 euros » ni faute de sens.
+    expect(announceTransition(prev, next, action)).toEqual({
+      status: 'R, 2 fois. Cagnotte : 0 euro.',
       alert: '',
     })
   })
@@ -379,119 +399,65 @@ describe('announceTransition — voyelle', () => {
 })
 
 describe('announceTransition — résolution', () => {
-  it('annonce l’envoi au juge', () => {
-    const prev = demarrer()
-    const action = {
-      type: 'resolve/start' as const,
-      by: courant(prev).id,
-      attempt: 'ma proposition',
-      requestId: 'req-1',
-    }
-    const next = jouer(prev, action)
-    expect(announceTransition(prev, next, action)).toEqual({
-      status: 'Proposition envoyée au juge.',
-      alert: '',
-    })
-  })
-
-  it('annonce que le bot propose une réponse plutôt que l’envoi au juge', () => {
-    // `attempt` est un texte de remplacement (`BOT_ATTEMPT`), jamais une vraie
-    // réponse : il ne doit apparaître dans aucune phrase.
-    const depart = demarrer({ players: [joueur('Alice'), BOT_1], firstPlayer: 1 })
-    const action = {
-      type: 'resolve/start' as const,
-      by: courant(depart).id,
-      attempt: 'texte de remplacement du bot',
-      requestId: 'req-1',
-    }
-    const next = jouer(depart, action)
-    expect(announceTransition(depart, next, action)).toEqual({
-      status: 'Bot 1 propose une réponse.',
-      alert: '',
-    })
-  })
-
-  it('annonce la manche gagnée sur un verdict correct', () => {
+  it('annonce la manche gagnée sur une réponse juste', () => {
     const prev = tourner(demarrer({ answer: 'le vent' }), cash(500))
     const avecPropose = proposer(prev, 'T')
-    const action = { type: 'resolve/verdict' as const, requestId: 'req-1', correct: true }
-    const enResolution = jouer(avecPropose, {
-      type: 'resolve/start',
-      by: courant(avecPropose).id,
-      attempt: 'le vent',
-      requestId: 'req-1',
-    })
-    const next = jouer(enResolution, action)
-    // Fin de manche : même raison que pour la consonne et la voyelle
-    // gagnantes, la carte « Manche terminée » de `GameRoute` porte déjà
+    const action = { type: 'resolve/attempt' as const, by: courant(avecPropose).id, attempt: 'le vent' }
+    const next = jouer(avecPropose, action)
+    // Fin de manche : la carte « Manche terminée » de `GameRoute` porte déjà
     // cette phrase, `visible` se vide pour ne pas la doubler.
-    expect(announceTransition(enResolution, next, action)).toEqual({
+    expect(announceTransition(avecPropose, next, action)).toEqual({
       status: 'Manche gagnée par Vous : 500 euros. Réponse : LE VENT.',
       alert: '',
       visible: '',
     })
   })
 
-  it('annonce un verdict faux et nomme le joueur suivant', () => {
+  it('annonce une réponse fausse et nomme le joueur suivant', () => {
     const depart = demarrer({ players: [joueur('Alice'), BOT_1] })
-    const enResolution = jouer(depart, {
-      type: 'resolve/start',
-      by: courant(depart).id,
-      attempt: 'x',
-      requestId: 'req-1',
-    })
-    const action = { type: 'resolve/verdict' as const, requestId: 'req-1', correct: false }
-    const next = jouer(enResolution, action)
-    expect(announceTransition(enResolution, next, action)).toEqual({
+    const action = { type: 'resolve/attempt' as const, by: courant(depart).id, attempt: 'x' }
+    const next = jouer(depart, action)
+    expect(announceTransition(depart, next, action)).toEqual({
       status: 'Mauvaise réponse. Au tour de Bot 1.',
       alert: '',
     })
   })
 
-  it('nomme le bot qui se trompe sur un verdict faux', () => {
+  it('nomme le bot qui se trompe sur une réponse fausse', () => {
     const depart = demarrer({ players: [joueur('Alice'), BOT_1], firstPlayer: 1 })
-    const enResolution = jouer(depart, {
-      type: 'resolve/start',
-      by: courant(depart).id,
-      attempt: 'texte de remplacement du bot',
-      requestId: 'req-1',
-    })
-    const action = { type: 'resolve/verdict' as const, requestId: 'req-1', correct: false }
-    const next = jouer(enResolution, action)
-    expect(announceTransition(enResolution, next, action)).toEqual({
+    const action = { type: 'resolve/attempt' as const, by: courant(depart).id, attempt: 'x' }
+    const next = jouer(depart, action)
+    expect(announceTransition(depart, next, action)).toEqual({
       status: 'Mauvaise réponse de Bot 1. À vous de jouer.',
       alert: '',
     })
   })
 
-  it('distingue un verdict faux d’un échec technique sur des états identiques, en solo', () => {
-    const depart = demarrer({ players: [joueur('Solo')] })
-    const enResolution = jouer(depart, {
-      type: 'resolve/start',
-      by: courant(depart).id,
-      attempt: 'x',
-      requestId: 'req-1',
-    })
-    const verdictAction = { type: 'resolve/verdict' as const, requestId: 'req-1', correct: false }
-    const failedAction = {
-      type: 'resolve/failed' as const,
-      requestId: 'req-1',
-      reason: 'timeout' as const,
-    }
-    const apresVerdict = jouer(enResolution, verdictAction)
-    const apresEchec = jouer(enResolution, failedAction)
+  it('ne laisse fuiter la tentative d’un bot dans aucun champ quand elle est fausse', () => {
+    // Une tentative de bot **contient la solution** en conditions réelles (voir
+    // `game/bot.ts`) : si jamais elle ne matchait pas (bug de comparaison
+    // ailleurs, ou reconstruction directe comme ici), `announce.ts` ne doit la
+    // laisser fuiter dans aucun des trois champs qu'un lecteur d'écran ou
+    // l'écran affichent. La chaîne choisie n'a aucun mot commun avec les
+    // phrases d'annonce, pour que le test ne passe pas par accident.
+    const attempt = 'ZBRAXOFINGUE'
+    const depart = demarrer({ answer: 'terre', players: [joueur('Alice'), BOT_1], firstPlayer: 1 })
+    const action = { type: 'resolve/attempt' as const, by: courant(depart).id, attempt }
+    const next = jouer(depart, action)
+    // La manche continue : la tentative n'a pas été jugée correcte.
+    expect(jeu(next).progress.kind).toBe('round')
 
-    // Les deux transitions atterrissent sur le même état : seule l'action distingue les annonces.
-    expect(apresVerdict).toEqual(apresEchec)
+    const announcement = announceTransition(depart, next, action)
+    const visible = announcement.visible ?? announcement.status
 
-    expect(announceTransition(enResolution, apresVerdict, verdictAction)).toEqual({
-      status: 'Mauvaise réponse.',
-      alert: '',
-    })
-    expect(announceTransition(enResolution, apresEchec, failedAction)).toEqual({
-      status: '',
-      alert: "Le juge n'a pas répondu à temps. Réessayez.",
-    })
+    expect(announcement.status).not.toContain(attempt)
+    expect(announcement.alert).not.toContain(attempt)
+    expect(visible).not.toContain(attempt)
+
+    const folded = foldForCompare(attempt)
+    expect(foldForCompare(announcement.status)).not.toContain(folded)
+    expect(foldForCompare(announcement.alert)).not.toContain(folded)
+    expect(foldForCompare(visible)).not.toContain(folded)
   })
 })
 
@@ -500,7 +466,6 @@ describe('announceTransition — passage de main forcé', () => {
     const depart = demarrer({
       answer: 'terre',
       players: [joueur('Alice'), BOT_1],
-      config: { resolveEnabled: false },
     })
     const bloque = avecLettres(depart, ['B', 'C', 'D', 'F', 'G', 'H', 'J', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'V', 'W', 'X', 'Y', 'Z'])
     const action = { type: 'turn/pass' as const, by: courant(bloque).id }
@@ -516,7 +481,6 @@ describe('announceTransition — passage de main forcé', () => {
       answer: 'terre',
       players: [joueur('Alice'), BOT_1],
       firstPlayer: 1,
-      config: { resolveEnabled: false },
     })
     const bloque = avecLettres(depart, ['B', 'C', 'D', 'F', 'G', 'H', 'J', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'V', 'W', 'X', 'Y', 'Z'])
     const action = { type: 'turn/pass' as const, by: courant(bloque).id }
@@ -541,7 +505,8 @@ describe('announceTransition — fin de manche et de partie', () => {
   })
 
   it('annonce la manche suivante après une manche gagnée', () => {
-    const gagnee = resoudre(demarrer({ config: { roundCount: 3 } }), true, 'req-1')
+    const depart = demarrer({ config: { roundCount: 3 } })
+    const gagnee = resoudre(depart, manche(depart).puzzle.answer)
     const action = { type: 'round/next' as const, puzzle: enigme('la mer'), firstPlayer: 0 }
     const next = jouer(gagnee, action)
     expect(announceTransition(gagnee, next, action).status).toBe(
@@ -550,7 +515,8 @@ describe('announceTransition — fin de manche et de partie', () => {
   })
 
   it('ne rend rien à l’œil au départ de la manche suivante : l’en-tête et le plateau portent déjà l’information', () => {
-    const gagnee = resoudre(demarrer({ config: { roundCount: 3 } }), true, 'req-1')
+    const depart = demarrer({ config: { roundCount: 3 } })
+    const gagnee = resoudre(depart, manche(depart).puzzle.answer)
     const action = { type: 'round/next' as const, puzzle: enigme('la mer'), firstPlayer: 0 }
     const next = jouer(gagnee, action)
     expect(announceTransition(gagnee, next, action).visible).toBe('')
@@ -558,9 +524,9 @@ describe('announceTransition — fin de manche et de partie', () => {
 
   it('annonce la victoire finale d’un joueur unique', () => {
     let etat = demarrer({ config: { roundCount: 2 } })
-    etat = resoudre(etat, true, 'req-0')
+    etat = resoudre(etat, manche(etat).puzzle.answer)
     etat = jouer(etat, { type: 'round/next', puzzle: enigme('la mer'), firstPlayer: 0 })
-    etat = resoudre(etat, true, 'req-1')
+    etat = resoudre(etat, manche(etat).puzzle.answer)
     const action = { type: 'round/next' as const, puzzle: enigme('x'), firstPlayer: 0 }
     const next = jouer(etat, action)
     expect(jeu(next).progress.kind).toBe('game-over')
@@ -572,9 +538,9 @@ describe('announceTransition — fin de manche et de partie', () => {
 
   it('annonce l’égalité entre le joueur humain et un bot', () => {
     let etat = demarrer({ config: { roundCount: 2 }, players: [joueur('Alice'), BOT_1] })
-    etat = resoudre(etat, true, 'req-0')
+    etat = resoudre(etat, manche(etat).puzzle.answer)
     etat = jouer(etat, { type: 'round/next', puzzle: enigme('la mer'), firstPlayer: 1 })
-    etat = resoudre(etat, true, 'req-1')
+    etat = resoudre(etat, manche(etat).puzzle.answer)
     const action = { type: 'round/next' as const, puzzle: enigme('x'), firstPlayer: 0 }
     const next = jouer(etat, action)
     expect(jeu(next).progress.kind).toBe('game-over')

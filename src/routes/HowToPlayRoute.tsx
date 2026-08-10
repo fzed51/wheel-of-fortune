@@ -1,7 +1,7 @@
 import { CARD } from '../components/classes'
 import { formatEuros } from '../game/announce'
 import { MAX_OPPONENTS, MAX_ROUNDS, MIN_ROUNDS, MIN_ROUND_PRIZE, VOWEL_COST } from '../game/setup'
-import { SEGMENT_COUNT } from '../game/wheel'
+import { BANKRUPT_COUNT, PASS_COUNT, SEGMENT_COUNT, ZERO_COUNT } from '../game/wheel'
 
 /**
  * Règles du jeu. Écran purement documentaire : aucune valeur n'y est écrite en
@@ -24,8 +24,8 @@ export default function HowToPlayRoute() {
           </li>
           <li>Banqueroute vide votre cagnotte de manche, Passe fait seulement passer la main.</li>
           <li>
-            Résoudre demande le verdict d’une IA ; sans clé d’API réglée dans les Réglages, ce
-            bouton reste indisponible.
+            Résoudre compare votre réponse à la solution, localement et instantanément : aucun
+            réseau, aucune clé d’API n’est nécessaire.
           </li>
         </ul>
       </section>
@@ -72,8 +72,8 @@ export default function HowToPlayRoute() {
       <section className={CARD}>
         <h2 className="font-semibold text-fg">Les cases spéciales</h2>
         <p className="mt-2 text-fg-muted">
-          La roue compte {SEGMENT_COUNT} cases, dont deux Banqueroute et deux Passe ; les autres
-          portent un montant.
+          La roue compte {SEGMENT_COUNT} cases, dont {BANKRUPT_COUNT} Banqueroute, {PASS_COUNT}{' '}
+          Passe et {ZERO_COUNT} case à 0 € ; les autres portent un montant strictement positif.
         </p>
         <ul className="mt-2 flex list-disc flex-col gap-1 pl-5 text-fg-muted">
           <li>
@@ -83,6 +83,12 @@ export default function HowToPlayRoute() {
           <li>
             <strong>Passe</strong> : la cagnotte ne change pas, seule la main passe au joueur
             suivant.
+          </li>
+          <li>
+            <strong>Case à 0 €</strong> : le joueur propose quand même une consonne et la lettre
+            est révélée si elle est présente, mais aucun gain n’est crédité. Contrairement à
+            Passe, la main <strong>ne change pas</strong> : le même joueur rejoue aussitôt, roue
+            comprise.
           </li>
         </ul>
       </section>
@@ -106,42 +112,50 @@ export default function HowToPlayRoute() {
           {MIN_ROUNDS} et {MAX_ROUNDS}) et le nombre d’adversaires (jusqu’à {MAX_OPPONENTS}) se
           choisissent avant de lancer la partie.
         </p>
+        <p className="mt-2 text-fg-muted">
+          La manche finale porte une énigme un peu différente : sa catégorie affichée est{' '}
+          <strong>Question</strong>, et l’énoncé prend la forme d’une question plutôt que d’un mot
+          ou d’une expression. Elle se joue en tout point comme les autres manches — roue,
+          consonnes, voyelles et Résoudre fonctionnent à l’identique.
+        </p>
       </section>
 
       <section className={CARD}>
         <h2 className="font-semibold text-fg">Résoudre</h2>
         <p className="mt-2 text-fg-muted">
           Le bouton « Résoudre » ouvre une boîte pour taper la réponse complète de l’énigme. Le
-          verdict n’est pas calculé par le jeu : il est demandé à une IA, réglée dans les Réglages
-          avec votre propre clé d’API Mistral.
+          verdict est calculé instantanément par le jeu lui-même, en comparant localement le texte
+          tapé à la solution : aucun réseau, aucune clé d’API n’intervient.
         </p>
         <p className="mt-2 text-fg-muted">
-          Sans clé enregistrée, « Résoudre » reste affiché mais indisponible : il n’existe aucun
-          repli local qui compare le texte tapé à la réponse attendue.
+          La comparaison ignore la casse, les accents et toute ponctuation ou espace :{' '}
+          <strong>LA CLÉ</strong>, <strong>la cle</strong> et <strong>LACLE</strong> sont tous
+          acceptés, tout comme <strong>CŒUR</strong> proposé en <strong>coeur</strong>.
         </p>
         <p className="mt-2 text-fg-muted">
-          Une réponse jugée correcte malgré une accentuation ou une orthographe légèrement
-          approximative est acceptée : le juge tolère les fautes mineures, pas les réponses hors
-          sujet.
+          En revanche l’égalité doit être stricte sur les lettres et chiffres qui restent :{' '}
+          <strong>LES CLÉS</strong> est refusé pour <strong>LA CLÉ</strong>, aucune lettre en trop
+          ou en moins n’est rattrapée.
         </p>
         <p className="mt-2 text-fg-muted">
-          Une réponse fausse fait passer la main au joueur suivant, mais la cagnotte est
-          conservée. Si le juge est injoignable ou renvoie une erreur, ce n’est pas compté comme
-          une mauvaise réponse : aucune pénalité, la main reste au joueur pour retenter.
+          Une réponse fausse fait passer la main au joueur suivant, mais la cagnotte de la manche
+          est conservée : une tentative n’est pas un renoncement.
         </p>
       </section>
 
       <section className={CARD}>
         <h2 className="font-semibold text-fg">Quand plus personne ne peut jouer</h2>
         <p className="mt-2 text-fg-muted">
-          « Passer la main » n’apparaît disponible que lorsque le joueur courant n’a plus aucune
-          action légale : plus de consonne à proposer, pas de voyelle qu’il puisse s’offrir, et
-          Résoudre indisponible.
+          « Passer la main » n’apparaît disponible que lorsque le joueur courant n’a plus de
+          consonne à proposer et ne peut s’offrir aucune voyelle. Résoudre, lui, reste toujours
+          accessible : comparer une réponse tapée à la solution ne dépend jamais de la cagnotte ni
+          des lettres restantes.
         </p>
         <p className="mt-2 text-fg-muted">
-          Si, après ce passage, aucun autre joueur ne peut agir non plus, la manche est bloquée :
-          elle est annulée au passage à la manche suivante, la réponse est révélée et personne ne
-          touche de gain pour cette manche.
+          Si tous les joueurs passent ainsi d’affilée, sans qu’aucune autre action ne s’intercale,
+          la manche est bloquée : elle est annulée au passage à la manche suivante, la réponse est
+          révélée et personne ne touche de gain pour cette manche. Toute action qui fait avancer
+          la manche — une tentative de résolution comprise, même ratée — remet ce compte à zéro.
         </p>
       </section>
 
@@ -175,8 +189,9 @@ export default function HowToPlayRoute() {
         <h2 className="font-semibold text-fg">Où vivent vos données</h2>
         <p className="mt-2 text-fg-muted">
           Partie en cours, énigmes personnelles, réglages et clé d’API restent uniquement dans le
-          stockage local de ce navigateur. Rien n’est envoyé ailleurs, à l’exception de l’appel au
-          juge lors d’un « Résoudre ».
+          stockage local de ce navigateur. « Résoudre » compare la réponse localement, sans appel
+          réseau : le seul échange avec l’extérieur est le bouton « Tester la clé » des Réglages,
+          qui interroge Mistral pour vérifier que la clé enregistrée fonctionne.
         </p>
         <p className="mt-3 rounded-lg border border-border bg-bg-soft p-3 text-sm text-fg">
           Sur iOS, une PWA installée depuis l’écran d’accueil a un stockage <strong>distinct</strong>{' '}

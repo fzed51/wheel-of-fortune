@@ -6,7 +6,7 @@ Jeu d'énigmes à lettres, en français, installable comme application. On tourn
 
 Ce n'est pas un tirage au sort : la roue ne fait que fixer la valeur du coup suivant. Tout le reste est du raisonnement sur les lettres.
 
-Application entièrement locale : rien n'est envoyé nulle part, à une exception près et une seule, l'appel au juge décrit plus bas.
+Application entièrement locale : rien n'est envoyé nulle part, à une exception près et une seule, le bouton « Tester la clé » des Réglages décrit plus bas.
 
 ## Démarrer
 
@@ -38,15 +38,19 @@ L'écran `/regles` de l'application les donne en entier, et il les tire des mêm
 - **Banqueroute** vide la cagnotte de la manche et fait passer la main ; **Passe** fait seulement passer la main ;
 - gagner la manche reporte au score total le plus grand entre la cagnotte et un plancher fixe — ce report, lui, n'est pas multiplié.
 
-## Le juge : résoudre est arbitré par un LLM
+## Résoudre : un verdict local, rendu par le moteur
 
-Comparer la réponse du joueur à la solution par une égalité de chaînes ne marche pas. « la clé est sous le paillasson » sans accent, avec une majuscule en trop ou un mot au pluriel, est une bonne réponse qu'une comparaison exacte refuse. Le verdict est donc rendu par un modèle de langue, via [Mistral](https://mistral.ai) (`mistral-small-latest` par défaut, réglable).
+Proposer la solution complète, c'est retaper la même phrase. Ça se compare sans modèle de langue, à condition de comparer la bonne chose : `matchesAnswer` (`src/game/compare.ts`) replie les deux chaînes — majuscules, `Œ` développé en `OE`, `Æ` en `AE`, diacritiques et caractères non alphanumériques retirés — puis exige l'**égalité**. `LA CLÉ`, `la cle` et `LACLE` sont donc acceptés ; `LES CLÉS` est refusé.
 
-Conséquence assumée : **sans clé d'API, « Résoudre » est indisponible, et il n'existe aucun repli local.** Un repli par comparaison exacte serait pire que l'absence du bouton, parce qu'il refuserait des réponses justes en donnant l'air de fonctionner. Le reste du jeu — deviner lettre par lettre — fonctionne entièrement sans clé, et l'accueil comme l'écran de jeu le disent au lieu de se contenter d'un bouton grisé.
+C'est volontairement plus sévère qu'un arbitrage souple : aucune tolérance de faute de frappe. En échange, le verdict est **synchrone, rendu dans le reducer**, sans réseau, sans attente et sans état intermédiaire — la phase `resolving` et le couple requête/verdict qui allaient avec ont disparu. Une réponse fausse fait passer la main sans toucher à la cagnotte de la manche.
 
-Un **pré-filtre déterministe** (`src/llm/prefilter.ts`) tranche sans réseau les deux cas évidents : égalité après normalisation (accents pliés, ligatures développées, ponctuation ignorée) vaut « correct », et une distance d'édition supérieure à 40 % de la longueur vaut « incorrect ». Seule la bande ambiguë part au modèle. Gain triple : latence, coût, et surtout surface d'attaque réduite.
+**Le jeu est donc entièrement jouable sans clé d'API**, du premier au dernier tour.
 
 ### La clé d'API
+
+Elle ne conditionne plus aucune règle : dans l'état actuel du dépôt, `src/llm/` n'est plus appelé que par le bouton « Tester la clé » des Réglages. Le module est conservé — le durcissement décrit plus bas avec — parce que l'étape suivante du chantier le rebranche sur une question bonus posée à la manche finale, elle réellement impossible à juger par comparaison de chaînes (« c'est Canberra », « la ville de Canberra » et « Canbera » sont toutes justes).
+
+Le modèle est [Mistral](https://mistral.ai) (`mistral-small-latest` par défaut, réglable). Quant à la clé elle-même :
 
 - saisie par l'utilisateur dans les Réglages, jamais dans un fichier du dépôt, jamais dans une variable d'environnement de build ;
 - stockée sous une clé de localStorage **qui lui est propre** (`wof:mistral-key:1`), séparée des réglages : aucun objet exportable, journalisable ou affichable ne peut la contenir par accident ;
@@ -55,7 +59,7 @@ Un **pré-filtre déterministe** (`src/llm/prefilter.ts`) tranche sans réseau l
 - absente de l'export des réglages, et masquée partout où elle s'affiche ;
 - dans le reste de l'application, seul un booléen circule : `hasMistralKey`.
 
-Le juge est fabriqué **au moment de l'envoi** et relu à chaque appel, plutôt que conservé dans une closure : une clé retenue vivrait indéfiniment dans la mémoire de l'application, visible dans les outils de développement.
+Elle est relue depuis le stockage **au moment de l'envoi**, plutôt que retenue dans une closure ou dans un état React : une clé conservée vivrait indéfiniment dans la mémoire de l'application, visible dans les outils de développement. Le connecteur est fabriqué au dernier moment, pour la durée d'une requête.
 
 ### Injection de prompt
 
@@ -65,8 +69,8 @@ L'utilisateur écrit **les deux bouts** : il crée les énigmes perso et tape le
 
 ```
 src/
-  game/         moteur : reducer pur, prédicats, roue, bot, énoncés d'annonce
-  llm/           juge : contrat Judge, pré-filtre, connecteur Mistral
+  game/         moteur : reducer pur, prédicats, roue, bot, comparaison, annonces
+  llm/           juge : contrat Judge, connecteur Mistral
   storage/       localStorage versionné : clés, codec, sauvegarde, instantané
   data/puzzles/  catalogue embarqué (20 énigmes, 5 catégories)
   context/       providers React : partie, réglages, énigmes, thème, annonces
@@ -163,7 +167,7 @@ yarn build && yarn check:browser
 
 Quatorze contrôles dans un vrai Chrome, sur le build de production, pour ce que jsdom ne peut pas atteindre : la CSP réelle, le service worker et le hors-ligne, le manifest, l'animation de la roue par la Web Animations API, l'arbre d'accessibilité de Chrome, le `<dialog>` natif et l'écouteur clavier posé sur `document`. Sans aucune dépendance : le pilote parle directement le Chrome DevTools Protocol.
 
-Ce n'est **pas** dans la CI ni dans `yarn test` — c'est une porte de déploiement passée à la main, qui lance Chrome et dure une minute. Aucune requête ne part vers Mistral : la clé écrite dans le profil jetable est factice et sert seulement à rendre `Résoudre` disponible.
+Ce n'est **pas** dans la CI ni dans `yarn test` — c'est une porte de déploiement passée à la main, qui lance Chrome et dure une minute. Aucune requête ne part vers Mistral : la seule clé écrite dans le profil jetable est factice, et sert uniquement à vérifier qu'elle ne se retrouve pas dans l'export des énigmes.
 
 Détail des contrôles, de ce qui n'est volontairement pas couvert, et des variables d'environnement : [`scripts/browser-check/README.md`](scripts/browser-check/README.md).
 

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { BOT_DELAY_MS } from '../game/bot'
@@ -7,7 +7,7 @@ import { CONSONANTS } from '../game/puzzle'
 import { HUMAN_ID } from '../game/setup'
 import { SPIN_MS } from '../game/wheel'
 import { useAnnouncements } from '../hooks/useAnnouncer'
-import { clearAllData, loadGame, saveGame, saveMistralKey, saveSettings } from '../storage/persist'
+import { clearAllData, loadGame, saveGame, saveSettings } from '../storage/persist'
 import { STORAGE_KEYS } from '../storage/keys'
 import { DEFAULT_SETTINGS } from '../storage/settings'
 import {
@@ -57,42 +57,24 @@ function Annonces() {
 
 function Sonde() {
   const state = useGameState()
-  const { startGame, nextRound, spin, playLetter, pass, dispatch } = useGameCommands()
+  const { startGame, nextRound, spin, playLetter, pass, resolve } = useGameCommands()
   rendus.push(state.kind)
 
   const partie = state.kind === 'playing' ? state.game : null
   const manche = partie !== null && partie.progress.kind === 'round' ? partie.progress.round : null
   const siege0 = partie?.players[0]
 
-  // Ce que ferait l'écran de jeu avec un juge disponible : la proposition part,
-  // le verdict revient. Les deux actions tiennent dans le même gestionnaire, le
-  // reducer les applique dans l'ordre.
-  function resoudre(correct: boolean) {
-    if (partie === null || partie.progress.kind !== 'round') return
-    const joueur = partie.players[partie.progress.currentPlayer]
-    if (joueur === undefined) return
-    dispatch({ type: 'resolve/start', by: joueur.id, attempt: 'ma proposition', requestId: 'req-1' })
-    dispatch({ type: 'resolve/verdict', requestId: 'req-1', correct })
+  // La vraie réponse est lue sur l'état courant au moment du clic : la
+  // fixture par défaut fixe l'énigme sur « LE VENT », mais la partie démarrée
+  // par le bouton « Jouer » tire une énigme aléatoire dans le pool — coder en
+  // dur une réponse casserait ce second cas.
+  function resoudreCorrectement() {
+    if (manche === null) return
+    resolve(manche.puzzle.answer)
   }
 
-  // `resolve/start` seul, sans verdict enchaîné : c'est ce qu'il faut pour
-  // observer le driver trancher lui-même le sort d'une tentative de bot, sans
-  // fabriquer la phase `resolving` par un fixture (`toPersisted` la ramènerait
-  // à `awaiting-action` avant écriture).
-  function demarrerResolution() {
-    if (partie === null || partie.progress.kind !== 'round') return
-    const joueur = partie.players[partie.progress.currentPlayer]
-    if (joueur === undefined) return
-    dispatch({ type: 'resolve/start', by: joueur.id, attempt: 'tentative', requestId: 'req-bot' })
-  }
-
-  // Panne technique du juge : aucun verdict ne revient, `resolve/failed` clôt la tentative.
-  function jugeEnPanne() {
-    if (partie === null || partie.progress.kind !== 'round') return
-    const joueur = partie.players[partie.progress.currentPlayer]
-    if (joueur === undefined) return
-    dispatch({ type: 'resolve/start', by: joueur.id, attempt: 'ma proposition', requestId: 'req-1' })
-    dispatch({ type: 'resolve/failed', requestId: 'req-1', reason: 'network' })
+  function resoudreIncorrectement() {
+    resolve('ceci ne peut correspondre à aucune énigme')
   }
 
   return (
@@ -106,9 +88,6 @@ function Sonde() {
       </div>
       <div role="group" aria-label="Phase de la manche">
         {manche?.phase.kind ?? ''}
-      </div>
-      <div role="group" aria-label="Résolution activée">
-        {partie === null ? '' : String(partie.config.resolveEnabled)}
       </div>
       <div role="group" aria-label="Nombre de manches">
         {partie === null ? '' : String(partie.config.roundCount)}
@@ -131,6 +110,17 @@ function Sonde() {
       <div role="group" aria-label="Énigmes déjà jouées">
         {partie === null ? '' : partie.playedPuzzleIds.join(' ')}
       </div>
+      {/*
+       * `Object.hasOwn`, jamais `!== undefined` : seul lui distingue « pas de
+       * `bonusAnswer` » de « `bonusAnswer` présent mais vide », distinction que
+       * le dépôt tient à préserver (voir `isQuestion`, qui s'appuie sur la même
+       * nuance pour la longueur repliée). Une énigme tirée dans le mauvais
+       * réservoir doit se voir ici, pas dans un `id` qu'il faudrait connaître
+       * par cœur.
+       */}
+      <div role="group" aria-label="Énigme de type question">
+        {manche === null ? '' : Object.hasOwn(manche.puzzle, 'bonusAnswer') ? 'oui' : 'non'}
+      </div>
       <button
         type="button"
         onClick={() => {
@@ -139,27 +129,11 @@ function Sonde() {
       >
         Jouer
       </button>
-      <button
-        type="button"
-        onClick={() => {
-          resoudre(true)
-        }}
-      >
-        Résoudre
+      <button type="button" onClick={resoudreCorrectement}>
+        Résoudre correctement
       </button>
-      <button
-        type="button"
-        onClick={() => {
-          resoudre(false)
-        }}
-      >
-        Résoudre (faux)
-      </button>
-      <button type="button" onClick={jugeEnPanne}>
-        Juge en panne
-      </button>
-      <button type="button" onClick={demarrerResolution}>
-        Démarrer résolution
+      <button type="button" onClick={resoudreIncorrectement}>
+        Résoudre incorrectement
       </button>
       <button
         type="button"
@@ -226,6 +200,10 @@ beforeEach(() => {
   rendus = []
 })
 
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
+
 describe('GameProvider', () => {
   it('hydrate la partie du stockage dès le premier rendu', () => {
     saveGame(jeu(demarrer()))
@@ -272,29 +250,7 @@ describe('GameProvider', () => {
     expect(champ('Premier siège')).toBe(`${HUMAN_ID} human`)
   })
 
-  it('démarre sans résolution quand aucune clé n’est enregistrée', async () => {
-    const user = userEvent.setup()
-    monter(<Sonde />)
-
-    await user.click(screen.getByRole('button', { name: 'Jouer' }))
-
-    expect(champ('Résolution activée')).toBe('false')
-  })
-
-  it('démarre avec la résolution quand une clé est enregistrée', async () => {
-    saveMistralKey('sk-test')
-    const user = userEvent.setup()
-    monter(<Sonde />)
-
-    await user.click(screen.getByRole('button', { name: 'Jouer' }))
-
-    expect(champ('Résolution activée')).toBe('true')
-  })
-
   it('tire une énigme jamais jouée pour la manche suivante', async () => {
-    // La clé est nécessaire pour que `resolve/start` soit une action légale : c'est
-    // le seul moyen de terminer une manche sans scénariser vingt tirages de roue.
-    saveMistralKey('sk-test')
     const user = userEvent.setup()
     monter(<Sonde />)
 
@@ -302,7 +258,7 @@ describe('GameProvider', () => {
     const premiere = champ('Identifiant de l’énigme')
     expect(premiere).not.toBe('')
 
-    await user.click(screen.getByRole('button', { name: 'Résoudre' }))
+    await user.click(screen.getByRole('button', { name: 'Résoudre correctement' }))
     expect(champ('Type de progression')).toBe('round-over')
 
     await user.click(screen.getByRole('button', { name: 'Manche suivante' }))
@@ -394,10 +350,7 @@ describe('GameProvider', () => {
 
   describe('pass', () => {
     it('passe la main quand le joueur courant est bloqué', async () => {
-      const bloquee = avecLettres(
-        demarrer({ players: [fixtureJoueur('Alice')], config: { resolveEnabled: false } }),
-        CONSONANTS,
-      )
+      const bloquee = avecLettres(demarrer({ players: [fixtureJoueur('Alice')] }), CONSONANTS)
       saveGame(jeu(bloquee))
       const user = userEvent.setup()
       monter(<Sonde />)
@@ -405,8 +358,10 @@ describe('GameProvider', () => {
 
       await user.click(screen.getByRole('button', { name: 'Passer' }))
 
-      // Seule issue pour un joueur bloqué sans consonne ni voyelle achetable ni
-      // juge : la manche passe en `blocked`, pas de partenaire à qui redonner la main.
+      // Plus aucune consonne à tirer ni voyelle finançable : proposer la
+      // réponse resterait légal (`canResolve` ne dépend d'aucune des deux),
+      // mais ce test choisit « Passer », dont c'est alors la seule utilité —
+      // la manche passe en `blocked`, pas de partenaire à qui redonner la main.
       expect(champ('Phase de la manche')).toBe('blocked')
     })
 
@@ -422,39 +377,116 @@ describe('GameProvider', () => {
     })
   })
 
-  describe('annonces', () => {
-    it('annonce un verdict négatif au statut, jamais à l’alerte', async () => {
-      // Une clé Mistral doit être enregistrée : sans elle, l'effet de synchronisation
-      // du provider ramène `resolveEnabled` à `false` dès le montage, et `resolve/start`
-      // deviendrait indispatchable.
-      saveMistralKey('sk-test')
+  describe('resolve', () => {
+    it('une bonne réponse termine la manche sans le moindre appel réseau', async () => {
+      // Point central de l'étape : le verdict est un calcul synchrone du
+      // reducer (`matchesAnswer`), aucune clé ni aucun réseau n'entrent en jeu.
+      const fetchMock = vi.fn()
+      vi.stubGlobal('fetch', fetchMock)
       saveGame(jeu(demarrer({ players: [fixtureJoueur('Alice')] })))
       const user = userEvent.setup()
       monter(<Sonde />)
 
-      await user.click(screen.getByRole('button', { name: 'Résoudre (faux)' }))
+      await user.click(screen.getByRole('button', { name: 'Résoudre correctement' }))
 
-      // C'est le seul test qui prouve que l'action compte, pas seulement le diff
-      // d'état : un `resolve/failed` produirait le même `(prev, next)` mais une
-      // alerte, jamais un statut.
-      expect(await screen.findByRole('status')).toHaveTextContent('Mauvaise réponse.')
-      expect(screen.getByRole('alert')).toHaveTextContent('')
+      expect(champ('Type de progression')).toBe('round-over')
+      expect(fetchMock).not.toHaveBeenCalled()
     })
 
-    it('annonce une panne du juge à l’alerte, jamais au statut', async () => {
-      saveMistralKey('sk-test')
+    it('une mauvaise réponse fait passer la main sans toucher à la cagnotte', async () => {
+      saveGame(jeu(avecPot(demarrer(), 0, 300)))
+      const user = userEvent.setup()
+      monter(<Sonde />)
+
+      await user.click(screen.getByRole('button', { name: 'Résoudre incorrectement' }))
+
+      expect(champ('Phase de la manche')).toBe('awaiting-action')
+      expect(champ('Cagnotte du premier siège')).toBe('300')
+      expect(await screen.findByRole('status')).toHaveTextContent('Mauvaise réponse.')
+    })
+
+    it("n'a aucun effet pendant le tour d'un bot", async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true })
+      try {
+        const user = userEvent.setup({ delay: null })
+        saveGame(jeu(demarrer({ players: [bot('Bot 1')] })))
+        monter(<Sonde />)
+
+        // Assertion faite avant tout écoulement du minuteur du bot : elle
+        // distingue le refus de la commande d'un simple silence dû au minuteur.
+        await user.click(screen.getByRole('button', { name: 'Résoudre correctement' }))
+
+        expect(champ('Type de progression')).toBe('round')
+        expect(champ('Phase de la manche')).toBe('awaiting-action')
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('fonctionne sans aucune clé d’API configurée', async () => {
+      // Aucun `saveMistralKey` dans ce test : c'est tout le point de l'étape,
+      // « Résoudre » ne dépend plus d'aucune clé.
       saveGame(jeu(demarrer({ players: [fixtureJoueur('Alice')] })))
       const user = userEvent.setup()
       monter(<Sonde />)
 
-      await user.click(screen.getByRole('button', { name: 'Juge en panne' }))
+      await user.click(screen.getByRole('button', { name: 'Résoudre correctement' }))
 
-      expect(await screen.findByRole('alert')).toHaveTextContent(
-        'Le juge est injoignable. Vérifiez votre connexion, puis réessayez.',
-      )
-      // Le statut garde sa dernière valeur (« Proposition envoyée au juge. »),
-      // qu'un échec technique ne doit pas écraser par une phrase de verdict.
-      expect(screen.getByRole('status')).toHaveTextContent('Proposition envoyée au juge.')
+      expect(champ('Type de progression')).toBe('round-over')
+    })
+  })
+
+  describe('manche finale et réservoir de questions', () => {
+    it('tire une question pour la manche finale d’une partie d’une seule manche', async () => {
+      // `roundCount: 1` est le plus petit réglage possible (`MIN_ROUNDS`) : la
+      // manche 0 y est aussi la dernière, donc `isFinalRound(0, 1)` est vrai
+      // sans qu'il faille jouer plusieurs manches pour l'atteindre.
+      saveSettings({ ...DEFAULT_SETTINGS, roundCount: 1 })
+      const user = userEvent.setup()
+      monter(<Sonde />)
+
+      await user.click(screen.getByRole('button', { name: 'Jouer' }))
+
+      expect(champ('Nombre de manches')).toBe('1')
+      expect(champ('Énigme de type question')).toBe('oui')
+    })
+
+    it('ne tire jamais de question pour la manche 0 d’une partie de plusieurs manches', async () => {
+      saveSettings({ ...DEFAULT_SETTINGS, roundCount: 3 })
+      const user = userEvent.setup()
+      monter(<Sonde />)
+
+      await user.click(screen.getByRole('button', { name: 'Jouer' }))
+
+      expect(champ('Nombre de manches')).toBe('3')
+      expect(champ('Énigme de type question')).toBe('non')
+    })
+
+    it('sert la question de la manche finale au bon moment du passage de manche', async () => {
+      // Point dur signalé par la consigne : au moment où `nextRound` tire
+      // l'énigme, le reducer n'a pas encore poussé le résumé de la manche
+      // finie dans `game.history` (ça n'arrive qu'au dispatch de `round/next`,
+      // juste après). Avec `roundCount: 2`, la manche 0 vient de se terminer,
+      // `game.history.length` vaut donc 0 — et c'est bien l'index de la
+      // manche à venir (la manche 1, la finale) qu'il faut passer à `pickFor`.
+      // Un décalage d'un cran dans un sens ferait tirer la question dès la
+      // manche 0 (elle serait vue au clic sur « Jouer », avant même la
+      // résolution) ; dans l'autre sens, la manche 1 resterait dans `pool` et
+      // ne verrait jamais de question. Les deux assertions ci-dessous, prises
+      // ensemble, excluent les deux décalages à la fois.
+      saveSettings({ ...DEFAULT_SETTINGS, roundCount: 2 })
+      const user = userEvent.setup()
+      monter(<Sonde />)
+
+      await user.click(screen.getByRole('button', { name: 'Jouer' }))
+      expect(champ('Énigme de type question')).toBe('non')
+
+      await user.click(screen.getByRole('button', { name: 'Résoudre correctement' }))
+      await user.click(screen.getByRole('button', { name: 'Manche suivante' }))
+
+      expect(champ('Nombre de manches')).toBe('2')
+      expect(champ('Type de progression')).toBe('round')
+      expect(champ('Énigme de type question')).toBe('oui')
     })
   })
 
@@ -582,32 +614,6 @@ describe('GameProvider', () => {
         await user.click(screen.getByRole('button', { name: 'Tourner' }))
 
         expect(champ('Phase de la manche')).toBe('awaiting-action')
-      } finally {
-        vi.useRealTimers()
-      }
-    })
-
-    it('sort de la résolution après le verdict d’un bot', async () => {
-      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true })
-      try {
-        const user = userEvent.setup({ delay: null })
-        // La clé Mistral doit être enregistrée : sans elle, l'effet de
-        // synchronisation du provider ramène `resolveEnabled` à `false` dès le
-        // montage, et `resolve/start` deviendrait indispatchable.
-        saveMistralKey('sk-test')
-        saveGame(jeu(demarrer({ players: [bot('Bot 1')] })))
-        monter(<Sonde />)
-
-        await user.click(screen.getByRole('button', { name: 'Démarrer résolution' }))
-        expect(champ('Phase de la manche')).toBe('resolving')
-
-        act(() => {
-          vi.advanceTimersByTime(BOT_DELAY_MS)
-        })
-
-        // Aucune assertion sur le contenu du verdict, il est tiré au hasard :
-        // seule compte la sortie de la phase, sans quoi la partie se figerait.
-        expect(champ('Phase de la manche')).not.toBe('resolving')
       } finally {
         vi.useRealTimers()
       }

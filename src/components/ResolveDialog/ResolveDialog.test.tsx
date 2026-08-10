@@ -4,8 +4,6 @@ import { describe, expect, it, vi } from 'vitest'
 import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import ResolveDialog from './ResolveDialog'
-import { announceJudgeFailure } from '../../game/announce'
-import type { JudgeErrorReason } from '../../llm/judge'
 
 /**
  * jsdom (30.0.1, utilisé ici) réagit à l'attribut `open` mais n'implémente ni
@@ -31,8 +29,8 @@ if (typeof HTMLDialogElement.prototype.showModal !== 'function') {
 
 /**
  * Rendu sans `Providers` : `ResolveDialog` ne connaît ni le contexte de jeu,
- * ni le juge, ni le stockage — la doctrine du projet pour les composants
- * d'affichage, comme `PuzzleForm`.
+ * ni le moteur de règles, ni le stockage — la doctrine du projet pour les
+ * composants d'affichage, comme `PuzzleForm`.
  */
 function champReponse(): HTMLElement {
   return screen.getByLabelText('Votre réponse')
@@ -50,23 +48,14 @@ function Hote() {
       <button type="button" onClick={() => setOpen(true)}>
         Résoudre
       </button>
-      <ResolveDialog
-        open={open}
-        pending={false}
-        failure={null}
-        category="Objet"
-        onSubmit={() => {}}
-        onClose={() => setOpen(false)}
-      />
+      <ResolveDialog open={open} category="Objet" onSubmit={() => {}} onClose={() => setOpen(false)} />
     </>
   )
 }
 
 describe('ResolveDialog', () => {
   it('ouvre la boîte et focalise le champ de réponse', () => {
-    render(
-      <ResolveDialog open pending={false} failure={null} category="Objet" onSubmit={() => {}} onClose={() => {}} />,
-    )
+    render(<ResolveDialog open category="Objet" onSubmit={() => {}} onClose={() => {}} />)
 
     expect(champReponse()).toHaveFocus()
   })
@@ -74,9 +63,7 @@ describe('ResolveDialog', () => {
   it('appelle onSubmit avec la proposition élaguée', async () => {
     const user = userEvent.setup()
     const onSubmit = vi.fn()
-    render(
-      <ResolveDialog open pending={false} failure={null} category="Objet" onSubmit={onSubmit} onClose={() => {}} />,
-    )
+    render(<ResolveDialog open category="Objet" onSubmit={onSubmit} onClose={() => {}} />)
 
     await user.type(champReponse(), '  une chaise ')
     await user.click(boutonProposer())
@@ -87,9 +74,7 @@ describe('ResolveDialog', () => {
   it("n'appelle pas onSubmit pour une proposition vide et affiche un message", async () => {
     const user = userEvent.setup()
     const onSubmit = vi.fn()
-    render(
-      <ResolveDialog open pending={false} failure={null} category="Objet" onSubmit={onSubmit} onClose={() => {}} />,
-    )
+    render(<ResolveDialog open category="Objet" onSubmit={onSubmit} onClose={() => {}} />)
 
     await user.click(boutonProposer())
 
@@ -97,63 +82,35 @@ describe('ResolveDialog', () => {
     expect(screen.getByText('Tapez une réponse avant de la proposer.')).toBeInTheDocument()
   })
 
-  it("verrouille le formulaire pendant l'attente et n'appelle plus onSubmit", async () => {
+  it('ferme le dialogue à la soumission', async () => {
+    // Le verdict est désormais synchrone : que la manche soit gagnée ou que
+    // la main passe au joueur suivant, la boîte n'a plus de raison de rester
+    // ouverte — contrairement à l'ancien attente du juge, elle se refermait
+    // seule à la réception d'un verdict.
     const user = userEvent.setup()
-    const onSubmit = vi.fn()
-    render(
-      <ResolveDialog open pending failure={null} category="Objet" onSubmit={onSubmit} onClose={() => {}} />,
-    )
-
-    const formulaire = champReponse().closest('form')
-    expect(formulaire).toHaveAttribute('aria-busy', 'true')
-    expect(screen.getByText(/Le juge examine votre réponse/u)).toBeInTheDocument()
-    // Pas de bouton « Annuler » pendant l'attente : rien pour esquiver le verdict.
-    expect(screen.queryByRole('button', { name: 'Annuler' })).not.toBeInTheDocument()
+    const onClose = vi.fn()
+    render(<ResolveDialog open category="Objet" onSubmit={() => {}} onClose={onClose} />)
 
     await user.type(champReponse(), 'une chaise')
     await user.click(boutonProposer())
 
-    expect(onSubmit).not.toHaveBeenCalled()
+    expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  /*
-   * Les quatre raisons doivent produire quatre phrases distinctes : « le juge
-   * est injoignable » et « votre clé est refusée » n'appellent pas la même
-   * action du joueur, et une phrase générique lui ferait chercher au mauvais
-   * endroit. Les phrases elles-mêmes viennent de `announceJudgeFailure`, on ne
-   * les recopie donc pas ici — c'est la source unique qui est vérifiée.
-   */
-  const RAISONS: readonly JudgeErrorReason[] = ['network', 'timeout', 'bad-response', 'unauthorized']
+  it('ne ferme pas le dialogue pour une proposition vide', async () => {
+    const user = userEvent.setup()
+    const onClose = vi.fn()
+    render(<ResolveDialog open category="Objet" onSubmit={() => {}} onClose={onClose} />)
 
-  for (const raison of RAISONS) {
-    it(`affiche la phrase de l'échec « ${raison} », liée au champ`, () => {
-      render(
-        <ResolveDialog
-          open
-          pending={false}
-          failure={raison}
-          category="Objet"
-          onSubmit={() => {}}
-          onClose={() => {}}
-        />,
-      )
+    await user.click(boutonProposer())
 
-      const message = screen.getByText(announceJudgeFailure(raison))
-      // Le message ne porte volontairement pas de live region : c'est ce lien
-      // qui le fait lire, et sans lui il serait muet pour le lecteur d'écran.
-      expect(champReponse()).toHaveAttribute('aria-describedby', message.id)
-    })
-  }
-
-  it('donne quatre phrases différentes aux quatre raisons', () => {
-    const phrases = new Set(RAISONS.map((raison) => announceJudgeFailure(raison)))
-    expect(phrases.size).toBe(RAISONS.length)
+    expect(onClose).not.toHaveBeenCalled()
   })
 
   it('remonte onClose quand le dialogue natif se ferme', () => {
     const onClose = vi.fn()
     const { container } = render(
-      <ResolveDialog open pending={false} failure={null} category="Objet" onSubmit={() => {}} onClose={onClose} />,
+      <ResolveDialog open category="Objet" onSubmit={() => {}} onClose={onClose} />,
     )
 
     // `querySelector('dialog')` plutôt qu'un rôle : on a besoin de l'API

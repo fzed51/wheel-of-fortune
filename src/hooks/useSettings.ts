@@ -6,9 +6,10 @@ import type { Settings } from '../storage/settings'
  *
  * **La clé Mistral n'entre jamais dans cette valeur de contexte.** Seul le booléen
  * `hasMistralKey` en sort : c'est la seule chose dont le reste de l'application a
- * besoin (activer « Résoudre »). Les écrans qui doivent afficher un indice de clé
- * la relisent eux-mêmes depuis le stockage, ce qui garde la valeur hors de tout
- * instantané d'état React, donc hors des messages d'erreur et des outils de dev.
+ * besoin — savoir qu'une clé existe, jamais laquelle. Les écrans qui doivent
+ * afficher un indice de clé la relisent eux-mêmes depuis le stockage, ce qui garde
+ * la valeur hors de tout instantané d'état React, donc hors des messages d'erreur
+ * et des outils de dev.
  *
  * Les commandes sont déclarées en **propriétés fonction**, pas en méthodes : une
  * méthode déstructurée déclenche `unbound-method`, et ces fonctions n'ont de toute

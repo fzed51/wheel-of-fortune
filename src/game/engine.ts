@@ -1,6 +1,7 @@
 import type { GameAction } from './actions'
+import { matchesAnswer } from './compare'
 import { countOccurrences, isConsonant, isSolved, isVowel } from './puzzle'
-import { canBuyVowel, canPlayerAct, canResolve, canSpin, isStuck, multiplierFor } from './rules'
+import { canBuyVowel, canResolve, canSpin, isStuck, multiplierFor } from './rules'
 import type {
   Game,
   GameState,
@@ -33,12 +34,16 @@ function playing(game: Game): GameState {
 
 /** Copie par valeur : l'éditeur d'énigmes ne doit rien pouvoir muter sous la partie. */
 function snapshotPuzzle(puzzle: Puzzle): Puzzle {
-  return {
+  const base = {
     id: puzzle.id,
     answer: puzzle.answer,
     category: puzzle.category,
     source: puzzle.source,
   }
+  // Copie conditionnelle plutôt qu'une clé posée à `undefined` : c'est le prix
+  // d'un champ optionnel, et une clé fantôme se retrouverait dans les
+  // comparaisons d'objets des tests (`toEqual` distingue `{ x: undefined }` de `{}`).
+  return puzzle.bonusAnswer === undefined ? base : { ...base, bonusAnswer: puzzle.bonusAnswer }
 }
 
 function seatOf(index: number, count: number): number {
@@ -57,8 +62,8 @@ function withPot(players: readonly Player[], seat: number, pot: number): readonl
 }
 
 /**
- * Donne la main au premier siège de `seats` capable de jouer, et passe la manche
- * en `blocked` si aucun ne l'est.
+ * Donne la main au premier siège de `seats`, et passe la manche en `blocked`
+ * quand tout le monde a décliné à la suite.
  *
  * **Frontière `blocked` / `round-over{void}`** : `blocked` est une phase de la
  * manche en cours, pas une fin de manche. La manche ne devient `void` qu'au
@@ -66,26 +71,21 @@ function withPot(players: readonly Player[], seat: number, pot: number): readonl
  * peut plus jouer » avec la solution, avant d'enchaîner — et ça garde une action
  * légale (`round/next`) en toute circonstance, donc aucun interblocage possible.
  *
- * Conséquence assumée : quand la main doit passer mais qu'aucun autre joueur ne
- * peut agir, elle **revient** au joueur de départ s'il est le seul à pouvoir
- * jouer. Sans cette règle, une partie solo sans juge LLM se figerait dès le
- * premier « Passe ».
+ * Le critère est le compteur de passes et non un croisement de prédicats :
+ * proposer la réponse est toujours légal, donc « ce joueur ne peut rien faire »
+ * n'existe plus. Ce qui reste observable, c'est que chacun a renoncé à son tour.
  */
 function settle(game: Game, round: RoundState, seats: readonly number[]): GameState {
-  const ready: RoundState = { ...round, phase: AWAITING }
-  for (const seat of seats) {
-    const player = game.players[seat]
-    if (player !== undefined && canPlayerAct(game.config, ready, player)) {
-      return playing({ ...game, progress: { kind: 'round', currentPlayer: seat, round: ready } })
-    }
+  const seat = seats[0] ?? 0
+  if (round.passes >= game.players.length) {
+    return playing({
+      ...game,
+      progress: { kind: 'round', currentPlayer: seat, round: { ...round, phase: { kind: 'blocked' } } },
+    })
   }
   return playing({
     ...game,
-    progress: {
-      kind: 'round',
-      currentPlayer: seats[0] ?? 0,
-      round: { ...round, phase: { kind: 'blocked' } },
-    },
+    progress: { kind: 'round', currentPlayer: seat, round: { ...round, phase: AWAITING } },
   })
 }
 
@@ -152,7 +152,7 @@ export function reduce(state: GameState, action: GameAction): GameState {
         progress: {
           kind: 'round',
           currentPlayer: seatOf(action.firstPlayer, action.players.length),
-          round: { index: 0, puzzle, guessed: [], phase: AWAITING },
+          round: { index: 0, puzzle, guessed: [], phase: AWAITING, passes: 0 },
         },
       })
     }
@@ -189,11 +189,11 @@ export function reduce(state: GameState, action: GameAction): GameState {
         case 'bankrupt':
           return settle(
             { ...turn.game, players: withPot(turn.game.players, turn.seat, 0) },
-            turn.round,
+            { ...turn.round, passes: 0 },
             rotation(turn.seat + 1, count),
           )
         case 'pass':
-          return settle(turn.game, turn.round, rotation(turn.seat + 1, count))
+          return settle(turn.game, { ...turn.round, passes: 0 }, rotation(turn.seat + 1, count))
         case 'cash':
           return playing({
             ...turn.game,
@@ -227,7 +227,9 @@ export function reduce(state: GameState, action: GameAction): GameState {
       }
       const count = turn.game.players.length
       const hits = countOccurrences(turn.round.puzzle.answer, action.letter)
-      if (hits === 0) return settle(turn.game, revealed, rotation(turn.seat + 1, count))
+      if (hits === 0) {
+        return settle(turn.game, { ...revealed, passes: 0 }, rotation(turn.seat + 1, count))
+      }
 
       const gain = phase.value * hits * multiplierFor(turn.round.index)
       const game: Game = {
@@ -237,7 +239,7 @@ export function reduce(state: GameState, action: GameAction): GameState {
       // Résolution testée dans la même transition : la manche ne repasse pas par
       // `awaiting-action` quand la dernière lettre vient d'être révélée.
       if (isSolved(revealed)) return finishRound(game, revealed, turn.seat, 'last-letter')
-      return settle(game, revealed, rotation(turn.seat, count))
+      return settle(game, { ...revealed, passes: 0 }, rotation(turn.seat, count))
     }
 
     case 'letter/buy-vowel': {
@@ -264,56 +266,32 @@ export function reduce(state: GameState, action: GameAction): GameState {
       const count = turn.game.players.length
       const hits = countOccurrences(turn.round.puzzle.answer, action.letter)
       const seats = hits > 0 ? rotation(turn.seat, count) : rotation(turn.seat + 1, count)
-      return settle(game, revealed, seats)
+      return settle(game, { ...revealed, passes: 0 }, seats)
     }
 
     case 'turn/pass': {
       const turn = turnOf(state, action.by)
       if (turn === null || !isStuck(turn.game)) return state
-      return settle(turn.game, turn.round, rotation(turn.seat + 1, turn.game.players.length))
+      return settle(
+        turn.game,
+        { ...turn.round, passes: turn.round.passes + 1 },
+        rotation(turn.seat + 1, turn.game.players.length),
+      )
     }
 
-    case 'resolve/start': {
+    case 'resolve/attempt': {
       const turn = turnOf(state, action.by)
       if (turn === null || !canResolve(turn.game)) return state
-      return playing({
-        ...turn.game,
-        progress: {
-          kind: 'round',
-          currentPlayer: turn.seat,
-          round: {
-            ...turn.round,
-            phase: { kind: 'resolving', attempt: action.attempt, requestId: action.requestId },
-          },
-        },
-      })
-    }
-
-    case 'resolve/verdict': {
-      if (state.kind !== 'playing') return state
-      const game = state.game
-      if (game.progress.kind !== 'round') return state
-      const round = game.progress.round
-      if (round.phase.kind !== 'resolving' || round.phase.requestId !== action.requestId) {
-        return state
+      if (matchesAnswer(action.attempt, turn.round.puzzle.answer)) {
+        return finishRound(turn.game, turn.round, turn.seat, 'resolve')
       }
-
-      const seat = game.progress.currentPlayer
-      if (action.correct) return finishRound(game, round, seat, 'resolve')
-      // Réponse fausse : la main passe, mais la cagnotte est conservée.
-      return settle(game, round, rotation(seat + 1, game.players.length))
-    }
-
-    case 'resolve/failed': {
-      if (state.kind !== 'playing') return state
-      const game = state.game
-      if (game.progress.kind !== 'round') return state
-      const round = game.progress.round
-      if (round.phase.kind !== 'resolving' || round.phase.requestId !== action.requestId) {
-        return state
-      }
-      // Un juge injoignable n'est pas une mauvaise réponse : aucune pénalité.
-      return settle(game, round, rotation(game.progress.currentPlayer, game.players.length))
+      // Réponse fausse : la main passe, la cagnotte est conservée, `passes`
+      // repart de zéro — une tentative n'est pas un renoncement.
+      return settle(
+        turn.game,
+        { ...turn.round, passes: 0 },
+        rotation(turn.seat + 1, turn.game.players.length),
+      )
     }
 
     case 'round/next': {
@@ -356,19 +334,8 @@ export function reduce(state: GameState, action: GameAction): GameState {
         progress: {
           kind: 'round',
           currentPlayer: seatOf(action.firstPlayer, players.length),
-          round: { index: summary.index + 1, puzzle, guessed: [], phase: AWAITING },
+          round: { index: summary.index + 1, puzzle, guessed: [], phase: AWAITING, passes: 0 },
         },
-      })
-    }
-
-    case 'config/set-resolve-enabled': {
-      if (state.kind !== 'playing') return state
-      if (state.game.config.resolveEnabled === action.enabled) return state
-      // La phase n'est pas recalculée : une manche déjà `blocked` le reste, seule
-      // la manche suivante bénéficie du juge.
-      return playing({
-        ...state.game,
-        config: { ...state.game.config, resolveEnabled: action.enabled },
       })
     }
   }

@@ -14,11 +14,9 @@ import type {
 /**
  * Frontière entre ce qui mérite d'être écrit et ce qui ne doit jamais l'être.
  *
- * **Jamais persisté** : angle de rotation, `spinId`, `requestId`, verdict en
- * attente, texte en cours de frappe, toast, minuterie, état du générateur
- * aléatoire. Tout cela n'a de sens que dans l'onglet qui l'a produit ; le
- * relire ferait rejouer une animation ou attendre une réponse qui ne viendra
- * jamais.
+ * **Jamais persisté** : angle de rotation, `spinId`, texte en cours de frappe,
+ * toast, minuterie, état du générateur aléatoire. Tout cela n'a de sens que
+ * dans l'onglet qui l'a produit ; le relire ferait rejouer une animation.
  */
 export type PersistedPhase =
   | { readonly kind: 'awaiting-action' }
@@ -30,6 +28,12 @@ export interface PersistedRound {
   readonly puzzle: Puzzle
   readonly guessed: readonly Letter[]
   readonly phase: PersistedPhase
+  /**
+   * Compteur de règle, pas un état éphémère : sans lui, un rechargement en
+   * cours de tour de table redonnerait un tour gratuit à chaque joueur déjà
+   * passé, et une manche pourrait ne plus jamais se bloquer.
+   */
+  readonly passes: number
 }
 
 export type PersistedProgress =
@@ -45,14 +49,22 @@ export interface PersistedGame {
   readonly progress: PersistedProgress
 }
 
-/** Copies par valeur : rien de ce qui sort d'un `JSON.parse` ne doit rester partagé. */
+/**
+ * Copies par valeur : rien de ce qui sort d'un `JSON.parse` ne doit rester partagé.
+ *
+ * Copie conditionnelle de `bonusAnswer`, comme dans `snapshotPuzzle` côté moteur :
+ * poser la clé à `undefined` la ferait apparaître dans l'objet (`toEqual` distingue
+ * `{ x: undefined }` de `{}`), et un champ oublié ici ferait disparaître la réponse
+ * attendue de la manche finale au premier rechargement, sans le moindre message d'erreur.
+ */
 function copyPuzzle(puzzle: Puzzle): Puzzle {
-  return {
+  const base = {
     id: puzzle.id,
     answer: puzzle.answer,
     category: puzzle.category,
     source: puzzle.source,
   }
+  return puzzle.bonusAnswer === undefined ? base : { ...base, bonusAnswer: puzzle.bonusAnswer }
 }
 
 function copyPlayer(player: Player): Player {
@@ -108,16 +120,13 @@ function shell(game: Game, progress: PersistedProgress): PersistedGame {
 /**
  * Réduit une partie à ce qui doit survivre à un rechargement.
  *
- * Deux phases n'ont pas d'équivalent persistable, et le traitement de chacune est
- * une décision de règle, pas de technique :
- *
- * - `spinning` : le tirage **a eu lieu**. L'escamoter rendrait au joueur un tour
- *   gratuit après une banqueroute, donc l'issue est appliquée avant écriture — en
- *   repassant par le reducer, pour qu'il n'existe qu'un seul code qui sache ce
- *   qu'un segment fait.
- * - `resolving` : une réponse partie chez le juge. Un rechargement pendant l'appel
- *   réseau ne doit **rien** coûter : retour en `awaiting-action`, cagnotte intacte,
- *   main conservée.
+ * Une seule phase n'a pas d'équivalent persistable : `spinning`. Le tirage
+ * **a eu lieu**, et « Résoudre » est un verdict synchrone du reducer, qui ne
+ * laisse jamais la manche dans un état intermédiaire à sauvegarder — il ne
+ * reste donc que le tirage à traiter. L'escamoter rendrait au joueur un tour
+ * gratuit après une banqueroute, donc l'issue est appliquée avant écriture —
+ * en repassant par le reducer, pour qu'il n'existe qu'un seul code qui sache
+ * ce qu'un segment fait.
  */
 export function toPersisted(game: Game): PersistedGame {
   const progress = game.progress
@@ -149,12 +158,10 @@ export function toPersisted(game: Game): PersistedGame {
         puzzle: copyPuzzle(round.puzzle),
         guessed: [...round.guessed],
         phase: { kind: 'awaiting-action' },
+        passes: round.passes,
       },
     })
   }
-
-  const persistedPhase: PersistedPhase =
-    phase.kind === 'resolving' ? { kind: 'awaiting-action' } : copyPhase(phase)
 
   return shell(game, {
     kind: 'round',
@@ -163,7 +170,8 @@ export function toPersisted(game: Game): PersistedGame {
       index: round.index,
       puzzle: copyPuzzle(round.puzzle),
       guessed: [...round.guessed],
-      phase: persistedPhase,
+      phase: copyPhase(phase),
+      passes: round.passes,
     },
   })
 }
@@ -193,6 +201,7 @@ export function fromPersisted(persisted: PersistedGame): Game {
               puzzle: copyPuzzle(progress.round.puzzle),
               guessed: [...progress.round.guessed],
               phase: copyPhase(progress.round.phase),
+              passes: progress.round.passes,
             },
           }
         : progress.kind === 'round-over'

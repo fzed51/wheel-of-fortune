@@ -40,9 +40,10 @@ const APP = `${ORIGIN}${BASE_PATH}`
 const RACINE = resolve(import.meta.dirname, '..', '..')
 
 /**
- * Clé factice, écrite pour rendre « Résoudre » disponible et pouvoir ouvrir le
- * `<dialog>`. Aucun contrôle ne soumet de réponse : rien ne part vers Mistral,
- * et le profil Chrome est jeté à la fin.
+ * Clé factice, écrite juste avant le contrôle de l'export pour vérifier qu'elle
+ * n'y apparaît pas. Elle n'ouvre plus aucune fonctionnalité — « Résoudre » se
+ * passe de clé depuis que le verdict est rendu localement — et aucun contrôle ne
+ * déclenche d'appel à Mistral. Le profil Chrome est jeté à la fin.
  */
 const CLE_FACTICE = 'controle-navigateur-aucune-requete'
 
@@ -320,9 +321,6 @@ async function main() {
   })
 
   await controle('clavier physique : Espace, lettre, Entrée', async () => {
-    // La clé factice rend « Résoudre » disponible ; aucune réponse n'est soumise,
-    // donc aucune requête ne part.
-    await evaluate(client, `localStorage.setItem('wof:mistral-key:1', '${CLE_FACTICE}'); return true`)
     await demarrerPartie(client)
 
     await evaluate(client, 'document.activeElement.blur(); return true')
@@ -414,6 +412,7 @@ async function main() {
   })
 
   await controle('export : téléchargement d’un blob sous CSP', async () => {
+    await evaluate(client, `localStorage.setItem('wof:mistral-key:1', '${CLE_FACTICE}'); return true`)
     await goto(client, `${APP}enigmes`)
     await evaluate(
       client,

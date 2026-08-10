@@ -24,5 +24,11 @@ export const ALL_KEYS: readonly StorageKey[] = Object.values(STORAGE_KEYS)
  * changement de forme voulu (l'ancienne entrée est simplement ignorée), celle de
  * la charge utile permet de reconnaître une donnée écrite par une version
  * ultérieure de l'application — cas réel après un retour arrière de déploiement.
+ *
+ * Règle générale : tout changement de `WHEEL` ou de forme persistée incrémente
+ * `SCHEMA_VERSION`. Ici, le rééquilibrage de la roue change les montants associés
+ * à certains index ; une sauvegarde figée en `awaiting-consonant` sur un `Segment`
+ * de l'ancien barème resterait valide pour `isSegment` (l'index reste dans les
+ * bornes) mais ferait encaisser un montant qui n'existe plus sur la roue actuelle.
  */
-export const SCHEMA_VERSION = 1
+export const SCHEMA_VERSION = 2

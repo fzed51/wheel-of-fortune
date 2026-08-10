@@ -43,28 +43,6 @@ function throwingFetch(error: Error): typeof fetch {
 
 const INPUT = { attempt: 'LE PETIT PRUNCE', answer: 'LE PETIT PRINCE', category: 'Littérature' }
 
-describe('createMistralJudge — pré-filtre', () => {
-  it('tranche correct sans appeler le réseau quand la tentative est une égalité normalisée', async () => {
-    const { fetchImpl } = fakeFetch(chatResponse('ne doit jamais être lu'))
-    const judge = createMistralJudge({ apiKey: 'clé', model: 'mistral-small-latest', fetchImpl })
-
-    const result = await judge.judge({ attempt: "l'été à Nîmes", answer: 'LETE A NIMES', category: 'Géo' })
-
-    expect(result).toEqual({ kind: 'verdict', correct: true })
-    expect(fetchImpl).not.toHaveBeenCalled()
-  })
-
-  it('tranche incorrect sans appeler le réseau quand la tentative est trop éloignée', async () => {
-    const { fetchImpl } = fakeFetch(chatResponse('ne doit jamais être lu'))
-    const judge = createMistralJudge({ apiKey: 'clé', model: 'mistral-small-latest', fetchImpl })
-
-    const result = await judge.judge({ attempt: 'XYZ', answer: 'LE PETIT PRINCE', category: 'Littérature' })
-
-    expect(result).toEqual({ kind: 'verdict', correct: false })
-    expect(fetchImpl).not.toHaveBeenCalled()
-  })
-})
-
 describe('createMistralJudge — verdict du modèle', () => {
   it('transmet un verdict JSON valide', async () => {
     const { fetchImpl } = fakeFetch(chatResponse('{"correct": true, "reason": "Faute de frappe tolérée"}'))

@@ -82,6 +82,59 @@ describe('draftIssues', () => {
       { kind: 'category-empty' },
     ])
   })
+
+  describe('question de la manche finale', () => {
+    // Trente-sept caractères, sans point d'interrogation (refusé par ANSWER_CHARS).
+    const QUESTION_ANSWER = "QUELLE EST LA CAPITALE DE L'AUSTRALIE"
+
+    it('n’a aucun problème pour une question complète et bien formée', () => {
+      const issues = draftIssues(
+        { answer: QUESTION_ANSWER, category: 'Question', bonusAnswer: 'CANBERRA' },
+        [],
+      )
+      expect(issues).toEqual([])
+    })
+
+    it('signale une question sans réponse attendue', () => {
+      const issues = draftIssues({ answer: QUESTION_ANSWER, category: 'Question' }, [])
+      expect(issues).toEqual([{ kind: 'bonus-empty' }])
+    })
+
+    it('signale une question dont la réponse attendue n’est que des espaces', () => {
+      const issues = draftIssues(
+        { answer: QUESTION_ANSWER, category: 'Question', bonusAnswer: '   ' },
+        [],
+      )
+      expect(issues).toEqual([{ kind: 'bonus-empty' }])
+    })
+
+    it('signale une réponse attendue contenue dans l’énoncé, même avec accents et espaces différents', () => {
+      const issues = draftIssues(
+        {
+          answer: QUESTION_ANSWER,
+          category: 'Question',
+          // « càpitale » au lieu de « capitale » : seul le pliage rapproche
+          // les deux chaînes malgré l'accent et les espaces en trop.
+          bonusAnswer: ' càp itale ',
+        },
+        [],
+      )
+      expect(issues).toEqual([{ kind: 'bonus-in-answer' }])
+    })
+
+    it('ne signale aucun problème de bonus pour une énigme ordinaire portant un bonusAnswer', () => {
+      // Les deux règles bonus ne s'appliquent qu'à la catégorie « Question » :
+      // sans cette garde, dix-huit sites de construction existants qui ne
+      // posent jamais `bonusAnswer` casseraient dès qu'un import leur en
+      // donnerait un par erreur — ce test protège l'inverse aussi, une
+      // énigme normale qui en porterait un ne doit rien déclencher.
+      const issues = draftIssues(
+        { answer: VALID.answer, category: VALID.category, bonusAnswer: 'LE CHAT NOIR' },
+        [],
+      )
+      expect(issues).toEqual([])
+    })
+  })
 })
 
 describe('issueMessage', () => {
@@ -98,6 +151,8 @@ describe('issueMessage', () => {
     'answer-duplicate': { kind: 'answer-duplicate' },
     'category-empty': { kind: 'category-empty' },
     'category-too-long': { kind: 'category-too-long' },
+    'bonus-empty': { kind: 'bonus-empty' },
+    'bonus-in-answer': { kind: 'bonus-in-answer' },
   }
 
   it.each(Object.values(ALL_ISSUES))('produit une phrase française pour %j', (issue) => {

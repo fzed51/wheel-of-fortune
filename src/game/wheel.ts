@@ -4,13 +4,13 @@ import type { Segment, SpinOutcome } from './types'
  * Disposition de la roue, du haut dans le sens horaire.
  * `'B'` = banqueroute, `'P'` = passe, un nombre = un montant.
  *
- * Les montants sont volontairement répétés (250, 300, 400 et 500 apparaissent
- * deux fois) : c'est ce qui rend l'`index` du segment indispensable, sans lui
+ * Plusieurs montants reviennent (50, 100, 150, 200 et 250 apparaissent chacun
+ * plusieurs fois) : c'est ce qui rend l'`index` du segment indispensable, sans lui
  * l'animation ne saurait pas quel arc viser.
  */
 const LAYOUT = [
-  100, 250, 500, 'B', 300, 750, 400, 'P', 600, 350, 900, 'B',
-  200, 550, 800, 300, 450, 1000, 'P', 250, 700, 400, 650, 500,
+  100, 250, 50, 500, 'B', 150, 400, 200, 'P', 250, 100, 600,
+   50, 350,  0, 200, 450, 150, 'B', 300, 100, 800, 'P', 250,
 ] as const
 
 export const SEGMENT_COUNT = LAYOUT.length
@@ -22,6 +22,16 @@ export const WHEEL: readonly Segment[] = LAYOUT.map((slot, index) => {
   if (slot === 'P') return { kind: 'pass', index }
   return { kind: 'cash', index, value: slot }
 })
+
+/**
+ * Compteurs dérivés de `WHEEL`, jamais écrits en dur : l'écran de règles
+ * (`src/routes/HowToPlayRoute.tsx`) les lit pour annoncer « dont deux Banqueroute
+ * et deux Passe » sans figer ces nombres dans sa propre prose, qui mentirait au
+ * prochain rééquilibrage du barème.
+ */
+export const BANKRUPT_COUNT = WHEEL.filter((segment) => segment.kind === 'bankrupt').length
+export const PASS_COUNT = WHEEL.filter((segment) => segment.kind === 'pass').length
+export const ZERO_COUNT = WHEEL.filter((segment) => segment.kind === 'cash' && segment.value === 0).length
 
 /** Marge laissée aux bords du segment pour que l'aiguille reste sans ambiguïté. */
 const OFFSET_BOUND = SEGMENT_ANGLE / 2 - 2

@@ -1,3 +1,11 @@
+/**
+ * À cette étape du chantier, ce module n'a plus qu'un seul consommateur :
+ * `SettingsRoute`, pour « Tester la clé ». « Résoudre » est devenu une simple
+ * comparaison de chaînes (`src/game/compare.ts`), déterministe, qui ne
+ * consulte plus aucun juge. L'étape suivante rebranche ce module pour juger
+ * la réponse à la question bonus de la manche finale — ne le supprime pas
+ * sous prétexte qu'il ne sert plus qu'à un écran de réglages.
+ */
 import { createMistralJudge } from './mistral'
 import type { Judge } from './judge'
 

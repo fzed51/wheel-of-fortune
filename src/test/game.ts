@@ -28,7 +28,7 @@ export const CONFIG: GameConfig = {
   roundCount: 3,
   vowelCost: 250,
   minRoundPrize: 500,
-  resolveEnabled: true,
+  bonusPrize: 500,
 }
 
 export function joueur(name: string, patch: Partial<Player> = {}): Player {
@@ -56,19 +56,35 @@ export function enigme(answer: string, id = answer): Puzzle {
   }
 }
 
+/**
+ * Énigme-question : même énoncé qu'une énigme ordinaire, plus la réponse
+ * attendue de l'étape bonus. La catégorie reste `Test` — c'est `bonusAnswer`
+ * qui fait la question aux yeux d'`isQuestion`, jamais le libellé de la
+ * catégorie, et une fixture qui prétendrait le contraire masquerait cette règle.
+ */
+export function question(answer: string, expected: string, id = answer): Puzzle {
+  return { ...enigme(answer, id), bonusAnswer: expected }
+}
+
 export interface OptionsPartie {
   readonly answer?: string
+  /** Présent : l'énigme de départ est une question. Absent : une énigme ordinaire. */
+  readonly bonusAnswer?: string
   readonly players?: readonly Player[]
   readonly config?: Partial<GameConfig>
   readonly firstPlayer?: number
 }
 
 export function demarrer(options: OptionsPartie = {}): GameState {
+  const answer = options.answer ?? 'le vent'
   return reduce(initialState, {
     type: 'game/start',
     config: { ...CONFIG, ...options.config },
     players: options.players ?? [joueur('Alice'), joueur('Bob')],
-    puzzle: enigme(options.answer ?? 'le vent'),
+    puzzle:
+      options.bonusAnswer === undefined
+        ? enigme(answer)
+        : question(answer, options.bonusAnswer),
     firstPlayer: options.firstPlayer ?? 0,
   })
 }
@@ -114,6 +130,8 @@ export function cash(value: number): number {
 
 export const BANQUEROUTE = indexOf((segment) => segment.kind === 'bankrupt')
 export const PASSE = indexOf((segment) => segment.kind === 'pass')
+/** Le seul segment `cash` de valeur nulle : sert à vérifier que la main reste au joueur sans rien lui rapporter. */
+export const CASH_ZERO = indexOf((segment) => segment.kind === 'cash' && segment.value === 0)
 
 /** Tirage complet : `wheel/spin` puis `wheel/settled`, par le joueur courant. */
 export function tourner(state: GameState, index: number, spinId = 1): GameState {
@@ -133,19 +151,21 @@ export function acheter(state: GameState, letter: Vowel): GameState {
   return jouer(state, { type: 'letter/buy-vowel', by: courant(state).id, letter })
 }
 
-export function resoudre(state: GameState, correct: boolean, requestId = 'req-1'): GameState {
-  return jouer(
-    state,
-    { type: 'resolve/start', by: courant(state).id, attempt: 'ma proposition', requestId },
-    { type: 'resolve/verdict', requestId, correct },
-  )
+/**
+ * Tentative de résolution du joueur courant. `attempt` par défaut reprend
+ * l'énigme de la manche en cours : c'est le raccourci le plus utile pour un
+ * scénario « le joueur trouve », l'appelant passe une chaîne différente pour
+ * simuler une réponse fausse.
+ */
+export function resoudre(state: GameState, attempt: string): GameState {
+  return jouer(state, { type: 'resolve/attempt', by: courant(state).id, attempt })
 }
 
 /** Partie menée jusqu'à `game-over` : chaque manche gagnée par résolution. */
 export function partieTerminee(state: GameState = demarrer()): GameState {
   let current = state
   for (let round = 0; round < jeu(current).config.roundCount; round += 1) {
-    current = resoudre(current, true, `req-${round}`)
+    current = resoudre(current, manche(current).puzzle.answer)
     current = jouer(current, {
       type: 'round/next',
       puzzle: enigme('la mer', `suite-${round}`),

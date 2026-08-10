@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from 'vitest'
 import { screen } from '@testing-library/react'
-import { clearAllData, saveMistralKey } from '../storage/persist'
+import { clearAllData } from '../storage/persist'
 import { monterApp } from '../test/app'
 
 /**
@@ -15,30 +15,12 @@ beforeEach(() => {
 })
 
 describe('HomeRoute', () => {
-  it('sans clé enregistrée, affiche le bandeau et son lien vers les réglages', () => {
-    monterApp('/')
-
-    expect(
-      screen.getByRole('heading', { level: 2, name: 'Aucune clé d’API enregistrée' }),
-    ).toBeInTheDocument()
-    expect(
-      screen.getByRole('link', { name: 'Enregistrer une clé dans les réglages' }),
-    ).toHaveAttribute('href', '/reglages')
-  })
-
-  it('avec une clé enregistrée, le bandeau est absent', () => {
-    saveMistralKey('sk-une-cle-1234')
-
-    monterApp('/')
-
-    expect(
-      screen.queryByRole('heading', { name: 'Aucune clé d’API enregistrée' }),
-    ).not.toBeInTheDocument()
-  })
-
-  it('laisse lancer une partie même sans clé enregistrée', () => {
+  it('laisse lancer une partie même sans clé enregistrée, sans le moindre avertissement à ce sujet', () => {
     monterApp('/')
 
     expect(screen.getByRole('button', { name: 'Jouer' })).toBeInTheDocument()
+    // Le jeu se joue entièrement sans clé : aucun bandeau ne doit plus en
+    // parler, ni comme avertissement ni comme mention quelconque.
+    expect(screen.queryByText(/clé/i)).not.toBeInTheDocument()
   })
 })

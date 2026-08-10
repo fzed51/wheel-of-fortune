@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { asPuzzleId } from '../game/types'
-import { cash, demarrer, jeu, partieTerminee, proposer, tourner } from '../test/game'
+import { cash, demarrer, jeu, manche, partieTerminee, proposer, resoudre, tourner } from '../test/game'
 import {
   decodeGame,
   decodePuzzleFile,
@@ -10,15 +10,18 @@ import {
   encodePuzzleFile,
   encodeRecord,
 } from './codec'
+import { SCHEMA_VERSION } from './keys'
 import { DEFAULT_SETTINGS } from './settings'
-import { toPersisted } from './snapshot'
+import { fromPersisted, toPersisted } from './snapshot'
 
 /**
- * Enveloppe écrite à la main, version en littéral : si le format du fil change,
- * ces tests doivent le dire, pas s'adapter en silence à la nouvelle constante.
+ * Enveloppe écrite à la main, version lue sur `SCHEMA_VERSION` : un littéral
+ * fige la version courante et casse à chaque bump du schéma, exactement le bug
+ * que ce fichier corrige plus bas pour les tests qui, eux, veulent une version
+ * étrangère volontaire.
  */
 function enveloppe(value: unknown): string {
-  return JSON.stringify({ version: 1, value })
+  return JSON.stringify({ version: SCHEMA_VERSION, value })
 }
 
 /** Sauvegarde vue comme une donnée brute : ces tests abîment exprès sa forme. */
@@ -44,7 +47,9 @@ describe('enveloppe', () => {
   })
 
   it('distingue une version étrangère d’une donnée invalide', () => {
-    expect(decodeRecord(JSON.stringify({ version: 2, value: {} }))).toEqual({
+    // Dérivée de `SCHEMA_VERSION` : un littéral casserait ce test au prochain bump,
+    // qui rendrait justement cette version « étrangère » égale à la courante.
+    expect(decodeRecord(JSON.stringify({ version: SCHEMA_VERSION + 1, value: {} }))).toEqual({
       ok: false,
       reason: 'version',
     })
@@ -75,7 +80,24 @@ describe('decodeGame', () => {
     ['total fractionnaire', (g) => (g.players[0].total = 12.5)],
     ['niveau de bot inconnu', (g) => (g.players[0].kind = { type: 'bot', level: 'expert' })],
     ['zéro manche', (g) => (g.config.roundCount = 0)],
+    [
+      // `bonusPrize` a remplacé `resolveEnabled` : un enregistrement qui ne le
+      // porte plus vient d'une version antérieure au refactor des règles.
+      'config sans bonusPrize',
+      (g) => {
+        delete g.config.bonusPrize
+      },
+    ],
     ['manche au-delà du compte', (g) => (g.progress.round.index = 3)],
+    [
+      // Sans ce compteur, un rechargement en cours de tour de table redonnerait
+      // un tour gratuit à tout joueur déjà passé.
+      'passes manquant',
+      (g) => {
+        delete g.progress.round.passes
+      },
+    ],
+    ['passes non numérique', (g) => (g.progress.round.passes = 'zéro')],
     ['résumé de manche abîmé', (g) => (g.history = [{ ...g.progress.round, outcome: null }])],
     [
       // Résumé valide, mais une manche de plus que l'index courant : l'historique
@@ -93,6 +115,8 @@ describe('decodeGame', () => {
     ],
     ['énoncé non normalisé', (g) => (g.progress.round.puzzle.answer = 'le vent')],
     ['énoncé sans lettre', (g) => (g.progress.round.puzzle.answer = '— —')],
+    ['bonusAnswer numérique', (g) => (g.progress.round.puzzle.bonusAnswer = 42)],
+    ['bonusAnswer objet', (g) => (g.progress.round.puzzle.bonusAnswer = { texte: 'CANBERRA' })],
     [
       'segment hors de la roue',
       (g) => {
@@ -115,6 +139,57 @@ describe('decodeGame', () => {
     const persisted: Brut = JSON.parse(JSON.stringify(toPersisted(jeu(partieTerminee()))))
     persisted.progress.winners = ['fantome']
     expect(decodeGame(enveloppe(persisted))).toEqual({ ok: false, reason: 'invalid' })
+  })
+})
+
+describe('question de la manche finale, à travers la chaîne de persistance', () => {
+  /**
+   * Un seul test qui parcourt toute la chaîne — `snapshotPuzzle` au démarrage,
+   * `finishRound` à la victoire, `toPersisted`, `encodeRecord`, `decodeGame`,
+   * `fromPersisted` — plutôt qu'un test par maillon : c'est l'oubli du maillon
+   * auquel on n'a pas pensé qui fait disparaître `bonusAnswer` en silence, et
+   * seul un test de bout en bout l'attrape à coup sûr.
+   */
+  it('conserve la réponse attendue d’une question tout au long de la chaîne', () => {
+    const state = demarrer({ bonusAnswer: 'CANBERRA', config: { roundCount: 1 } })
+    const resolu = jeu(resoudre(state, manche(state).puzzle.answer))
+    expect(resolu.progress.kind).toBe('round-over')
+
+    const decoded = decodeGame(encodeRecord(toPersisted(resolu)))
+    if (!decoded.ok) throw new Error('sauvegarde refusée alors qu’elle est valide')
+    const rejoue = fromPersisted(decoded.value)
+
+    expect(rejoue.progress).toMatchObject({
+      kind: 'round-over',
+      summary: { puzzle: { bonusAnswer: 'CANBERRA' } },
+    })
+  })
+
+  it('ne fait jamais apparaître de clé `bonusAnswer` sur une énigme ordinaire', () => {
+    // `toEqual` ne distingue pas `undefined` de l'absence de clé : seul
+    // `Object.hasOwn` voit la différence entre « pas de question » et
+    // « question à la réponse vide », qui casseraient toutes les deux `isQuestion`.
+    const state = demarrer({ config: { roundCount: 1 } })
+    const resolu = jeu(resoudre(state, manche(state).puzzle.answer))
+
+    const decoded = decodeGame(encodeRecord(toPersisted(resolu)))
+    if (!decoded.ok) throw new Error('sauvegarde refusée alors qu’elle est valide')
+    const rejoue = fromPersisted(decoded.value)
+    if (rejoue.progress.kind !== 'round-over') throw new Error('manche non terminée')
+
+    expect(Object.hasOwn(rejoue.progress.summary.puzzle, 'bonusAnswer')).toBe(false)
+  })
+
+  it('relit une sauvegarde écrite avant cette fonctionnalité, sans `bonusAnswer`', () => {
+    // Aucune sauvegarde antérieure ne porte ce champ : `SCHEMA_VERSION` ne bouge
+    // pas pour C1, une entrée qui en manque doit donc rester valide et se lire
+    // comme une énigme ordinaire, jamais comme une question à la réponse absente.
+    const game = jeu(proposer(tourner(demarrer(), cash(500)), 'V'))
+    const decoded = decodeGame(sauvegarde())
+    expect(decoded).toEqual({ ok: true, value: toPersisted(game) })
+    if (!decoded.ok) return
+    if (decoded.value.progress.kind !== 'round') throw new Error('manche attendue')
+    expect(Object.hasOwn(decoded.value.progress.round.puzzle, 'bonusAnswer')).toBe(false)
   })
 })
 
@@ -178,6 +253,30 @@ describe('decodePuzzles', () => {
     expect(decoded.ok && decoded.value[0]?.source).toBe('custom')
   })
 
+  it('conserve et normalise la réponse attendue d’une question perso', () => {
+    const decompose = `canberra${String.fromCodePoint(0x301)}`
+    const decoded = decodePuzzles(
+      enveloppe([
+        {
+          id: 'user-5',
+          answer: 'quelle est la capitale de l’australie',
+          category: 'Question',
+          bonusAnswer: decompose,
+        },
+      ]),
+    )
+    expect(decoded.ok && decoded.value[0]?.bonusAnswer).toBe('CANBERRÁ')
+  })
+
+  it('n’ajoute pas de `bonusAnswer` à une énigme perso qui n’en porte pas', () => {
+    const decoded = decodePuzzles(
+      enveloppe([{ id: 'user-6', answer: 'le vent', category: 'Nature' }]),
+    )
+    expect(decoded.ok && decoded.value[0] && Object.hasOwn(decoded.value[0], 'bonusAnswer')).toBe(
+      false,
+    )
+  })
+
   it('refuse ce qui n’est pas un tableau', () => {
     expect(decodePuzzles(enveloppe({}))).toEqual({ ok: false, reason: 'invalid' })
   })
@@ -210,6 +309,29 @@ describe('fichier d’énigmes', () => {
     expect(json).not.toContain('source')
   })
 
+  it('fait l’aller-retour sur la réponse attendue d’une question', () => {
+    const puzzles = [
+      {
+        id: asPuzzleId('user-2'),
+        answer: 'QUELLE EST LA CAPITALE DE L\'AUSTRALIE',
+        category: 'Question',
+        source: 'custom' as const,
+        bonusAnswer: 'CANBERRA',
+      },
+    ]
+    const decoded = decodePuzzleFile(encodePuzzleFile(puzzles))
+    expect(decoded.ok && decoded.value.entries[0]?.bonusAnswer).toBe('CANBERRA')
+  })
+
+  it('n’écrit aucune clé `bonusAnswer` pour une énigme ordinaire', () => {
+    // Le fichier est fait pour être ouvert et corrigé à la main : une clé
+    // `"bonusAnswer": null` y serait déroutante, elle doit rester absente.
+    const json = encodePuzzleFile([
+      { id: asPuzzleId('user-3'), answer: 'LE VENT', category: 'Nature', source: 'custom' },
+    ])
+    expect(json).not.toContain('bonusAnswer')
+  })
+
   it('accepte un tableau nu écrit à la main, identifiants à `null`', () => {
     const decoded = decodePuzzleFile(
       JSON.stringify([{ answer: 'SANS IDENTIFIANT', category: 'Test' }]),
@@ -221,7 +343,7 @@ describe('fichier d’énigmes', () => {
   })
 
   it('refuse une version d’enveloppe inconnue', () => {
-    expect(decodePuzzleFile(JSON.stringify({ version: 2, value: [] }))).toEqual({
+    expect(decodePuzzleFile(JSON.stringify({ version: SCHEMA_VERSION + 1, value: [] }))).toEqual({
       ok: false,
       reason: 'version',
     })
