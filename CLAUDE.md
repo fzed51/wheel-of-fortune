@@ -26,6 +26,30 @@ yarn lint && yarn test && yarn build
 - Cibler un fichier pendant le développement : `yarn test src/game/rules.test.ts`. La suite complète (plus de 700 tests) seulement avant de rendre.
 - `yarn build && yarn check:browser` est une porte manuelle de déploiement, hors CI. Ne pas la lancer sans demande : elle ouvre un vrai Chrome.
 
+## La recette manuelle (`docs/tests/`)
+
+`docs/tests/recette-manuelle.html` porte les contrôles qu'aucun automate ne joue : une vraie clé d'API, une installation réelle, deux builds successifs, un audit Lighthouse, un passage axe, et tout ce que seul l'œil juge. C'est une page autonome, cochable, qui produit un compte rendu Markdown copiable. Le mode d'emploi complet vit dans `docs/tests/README.md` — ne pas le recopier ici.
+
+**Après toute modification qui touche une zone couverte, demander à l'utilisateur de passer les scénarios concernés**, en les nommant par leur numéro. Le dire au moment de rendre le travail, avec les portes de validation ; ne pas le garder pour soi sous prétexte que les tests unitaires passent. C'est justement ce que Vitest ne voit pas.
+
+| Zone modifiée | Scénarios à rejouer |
+| --- | --- |
+| `src/llm/`, `src/components/BonusQuestion/`, l'étape bonus de `src/hooks/useGameEffects.ts`, la partie clé de `src/routes/SettingsRoute.tsx` | S2, S3, S4 |
+| `vite.config.ts`, `pwa-assets.config.ts`, `public/`, `src/components/UpdatePrompt/` | S5, S6, S7 |
+| `src/components/classes.ts`, les couleurs Tailwind, `public/theme-init.js`, `src/components/Wheel/` | S9 |
+| `src/game/wheel.ts`, `src/game/setup.ts` (barème, montants) | S1, S9 |
+| `src/storage/`, `SCHEMA_VERSION` | S10, S11 |
+| `src/components/PuzzleEditor/`, `src/data/puzzles/` | S11 |
+| Une route, un écran, un nom accessible | S8 |
+
+Règles d'entretien des fiches :
+
+- **Un libellé, un montant ou un parcours cité par une fiche qui change dans le code change dans la fiche, au même commit.** Une fiche qui décrit l'application d'avant fait échouer une campagne pour rien, et use la confiance dans le support.
+- **Ne jamais écrire un attendu sans l'avoir vérifié dans le code.** Chaque étape cite des libellés réels ; un attendu inventé transforme une campagne en chasse au fantôme. C'est la même règle que pour les briefs de sous-agents.
+- **Une étape devenue automatisable part dans `scripts/browser-check/check.mjs` et disparaît de la fiche.** Doubler un automate ne teste rien de plus et allonge une campagne que personne ne passera.
+- **Ne jamais cocher les cases ni rédiger un compte rendu à la place de l'utilisateur.** Une campagne se joue devant un vrai navigateur, sur un vrai appareil.
+- Quand l'utilisateur colle un compte rendu : traiter les écarts, puis proposer de l'archiver dans `docs/tests/rapports/AAAA-MM-JJ-<contexte>.md`.
+
 ## Le code passe par des sous-agents
 
 Découper chaque tâche en zones de fichiers bornées et **disjointes**, puis les confier à l'agent `frontend-dev` (`.claude/agents/frontend-dev.md`, modèle Sonnet imposé). Ne pas écrire le code depuis le fil principal : son contexte est la ressource rare.
