@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 // Lus en texte brut plutôt qu'avec `node:fs` : le typage de l'application n'expose
 // que `vite/client`, et lui ouvrir les API Node laisserait un composant importer
 // le système de fichiers.
 import script from '../../public/theme-init.js?raw'
 import styles from '../index.css?raw'
-import { STORAGE_KEYS } from '../storage/keys'
+import { SCHEMA_VERSION, STORAGE_KEYS } from '../storage/keys'
 import { THEME_COLORS, applyTheme, prefersDarkFrom, resolveTheme } from './theme'
 
 describe('resolveTheme', () => {
@@ -78,5 +78,74 @@ describe('bootstrap du thème', () => {
 
   it('n’est pas un module, pour rester chargeable en script classique', () => {
     expect(script).not.toMatch(/^\s*(import|export)\s/m)
+  })
+})
+
+/**
+ * Le script n'est pas un module : impossible d'en importer une fonction, donc
+ * impossible d'appeler `installerMatchMedia` sur la même réalité que celle où
+ * il tourne.
+ *
+ * Deux pistes écartées avant celle-ci :
+ * - `new Function(script)` est ce que `no-implied-eval` interdit nommément,
+ *   et `eval(script)` déclenche la même famille de règle (`no-eval`) ;
+ * - une balise `<script>` injectée seule échoue autrement : jsdom l'exécute
+ *   dans une réalité distincte de celle où `installerMatchMedia` a posé son
+ *   double sur `window` — `window.matchMedia` y est tout simplement absent, et
+ *   seul le cas « thème forcé », qui court-circuite l'appel, s'en sortirait.
+ *
+ * La solution : injecter le double de `matchMedia` **dans la même balise**
+ * que le bootstrap, avant lui. Les deux tournent alors dans la même réalité
+ * jsdom, quelle qu'elle soit — le double n'a plus besoin d'être partagé avec
+ * l'extérieur.
+ */
+function executerBootstrap(systemePrefereSombre: boolean): void {
+  const doubleMatchMedia =
+    'window.matchMedia = function (requete) {' +
+    `  return { matches: ${String(systemePrefereSombre)} && requete.indexOf('dark') !== -1 }` +
+    '}\n'
+  const balise = document.createElement('script')
+  balise.textContent = doubleMatchMedia + script
+  document.head.appendChild(balise)
+  balise.remove()
+}
+
+describe('bootstrap du thème — exécution réelle', () => {
+  function nettoyer(): void {
+    localStorage.clear()
+    document.documentElement.removeAttribute('data-theme')
+    // Les balises `theme-color` posées par un test voisin (`applyTheme`) ne
+    // doivent pas laisser croire qu'une exécution précédente a réussi ici.
+    for (const meta of document.querySelectorAll('meta[name="theme-color"]')) meta.remove()
+  }
+
+  beforeEach(nettoyer)
+  afterEach(nettoyer)
+
+  it('applique le thème stocké quand l’enveloppe est à la version courante', () => {
+    localStorage.setItem(
+      STORAGE_KEYS.settings,
+      JSON.stringify({ version: SCHEMA_VERSION, value: { theme: 'dark' } }),
+    )
+    executerBootstrap(false)
+    expect(document.documentElement.dataset.theme).toBe('dark')
+  })
+
+  it('ignore une enveloppe d’une version périmée et retombe sur le système', () => {
+    // Une version différente de `SCHEMA_VERSION` est rejetée par l'application
+    // (`decodeRecord`) : le bootstrap doit se comporter pareil, sinon l'écran
+    // sombre lu ici serait aussitôt rebasculé au clair par le rendu React —
+    // exactement le flash que ce fichier existe pour éviter.
+    localStorage.setItem(
+      STORAGE_KEYS.settings,
+      JSON.stringify({ version: SCHEMA_VERSION - 1, value: { theme: 'dark' } }),
+    )
+    executerBootstrap(false)
+    expect(document.documentElement.dataset.theme).toBe('light')
+  })
+
+  it('retombe sur la préférence système sans aucune enveloppe en stockage', () => {
+    executerBootstrap(true)
+    expect(document.documentElement.dataset.theme).toBe('dark')
   })
 })
