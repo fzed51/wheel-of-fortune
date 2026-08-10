@@ -48,6 +48,28 @@ Découper chaque tâche en zones de fichiers bornées et **disjointes**, puis le
 - **Tests par rôle et nom accessible uniquement.** Jamais de `data-testid`, de sélecteur de classe ni de snapshot.
 - Changer la forme d'un enregistrement sauvegardé impose de monter son numéro de version.
 
+## Le graphe de code (graphify)
+
+```bash
+graphify extract src --out .      # écrit graphify-out/graph.json, incrémental
+```
+
+Viser `src` et non la racine : la racine échoue, parce que le README, `docs/` et les images exigent une extraction sémantique, donc une clé de LLM. Un corpus de code seul n'en demande aucune. Les relances suivantes ne réextraient que les fichiers modifiés.
+
+Le graphe remplace une exploration à l'aveugle, à condition de l'interroger avec **les identifiants du code** — fonctions suffixées de `()`, fichiers avec leur extension. Coûts mesurés :
+
+| Commande | Sortie | Usage |
+| --- | --- | --- |
+| `graphify path "reduce()" "createJudge()"` | ~120 caractères | par où deux symboles se rejoignent |
+| `graphify explain "reduce()"` | ~1 000 caractères | source, communauté, voisins directs |
+| `graphify affected "reduce()"` | ~2 000 caractères | ce qui casse si on y touche |
+
+Trois pièges, vérifiés :
+
+- **`graphify query` en français ne marche pas.** Il fabrique ses nœuds de départ à partir des mots de la question et tombe sur des nœuds inexistants : 6 000 caractères de liste sans rapport. Poser la question avec les termes du code, et borner par `--budget 500`.
+- **Ne jamais lire `graphify-out/graph.json`.** Le fichier pèse près de 900 000 caractères, soit environ 250 000 tokens — il se requête, il ne se lit pas.
+- **Le graphe ignore les constantes et les valeurs.** `SCHEMA_VERSION` n'y figure pas ; ce genre de symbole se cherche au `grep`.
+
 ## Git
 
 - Messages de commit **en français**, format Conventional Commits, une étape de plan = un commit.
