@@ -43,9 +43,11 @@ function versEtapeBonus(expected = 'CANBERRA'): GameState {
 }
 
 describe('toPersisted', () => {
-  it('conserve tel quel un état déjà persistable', () => {
+  it('conserve tel quel un état déjà persistable, hormis l’angle de la roue', () => {
+    // `wheelAngle` n'a pas d'équivalent dans `PersistedGame` (voir le docblock) :
+    // on le neutralise ici plutôt que de comparer champ par champ.
     const game = jeu(proposer(tourner(demarrer(), cash(500)), 'V'))
-    expect(toPersisted(game)).toEqual(game)
+    expect(toPersisted(game)).toEqual({ ...game, wheelAngle: undefined })
   })
 
   it('applique l’issue du segment plutôt que d’escamoter le tirage', () => {
@@ -91,7 +93,7 @@ describe('toPersisted', () => {
       JSON.stringify(toPersisted(enRotation(demarrer(), cash(400)))),
       JSON.stringify(toPersisted(enJugement)),
     ].join(' ')
-    for (const champ of ['spinId', 'offset', 'requestId', 'attempt', 'spin']) {
+    for (const champ of ['spinId', 'offset', 'requestId', 'attempt', 'spin', 'wheelAngle', 'travel']) {
       expect(ecrit, `${champ} ne doit pas être persisté`).not.toContain(champ)
     }
   })
@@ -202,6 +204,13 @@ describe('fromPersisted', () => {
     expect(Object.hasOwn(persisted.progress, 'bonus')).toBe(true)
     expect(persisted.progress.bonus).toBeNull()
     expect(fromPersisted(persisted)).toEqual(game)
+  })
+
+  it('ramène l’angle de la roue à 0, même s’il n’était pas nul avant l’écriture', () => {
+    // L'angle n'a pas de forme persistée (voir le docblock de `PersistedGame`) :
+    // un rechargement doit toujours retrouver la roue au repos de montage.
+    const enCours: Game = { ...jeu(tourner(demarrer(), cash(500))), wheelAngle: 137 }
+    expect(fromPersisted(toPersisted(enCours)).wheelAngle).toBe(0)
   })
 
   it('recopie tout : muter l’enregistrement relu ne touche pas la partie', () => {

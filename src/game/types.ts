@@ -192,6 +192,12 @@ export interface Game {
   readonly history: readonly RoundSummary[]
   readonly playedPuzzleIds: readonly PuzzleId[]
   readonly progress: GameProgress
+  /**
+   * Angle de repos de la roue, en degrés dans [0, 360). Le lancer part de là : sans lui dans l'état,
+   * le résultat dépendrait d'une ref de composant et le fuzz ne serait plus reproductible.
+   * Jamais persisté (voir le docblock de storage/snapshot.ts) : vaut 0 à la reprise d'une partie.
+   */
+  readonly wheelAngle: number
 }
 
 export type GameState =

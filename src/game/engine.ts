@@ -3,6 +3,7 @@ import { isFinalRound, isQuestion } from './bonus'
 import { matchesAnswer } from './compare'
 import { countOccurrences, isConsonant, isSolved, isVowel } from './puzzle'
 import { canBuyVowel, canResolve, canSpin, isStuck, multiplierFor } from './rules'
+import { INITIAL_WHEEL_ANGLE } from './setup'
 import type {
   BonusResult,
   BonusState,
@@ -190,6 +191,7 @@ export function reduce(state: GameState, action: GameAction): GameState {
         players: action.players,
         history: [],
         playedPuzzleIds: [puzzle.id],
+        wheelAngle: INITIAL_WHEEL_ANGLE,
         progress: {
           kind: 'round',
           currentPlayer: seatOf(action.firstPlayer, action.players.length),

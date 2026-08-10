@@ -53,6 +53,12 @@ describe('game/start', () => {
     expect(game.playedPuzzleIds).toHaveLength(1)
   })
 
+  it('démarre la roue à l’angle de repos de montage', () => {
+    // La partie neuve ne branche encore aucun lancer sur cet angle (ce sera T3) :
+    // seule sa valeur initiale est garantie ici.
+    expect(jeu(demarrer()).wheelAngle).toBe(0)
+  })
+
   it('range l’énigme par valeur, pas par référence', () => {
     const puzzle = enigme('le vent')
     const state = reduce(initialState, {
