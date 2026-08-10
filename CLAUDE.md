@@ -51,10 +51,10 @@ Découper chaque tâche en zones de fichiers bornées et **disjointes**, puis le
 ## Le graphe de code (graphify)
 
 ```bash
-graphify extract src --out .      # écrit graphify-out/graph.json, incrémental
+graphify update .        # met le graphe à jour, incrémental, sans clé d'API
 ```
 
-Viser `src` et non la racine : la racine échoue, parce que le README, `docs/` et les images exigent une extraction sémantique, donc une clé de LLM. Un corpus de code seul n'en demande aucune. Les relances suivantes ne réextraient que les fichiers modifiés.
+Un graphe de 802 nœuds et 2273 arêtes couvre **tout le dépôt** — `src/`, mais aussi `scripts/browser-check/`, les `tsconfig`, `package.json` et `public/theme-init.js`. Il est reconstruit automatiquement par les hooks git après chaque commit et chaque changement de branche ; `graphify update .` n'est à lancer à la main qu'après des modifications non commitées.
 
 Le graphe remplace une exploration à l'aveugle, à condition de l'interroger avec **les identifiants du code** — fonctions suffixées de `()`, fichiers avec leur extension. Coûts mesurés :
 
@@ -64,11 +64,14 @@ Le graphe remplace une exploration à l'aveugle, à condition de l'interroger av
 | `graphify explain "reduce()"` | ~1 000 caractères | source, communauté, voisins directs |
 | `graphify affected "reduce()"` | ~2 000 caractères | ce qui casse si on y touche |
 
-Trois pièges, vérifiés :
+`graphify-out/GRAPH_REPORT.md` (~8 600 caractères) ne vaut d'être lu que pour sa liste des nœuds les plus connectés — `Puzzle` à 32 arêtes, `reduce()` à 31, ce qui nomme les vraies abstractions du projet. La moitié du fichier est une liste de « Community N » sans nom : les communautés ne se nomment qu'avec une clé de LLM, qu'aucun backend supporté ne trouve ici.
 
-- **`graphify query` en français ne marche pas.** Il fabrique ses nœuds de départ à partir des mots de la question et tombe sur des nœuds inexistants : 6 000 caractères de liste sans rapport. Poser la question avec les termes du code, et borner par `--budget 500`.
-- **Ne jamais lire `graphify-out/graph.json`.** Le fichier pèse près de 900 000 caractères, soit environ 250 000 tokens — il se requête, il ne se lit pas.
+Quatre pièges, tous vérifiés :
+
+- **`graphify query` est à éviter.** Il fabrique ses nœuds de départ à partir des mots de la question ; posée en français, elle part sur des nœuds inexistants et rend 6 000 caractères de liste sans rapport. À la rigueur, avec les termes du code et `--budget 500`.
+- **Ne jamais lire `graphify-out/graph.json`.** Plus de 900 000 caractères, soit environ 260 000 tokens — il se requête, il ne se lit pas.
 - **Le graphe ignore les constantes et les valeurs.** `SCHEMA_VERSION` n'y figure pas ; ce genre de symbole se cherche au `grep`.
+- **`graphify extract` à la racine échoue**, faute de clé pour l'extraction sémantique du README, de `docs/` et des images. `graphify update` n'a pas ce défaut : il ne fait que de l'AST. Et **ne jamais viser un sous-dossier** (`graphify update src`) : la sortie est écrite dans `src/graphify-out/`, au milieu du code.
 
 ## Git
 

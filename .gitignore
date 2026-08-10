@@ -129,6 +129,10 @@ node_modules/
 # état daté du dépôt : versionnés, ils vieilliraient en silence.
 /docs/local/
 
+# Copies de travail isolées créées par Claude Code. Elles contiennent le dépôt
+# entier : sans cette ligne, un `git add .` en committerait une dans elle-même.
+/.claude/worktrees/
+
 #   _           _ _     _
 #  | |__ _  _ _(_) |___| |
 #  | '_ \ || | | | / _ \_|
