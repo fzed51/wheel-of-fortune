@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { pickPuzzle } from '../data/puzzles'
 import type { GameAction } from '../game/actions'
 import { announceTransition } from '../game/announce'
+import { isFinalRound } from '../game/bonus'
 import { initialState, reduce } from '../game/engine'
 import { isVowel } from '../game/puzzle'
 import { createRng } from '../game/rng'
@@ -10,7 +11,7 @@ import type { Rng } from '../game/rng'
 import { canBuyVowel, canGuess, canResolve, currentPlayerOf, isBotTurn } from '../game/rules'
 import { configFrom, playersFrom } from '../game/setup'
 import type { Setup } from '../game/setup'
-import type { GameState, Letter } from '../game/types'
+import type { GameProgress, GameState, Letter, Puzzle, PuzzleId } from '../game/types'
 import { pickSpinOutcome } from '../game/wheel'
 import { useAnnouncer } from '../hooks/useAnnouncer'
 import { useGameEffects } from '../hooks/useGameEffects'
@@ -20,6 +21,49 @@ import type { JudgeErrorReason } from '../llm/judge'
 import { loadGame } from '../storage/persist'
 import { GameCommandsContext, GameStateContext, JudgeFailureContext, LastEventContext } from './selectors'
 import type { GameCommands } from './selectors'
+
+/**
+ * Index de la manche qui s'achève, ou `null` si aucune ne peut être archivée.
+ *
+ * Les deux cas acceptés sont exactement ceux que le reducer accepte pour
+ * `round/next` : une manche résolue (`round-over`) et une manche figée
+ * (`round` en phase `blocked`). Reproduire ce tri ici n'est pas une redite
+ * gratuite — c'est ce qui garantit que le tirage et le reducer parlent de la
+ * même manche. Sur tout autre état, le reducer renverrait l'état inchangé : le
+ * tirage serait alors consommé pour rien, et l'énigme piochée perdue.
+ */
+function endingRoundIndex(progress: GameProgress): number | null {
+  if (progress.kind === 'round-over') return progress.summary.index
+  if (progress.kind === 'round' && progress.round.phase.kind === 'blocked') {
+    return progress.round.index
+  }
+  return null
+}
+
+/**
+ * Choix du réservoir selon l'index de la manche, pur : ni React ni aléa
+ * propre, tout entre en paramètre. Reste local et non exporté — l'exporter
+ * ferait tomber `react/only-export-components` sur ce fichier, qui exporte
+ * déjà `GameProvider` en défaut.
+ *
+ * La manche finale tire dans `questions` et seulement elle : un réservoir de
+ * questions épuisé (ou vide, catalogue perso mis à part) ne doit jamais
+ * figer la partie, donc `pickPuzzle` retombe sur `pool` — cf. `nextRound`, qui
+ * `return`ne tout court quand le tirage rend `null`.
+ */
+function pickFor(
+  rng: Rng,
+  index: number,
+  roundCount: number,
+  questions: readonly Puzzle[],
+  pool: readonly Puzzle[],
+  excluded: readonly PuzzleId[],
+): Puzzle | null {
+  if (isFinalRound(index, roundCount)) {
+    return pickPuzzle(rng, questions, excluded) ?? pickPuzzle(rng, pool, excluded)
+  }
+  return pickPuzzle(rng, pool, excluded)
+}
 
 /**
  * Hydratation **synchrone**. Lire le stockage dans un effet ferait voir `no-game`
@@ -35,7 +79,7 @@ function initGameState(): GameState {
 export function GameProvider({ children }: { readonly children: ReactNode }) {
   const [state, rawDispatch] = useReducer(reduce, undefined, initGameState)
   const { settings } = useSettings()
-  const { pool } = usePuzzles()
+  const { pool, questions } = usePuzzles()
   const announcer = useAnnouncer()
 
   // Refs de dernière valeur connue : les commandes doivent rester stables à vie,
@@ -48,6 +92,7 @@ export function GameProvider({ children }: { readonly children: ReactNode }) {
     botLevel: settings.botLevel,
   })
   const poolRef = useRef(pool)
+  const questionsRef = useRef(questions)
 
   useEffect(() => {
     stateRef.current = state
@@ -64,6 +109,10 @@ export function GameProvider({ children }: { readonly children: ReactNode }) {
   useEffect(() => {
     poolRef.current = pool
   }, [pool])
+
+  useEffect(() => {
+    questionsRef.current = questions
+  }, [questions])
 
   /*
    * Déclaré avant le dispatch enveloppé, qui appelle son `setLastEvent` : la
@@ -153,11 +202,18 @@ export function GameProvider({ children }: { readonly children: ReactNode }) {
   const startGame = useCallback(
     (overrides: Partial<Setup> = {}) => {
       const setup = { ...setupRef.current, ...overrides }
-      const puzzle = pickPuzzle(rng, poolRef.current, [])
+      // Une seule application de `configFrom` : elle borne `roundCount` entre 1
+      // et 10 (`clamp`), et c'est cette valeur bornée — pas `setup.roundCount`
+      // — qui doit décider si la manche 0 est la manche finale. Sinon un
+      // réglage hors bornes (ex. 0 ou 42 manches) ferait diverger `pickFor` du
+      // reducer sur l'identité de la dernière manche : l'un tirerait une
+      // question, l'autre attendrait une manche ordinaire.
+      const config = configFrom(setup)
+      const puzzle = pickFor(rng, 0, config.roundCount, questionsRef.current, poolRef.current, [])
       if (puzzle === null) return
       dispatch({
         type: 'game/start',
-        config: configFrom(setup),
+        config,
         players: playersFrom(setup),
         puzzle,
         firstPlayer: 0,
@@ -170,15 +226,36 @@ export function GameProvider({ children }: { readonly children: ReactNode }) {
     const current = stateRef.current
     if (current.kind !== 'playing') return
     const game = current.game
-    const puzzle = pickPuzzle(rng, poolRef.current, game.playedPuzzleIds)
+    // Index de la manche **à venir**, lu dans `progress` et non déduit de
+    // `history.length` : le résumé de la manche qui s'achève n'y est poussé que
+    // par le reducer, au traitement de `round/next` — donc après ce tirage.
+    // `history.length` vaut ici l'index de la manche qui *finit*, et le prendre
+    // pour celle qui commence décalait tout d'un cran : la manche finale était
+    // tirée dans `pool`, et la question de la manche finale ne pouvait jamais
+    // être servie dès que la partie comptait plus d'une manche.
+    //
+    // `progress` est la même source que celle du reducer (`summary.index + 1`) :
+    // les deux s'accordent donc par construction sur l'identité de la manche
+    // finale, ce qu'un compteur parallèle ne garantirait pas.
+    const ending = endingRoundIndex(game.progress)
+    if (ending === null) return
+    const puzzle = pickFor(
+      rng,
+      ending + 1,
+      game.config.roundCount,
+      questionsRef.current,
+      poolRef.current,
+      game.playedPuzzleIds,
+    )
     if (puzzle === null) return
     // Rotation des sièges plutôt qu'un tirage : le premier joueur d'une manche
     // n'a aucune raison d'être aléatoire, et un tour de table est plus lisible.
-    const played = game.history.length
+    // Le siège se déduit du même index que le tirage, pour qu'une seule
+    // définition de « la manche qui commence » vive dans cette commande.
     dispatch({
       type: 'round/next',
       puzzle,
-      firstPlayer: game.players.length === 0 ? 0 : (played + 1) % game.players.length,
+      firstPlayer: game.players.length === 0 ? 0 : (ending + 1) % game.players.length,
     })
   }, [dispatch, rng])
 

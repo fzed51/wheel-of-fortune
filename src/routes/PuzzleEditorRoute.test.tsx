@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { PACK_PUZZLES } from '../data/puzzles'
+import { PACK_PUZZLES, PACK_QUESTIONS } from '../data/puzzles'
 import { asPuzzleId } from '../game/types'
 import { clearAllData, saveCustomPuzzles, saveMistralKey } from '../storage/persist'
 import { SCHEMA_VERSION } from '../storage/keys'
@@ -18,13 +18,20 @@ beforeEach(() => {
   localStorage.clear()
 })
 
+// Énoncé de question dédié aux tests, choisi pour ne heurter aucune entrée de
+// `PACK_QUESTIONS` : depuis que l'éditeur compare un brouillon à `all` (l'union
+// de `pool` et `questions`), un énoncé de test qui reprendrait mot pour mot une
+// question déjà embarquée serait rejeté comme doublon dès la première saisie.
+const QUESTION_ANSWER = 'QUELLE VILLE ABRITE LA TOUR EIFFEL'
+const BONUS_ANSWER = 'PARIS'
+
 describe('PuzzleEditorRoute', () => {
   it('ajoute une énigme valide, qui apparaît dans la liste et incrémente le compte', async () => {
     const user = userEvent.setup()
     monterApp('/enigmes')
 
     expect(
-      screen.getByText(`${PACK_PUZZLES.length} énigmes embarquées, 0 énigme à vous.`),
+      screen.getByText(`${PACK_PUZZLES.length + PACK_QUESTIONS.length} énigmes embarquées, 0 énigme à vous.`),
     ).toBeInTheDocument()
 
     await user.type(screen.getByLabelText('Énoncé'), 'MAISON DE CAMPAGNE')
@@ -32,7 +39,7 @@ describe('PuzzleEditorRoute', () => {
 
     expect(screen.getByText('MAISON DE CAMPAGNE')).toBeInTheDocument()
     expect(
-      screen.getByText(`${PACK_PUZZLES.length} énigmes embarquées, 1 énigme à vous.`),
+      screen.getByText(`${PACK_PUZZLES.length + PACK_QUESTIONS.length} énigmes embarquées, 1 énigme à vous.`),
     ).toBeInTheDocument()
   })
 
@@ -45,7 +52,7 @@ describe('PuzzleEditorRoute', () => {
 
     expect(screen.getByText('Au moins 10 caractères.')).toBeInTheDocument()
     expect(
-      screen.getByText(`${PACK_PUZZLES.length} énigmes embarquées, 0 énigme à vous.`),
+      screen.getByText(`${PACK_PUZZLES.length + PACK_QUESTIONS.length} énigmes embarquées, 0 énigme à vous.`),
     ).toBeInTheDocument()
   })
 
@@ -61,7 +68,7 @@ describe('PuzzleEditorRoute', () => {
 
     expect(screen.getByText('Cette énigme existe déjà.')).toBeInTheDocument()
     expect(
-      screen.getByText(`${PACK_PUZZLES.length} énigmes embarquées, 0 énigme à vous.`),
+      screen.getByText(`${PACK_PUZZLES.length + PACK_QUESTIONS.length} énigmes embarquées, 0 énigme à vous.`),
     ).toBeInTheDocument()
   })
 
@@ -82,7 +89,7 @@ describe('PuzzleEditorRoute', () => {
     expect(screen.getByText('UNE VIEILLE FERME')).toBeInTheDocument()
     expect(screen.queryByText('MAISON DE CAMPAGNE')).not.toBeInTheDocument()
     expect(
-      screen.getByText(`${PACK_PUZZLES.length} énigmes embarquées, 1 énigme à vous.`),
+      screen.getByText(`${PACK_PUZZLES.length + PACK_QUESTIONS.length} énigmes embarquées, 1 énigme à vous.`),
     ).toBeInTheDocument()
   })
 
@@ -103,7 +110,7 @@ describe('PuzzleEditorRoute', () => {
 
     expect(screen.queryByText('MAISON DE CAMPAGNE')).not.toBeInTheDocument()
     expect(
-      screen.getByText(`${PACK_PUZZLES.length} énigmes embarquées, 0 énigme à vous.`),
+      screen.getByText(`${PACK_PUZZLES.length + PACK_QUESTIONS.length} énigmes embarquées, 0 énigme à vous.`),
     ).toBeInTheDocument()
     expect(screen.getByText(/supprimée/u)).toBeInTheDocument()
   })
@@ -123,7 +130,7 @@ describe('PuzzleEditorRoute', () => {
 
     expect(screen.getByText('MAISON DE CAMPAGNE')).toBeInTheDocument()
     expect(
-      screen.getByText(`${PACK_PUZZLES.length} énigmes embarquées, 1 énigme à vous.`),
+      screen.getByText(`${PACK_PUZZLES.length + PACK_QUESTIONS.length} énigmes embarquées, 1 énigme à vous.`),
     ).toBeInTheDocument()
   })
 
@@ -208,7 +215,91 @@ describe('PuzzleEditorRoute', () => {
     await screen.findByText('Ce fichier n’est pas du JSON lisible.')
     expect(screen.getByText('MAISON DE CAMPAGNE')).toBeInTheDocument()
     expect(
-      screen.getByText(`${PACK_PUZZLES.length} énigmes embarquées, 1 énigme à vous.`),
+      screen.getByText(`${PACK_PUZZLES.length + PACK_QUESTIONS.length} énigmes embarquées, 1 énigme à vous.`),
     ).toBeInTheDocument()
+  })
+
+  it('ajoute une question de manche finale, avec sa réponse attendue, qui apparaît dans la liste', async () => {
+    const user = userEvent.setup()
+    monterApp('/enigmes')
+
+    await user.type(
+      screen.getByLabelText('Énoncé'),
+      QUESTION_ANSWER,
+    )
+    await user.selectOptions(screen.getByLabelText('Catégorie'), 'Question')
+    await user.type(screen.getByLabelText('Réponse attendue'), BONUS_ANSWER)
+    await user.click(screen.getByRole('button', { name: "Ajouter l'énigme" }))
+
+    expect(screen.getByText(QUESTION_ANSWER)).toBeInTheDocument()
+    expect(
+      screen.getByText(`${PACK_PUZZLES.length + PACK_QUESTIONS.length} énigmes embarquées, 1 énigme à vous.`),
+    ).toBeInTheDocument()
+  })
+
+  it('refuse une énigme dont l’énoncé double celui d’une question perso déjà enregistrée', async () => {
+    // `saveCustomPuzzle` compare le brouillon à `all`, l'union des deux
+    // réservoirs : sans elle, une question perso ne serait comparée qu'à
+    // `PACK_QUESTIONS` et à d'autres questions perso par le tirage, mais pas
+    // par l'éditeur, qui recevait autrefois `pool` — lequel exclut justement
+    // les questions perso. Ce doublon d'énoncé mot pour mot passerait alors
+    // en silence.
+    const user = userEvent.setup()
+    monterApp('/enigmes')
+
+    await user.type(screen.getByLabelText('Énoncé'), QUESTION_ANSWER)
+    await user.selectOptions(screen.getByLabelText('Catégorie'), 'Question')
+    await user.type(screen.getByLabelText('Réponse attendue'), BONUS_ANSWER)
+    await user.click(screen.getByRole('button', { name: "Ajouter l'énigme" }))
+    expect(screen.getByText(QUESTION_ANSWER)).toBeInTheDocument()
+
+    await user.clear(screen.getByLabelText('Énoncé'))
+    await user.type(screen.getByLabelText('Énoncé'), QUESTION_ANSWER)
+    await user.click(screen.getByRole('button', { name: "Ajouter l'énigme" }))
+
+    expect(screen.getByText('Cette énigme existe déjà.')).toBeInTheDocument()
+    expect(
+      screen.getByText(`${PACK_PUZZLES.length + PACK_QUESTIONS.length} énigmes embarquées, 1 énigme à vous.`),
+    ).toBeInTheDocument()
+  })
+
+  it('attribue des identifiants distincts à une question et à une énigme ordinaire créées à la suite', async () => {
+    // Preuve indirecte de la collision d'identifiant, l'identifiant lui-même
+    // n'étant pas observable depuis le DOM. Avec l'ancien bug (`nextCustomId`
+    // calculé sur `pool`, qui exclut les questions perso), la question créée
+    // en premier et l'énigme ordinaire créée ensuite recevraient toutes les
+    // deux `user-001` : modifier la seconde modifierait alors en réalité la
+    // première dans `custom` (`findIndex` renvoie le premier identifiant
+    // trouvé), et « MAISON DE CAMPAGNE » resterait affiché sans changement
+    // pendant que la question disparaîtrait. Avec des identifiants distincts,
+    // seule l'énigme visée par la modification change.
+    const user = userEvent.setup()
+    monterApp('/enigmes')
+
+    await user.type(screen.getByLabelText('Énoncé'), QUESTION_ANSWER)
+    await user.selectOptions(screen.getByLabelText('Catégorie'), 'Question')
+    await user.type(screen.getByLabelText('Réponse attendue'), BONUS_ANSWER)
+    await user.click(screen.getByRole('button', { name: "Ajouter l'énigme" }))
+
+    await user.clear(screen.getByLabelText('Énoncé'))
+    await user.selectOptions(screen.getByLabelText('Catégorie'), 'Expression')
+    await user.type(screen.getByLabelText('Énoncé'), 'MAISON DE CAMPAGNE')
+    await user.click(screen.getByRole('button', { name: "Ajouter l'énigme" }))
+
+    expect(screen.getByText(QUESTION_ANSWER)).toBeInTheDocument()
+    expect(screen.getByText('MAISON DE CAMPAGNE')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Modifier MAISON DE CAMPAGNE' }))
+    const answerField = screen.getByLabelText('Énoncé')
+    await user.clear(answerField)
+    await user.type(answerField, 'UNE VIEILLE FERME')
+    await user.click(screen.getByRole('button', { name: 'Enregistrer' }))
+
+    expect(screen.getByText('UNE VIEILLE FERME')).toBeInTheDocument()
+    // Ces deux assertions sont celles qui distinguent le correctif du bug :
+    // en cas de collision, la question disparaîtrait (remplacée par erreur)
+    // et « MAISON DE CAMPAGNE » resterait affiché, inchangé.
+    expect(screen.getByText(QUESTION_ANSWER)).toBeInTheDocument()
+    expect(screen.queryByText('MAISON DE CAMPAGNE')).not.toBeInTheDocument()
   })
 })

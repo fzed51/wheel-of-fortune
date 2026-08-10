@@ -56,19 +56,35 @@ export function enigme(answer: string, id = answer): Puzzle {
   }
 }
 
+/**
+ * Énigme-question : même énoncé qu'une énigme ordinaire, plus la réponse
+ * attendue de l'étape bonus. La catégorie reste `Test` — c'est `bonusAnswer`
+ * qui fait la question aux yeux d'`isQuestion`, jamais le libellé de la
+ * catégorie, et une fixture qui prétendrait le contraire masquerait cette règle.
+ */
+export function question(answer: string, expected: string, id = answer): Puzzle {
+  return { ...enigme(answer, id), bonusAnswer: expected }
+}
+
 export interface OptionsPartie {
   readonly answer?: string
+  /** Présent : l'énigme de départ est une question. Absent : une énigme ordinaire. */
+  readonly bonusAnswer?: string
   readonly players?: readonly Player[]
   readonly config?: Partial<GameConfig>
   readonly firstPlayer?: number
 }
 
 export function demarrer(options: OptionsPartie = {}): GameState {
+  const answer = options.answer ?? 'le vent'
   return reduce(initialState, {
     type: 'game/start',
     config: { ...CONFIG, ...options.config },
     players: options.players ?? [joueur('Alice'), joueur('Bob')],
-    puzzle: enigme(options.answer ?? 'le vent'),
+    puzzle:
+      options.bonusAnswer === undefined
+        ? enigme(answer)
+        : question(answer, options.bonusAnswer),
     firstPlayer: options.firstPlayer ?? 0,
   })
 }

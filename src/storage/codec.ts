@@ -83,6 +83,7 @@ function isPuzzle(value: unknown): value is Puzzle {
   if (!isText(value.id) || !isText(value.answer) || typeof value.category !== 'string') return false
   if (value.source !== 'pack' && value.source !== 'custom') return false
   if (value.answer !== normalizeAnswer(value.answer)) return false
+  if (value.bonusAnswer !== undefined && typeof value.bonusAnswer !== 'string') return false
   return lettersOf(value.answer).size > 0
 }
 
@@ -270,6 +271,11 @@ export function decodeSettings(raw: string): Decoded<Settings> {
  * jeter parce qu'une seule est cassée coûterait à l'utilisateur le seul contenu
  * qu'il ait écrit lui-même. L'énoncé est normalisé **avant** contrôle, pour qu'un
  * import JSON écrit à la main passe sans être rejeté sur un accent décomposé.
+ *
+ * `bonusAnswer` suit la même normalisation, et **absent plutôt que vide** quand
+ * l'entrée n'en porte pas : une clé posée à `undefined` ou à `''` par défaut
+ * ferait perdre sa réponse attendue à une question perso sans que rien ne
+ * l'annonce — la manche finale redeviendrait une énigme ordinaire au rechargement.
  */
 export function decodePuzzles(raw: string): Decoded<readonly Puzzle[]> {
   const record = decodeRecord(raw)
@@ -279,12 +285,15 @@ export function decodePuzzles(raw: string): Decoded<readonly Puzzle[]> {
   const puzzles: Puzzle[] = []
   for (const entry of record.value) {
     if (!isRecord(entry) || !isText(entry.id) || typeof entry.answer !== 'string') continue
-    const candidate = {
+    const bonusAnswer =
+      typeof entry.bonusAnswer === 'string' ? normalizeAnswer(entry.bonusAnswer) : undefined
+    const base = {
       id: asPuzzleId(entry.id),
       answer: normalizeAnswer(entry.answer),
       category: typeof entry.category === 'string' ? entry.category : '',
       source: 'custom' as const,
     }
+    const candidate = bonusAnswer === undefined ? base : { ...base, bonusAnswer }
     if (isPuzzle(candidate)) puzzles.push(candidate)
   }
   return { ok: true, value: puzzles }
@@ -295,6 +304,8 @@ export interface ImportedPuzzle {
   readonly id: string | null
   readonly answer: string
   readonly category: string
+  /** Réponse attendue de la question bonus. Absent : l'énigme est ordinaire. */
+  readonly bonusAnswer?: string
 }
 
 export interface PuzzleFile {
@@ -306,18 +317,21 @@ export interface PuzzleFile {
 /**
  * Fichier d'export/import des énigmes perso : le seul filet de sécurité du
  * projet en l'absence de backend. Ne transporte que `id`, `answer`,
- * `category` — surtout pas `source` (tout ce qui est importé est perso par
- * construction), et surtout jamais la clé d'API Mistral, qui vit dans sa
- * propre entrée de stockage précisément pour qu'aucun objet exportable ne la
- * contienne. Indenté, contrairement à `encodeRecord` : ce fichier est destiné
- * à être ouvert et corrigé à la main.
+ * `category` et `bonusAnswer` — surtout pas `source` (tout ce qui est importé
+ * est perso par construction), et surtout jamais la clé d'API Mistral, qui vit
+ * dans sa propre entrée de stockage précisément pour qu'aucun objet exportable
+ * ne la contienne. Indenté, contrairement à `encodeRecord` : ce fichier est
+ * destiné à être ouvert et corrigé à la main.
+ *
+ * `bonusAnswer` n'apparaît dans l'entrée que si l'énigme la porte : une clé
+ * `"bonusAnswer": null` ou une clé vide serait déroutante dans un fichier
+ * pensé pour être relu et corrigé à l'œil.
  */
 export function encodePuzzleFile(puzzles: readonly Puzzle[]): string {
-  const entries: ImportedPuzzle[] = puzzles.map((puzzle) => ({
-    id: puzzle.id,
-    answer: puzzle.answer,
-    category: puzzle.category,
-  }))
+  const entries: ImportedPuzzle[] = puzzles.map((puzzle) => {
+    const base = { id: puzzle.id, answer: puzzle.answer, category: puzzle.category }
+    return puzzle.bonusAnswer === undefined ? base : { ...base, bonusAnswer: puzzle.bonusAnswer }
+  })
   const envelope: Envelope = { version: SCHEMA_VERSION, value: entries }
   return JSON.stringify(envelope, null, 2)
 }
@@ -331,11 +345,14 @@ export function encodePuzzleFile(puzzles: readonly Puzzle[]): string {
  */
 function toImportedPuzzle(entry: unknown): ImportedPuzzle | null {
   if (!isRecord(entry) || !isText(entry.answer)) return null
-  return {
+  const base = {
     id: isText(entry.id) ? entry.id : null,
     answer: normalizeAnswer(entry.answer),
     category: typeof entry.category === 'string' ? entry.category : '',
   }
+  return typeof entry.bonusAnswer === 'string'
+    ? { ...base, bonusAnswer: normalizeAnswer(entry.bonusAnswer) }
+    : base
 }
 
 /**

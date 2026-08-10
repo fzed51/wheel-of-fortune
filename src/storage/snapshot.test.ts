@@ -72,6 +72,22 @@ describe('toPersisted', () => {
       expect(ecrit, `${champ} ne doit pas être persisté`).not.toContain(champ)
     }
   })
+
+  it('conserve la réponse attendue d’une question dans le puzzle persisté', () => {
+    const persisted = toPersisted(jeu(demarrer({ bonusAnswer: 'CANBERRA' })))
+    expect(persisted.progress).toMatchObject({
+      kind: 'round',
+      round: { puzzle: { bonusAnswer: 'CANBERRA' } },
+    })
+  })
+
+  it('ne fait jamais apparaître de `bonusAnswer` pour une énigme ordinaire', () => {
+    // `copyPuzzle` recopie champ par champ : un champ oublié n'est pas ici
+    // absent par accident, il ne doit simplement jamais y être posé.
+    const persisted = toPersisted(jeu(demarrer()))
+    if (persisted.progress.kind !== 'round') throw new Error('manche attendue')
+    expect(Object.hasOwn(persisted.progress.round.puzzle, 'bonusAnswer')).toBe(false)
+  })
 })
 
 describe('fromPersisted', () => {

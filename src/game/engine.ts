@@ -34,12 +34,16 @@ function playing(game: Game): GameState {
 
 /** Copie par valeur : l'éditeur d'énigmes ne doit rien pouvoir muter sous la partie. */
 function snapshotPuzzle(puzzle: Puzzle): Puzzle {
-  return {
+  const base = {
     id: puzzle.id,
     answer: puzzle.answer,
     category: puzzle.category,
     source: puzzle.source,
   }
+  // Copie conditionnelle plutôt qu'une clé posée à `undefined` : c'est le prix
+  // d'un champ optionnel, et une clé fantôme se retrouverait dans les
+  // comparaisons d'objets des tests (`toEqual` distingue `{ x: undefined }` de `{}`).
+  return puzzle.bonusAnswer === undefined ? base : { ...base, bonusAnswer: puzzle.bonusAnswer }
 }
 
 function seatOf(index: number, count: number): number {

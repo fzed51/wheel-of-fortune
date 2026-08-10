@@ -22,6 +22,16 @@ export interface Puzzle {
   readonly answer: string
   readonly category: string
   readonly source: 'pack' | 'custom'
+  /**
+   * Réponse attendue quand l'énoncé est une question. Absent pour une énigme
+   * ordinaire. Porté par le `Puzzle` : il voyage alors gratuitement avec chaque
+   * copie par valeur jusqu'au résumé de manche et à l'étape bonus. Optionnel et
+   * non obligatoire à dessein : `grep "source: '"` donne dix-huit sites de
+   * construction, dont quatorze dans des tests répartis sur toutes les zones du
+   * dépôt — un champ obligatoire les casserait tous et rendrait le travail en
+   * parallèle impossible.
+   */
+  readonly bonusAnswer?: string
 }
 
 export type Segment =

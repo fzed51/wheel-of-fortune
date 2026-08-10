@@ -1,5 +1,6 @@
 import { useId, useState } from 'react'
 import type { FormEvent } from 'react'
+import { QUESTION_CATEGORY } from '../../game/bonus'
 import { normalizeAnswer } from '../../game/puzzle'
 import type { Puzzle } from '../../game/types'
 import { draftIssues, issueMessage } from '../../game/validate'
@@ -21,6 +22,21 @@ function isAnswerIssue(issue: PuzzleIssue): boolean {
   return issue.kind.startsWith('answer-')
 }
 
+function isBonusIssue(issue: PuzzleIssue): boolean {
+  return issue.kind.startsWith('bonus-')
+}
+
+// Le tri des problèmes de catégorie s'écrivait par complément (« tout ce qui
+// n'est pas un problème d'énoncé ») avant l'arrivée de `bonus-empty` et
+// `bonus-in-answer` : ce raisonnement rangeait les deux nouveaux problèmes
+// sous le champ « Catégorie » plutôt que sous « Réponse attendue », puisqu'un
+// filtre par complément absorbe tout nouveau préfixe sans qu'on s'en rende
+// compte. Un filtre explicite sur `category-` ne peut plus se tromper quand
+// un futur préfixe apparaîtra.
+function isCategoryIssue(issue: PuzzleIssue): boolean {
+  return issue.kind.startsWith('category-')
+}
+
 /** `undefined` si la liste ne contient aucun id, pour ne poser `aria-describedby` que si utile. */
 function describedBy(ids: readonly (string | undefined)[]): string | undefined {
   const present = ids.filter((id): id is string => id !== undefined)
@@ -35,9 +51,11 @@ function describedBy(ids: readonly (string | undefined)[]): string | undefined {
 export default function PuzzleForm({ categories, initial, others, onSubmit, onCancel }: PuzzleFormProps) {
   const answerId = useId()
   const categoryId = useId()
+  const bonusAnswerId = useId()
   const answerPreviewId = `${answerId}-preview`
   const answerErrorsId = `${answerId}-errors`
   const categoryErrorsId = `${categoryId}-errors`
+  const bonusAnswerErrorsId = `${bonusAnswerId}-errors`
 
   const defaultCategory = categories[0] ?? ''
 
@@ -49,34 +67,53 @@ export default function PuzzleForm({ categories, initial, others, onSubmit, onCa
   const [prevInitial, setPrevInitial] = useState(initial)
   const [answerInput, setAnswerInput] = useState(initial?.answer ?? '')
   const [categoryInput, setCategoryInput] = useState(initial?.category ?? defaultCategory)
+  const [bonusAnswerInput, setBonusAnswerInput] = useState(initial?.bonusAnswer ?? '')
   const [answerTouched, setAnswerTouched] = useState(false)
   const [categoryTouched, setCategoryTouched] = useState(false)
+  const [bonusAnswerTouched, setBonusAnswerTouched] = useState(false)
   const [submitted, setSubmitted] = useState(false)
 
   if (initial !== prevInitial) {
     setPrevInitial(initial)
     setAnswerInput(initial?.answer ?? '')
     setCategoryInput(initial?.category ?? defaultCategory)
+    setBonusAnswerInput(initial?.bonusAnswer ?? '')
     setAnswerTouched(false)
     setCategoryTouched(false)
+    setBonusAnswerTouched(false)
     setSubmitted(false)
   }
 
   // La frappe brute n'est jamais normalisée en direct : `normalizeAnswer` fait
   // un `trim` et écrase les espaces multiples, ce qui annulerait un espace
   // tapé entre deux mots. La normalisation ne sert qu'à valider et soumettre.
+  // La même prudence vaut pour la réponse attendue, normalisée par la même
+  // fonction — `saveCustomPuzzle` la normalise de nouveau à l'écriture, mais
+  // l'affichage à l'écran reste la saisie brute jusque-là.
   const normalizedAnswer = normalizeAnswer(answerInput)
   const trimmedCategory = categoryInput.trim()
-  const draft: PuzzleDraft = { answer: normalizedAnswer, category: trimmedCategory }
+  const isQuestion = trimmedCategory === QUESTION_CATEGORY
+  const normalizedBonusAnswer = normalizeAnswer(bonusAnswerInput)
+  // Le champ « réponse attendue » ne pose sa clé dans le brouillon que pour la
+  // catégorie « Question » : un `bonusAnswer` construit puis abandonné par un
+  // changement de catégorie ne doit jamais voyager jusqu'à la validation ni à
+  // `onSubmit`, sans quoi une énigme ordinaire porterait une réponse bonus
+  // fantôme. Jamais de clé posée à `undefined` — `Object.hasOwn` distingue
+  // « absent » de « présent et vide » ailleurs dans le code (`customPuzzles.ts`).
+  const draft: PuzzleDraft = isQuestion
+    ? { answer: normalizedAnswer, category: trimmedCategory, bonusAnswer: normalizedBonusAnswer }
+    : { answer: normalizedAnswer, category: trimmedCategory }
   const issues = draftIssues(draft, others)
   const answerIssues = issues.filter(isAnswerIssue)
-  const categoryIssues = issues.filter((issue) => !isAnswerIssue(issue))
+  const categoryIssues = issues.filter(isCategoryIssue)
+  const bonusIssues = issues.filter(isBonusIssue)
 
   // Les messages n'apparaissent qu'une fois le champ quitté ou après une
   // soumission refusée : les afficher dès la première lettre serait agressif
   // (« Au moins 10 caractères » sur un champ qu'on commence à peine à remplir).
   const showAnswerErrors = (answerTouched || submitted) && answerIssues.length > 0
   const showCategoryErrors = (categoryTouched || submitted) && categoryIssues.length > 0
+  const showBonusErrors = (bonusAnswerTouched || submitted) && bonusIssues.length > 0
   const showPreview = answerInput.length > 0 && normalizedAnswer !== answerInput
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -85,6 +122,7 @@ export default function PuzzleForm({ categories, initial, others, onSubmit, onCa
       setSubmitted(true)
       setAnswerTouched(true)
       setCategoryTouched(true)
+      setBonusAnswerTouched(true)
       return
     }
     onSubmit(draft)
@@ -155,6 +193,38 @@ export default function PuzzleForm({ categories, initial, others, onSubmit, onCa
             </p>
           ))}
         </div>
+      )}
+
+      {/* Uniquement pour la catégorie « Question » : les autres catégories
+          n'ouvrent aucune étape bonus, un champ qu'on ne verrait jamais servir
+          n'y a rien à faire. */}
+      {isQuestion && (
+        <>
+          <div className={FIELD}>
+            <label htmlFor={bonusAnswerId} className="text-fg">
+              Réponse attendue
+            </label>
+            <input
+              id={bonusAnswerId}
+              type="text"
+              value={bonusAnswerInput}
+              onChange={(event) => setBonusAnswerInput(event.target.value)}
+              onBlur={() => setBonusAnswerTouched(true)}
+              aria-invalid={showBonusErrors}
+              aria-describedby={showBonusErrors ? bonusAnswerErrorsId : undefined}
+              className={`${INPUT} flex-1`}
+            />
+          </div>
+          {showBonusErrors && (
+            <div id={bonusAnswerErrorsId} className="flex flex-col gap-1">
+              {bonusIssues.map((issue) => (
+                <p key={issue.kind} className="text-sm text-danger">
+                  {issueMessage(issue)}
+                </p>
+              ))}
+            </div>
+          )}
+        </>
       )}
 
       <div className="flex gap-2">

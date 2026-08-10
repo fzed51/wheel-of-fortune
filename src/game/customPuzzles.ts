@@ -1,3 +1,4 @@
+import { QUESTION_CATEGORY } from './bonus'
 import { normalizeAnswer } from './puzzle'
 import type { Puzzle, PuzzleId } from './types'
 import { asPuzzleId } from './types'
@@ -8,10 +9,11 @@ export const CUSTOM_ID_PREFIX = 'user-'
 
 /**
  * Entrée d'un fichier importé. Structurellement compatible avec `ImportedPuzzle`
- * de `src/storage/codec.ts` — même forme, `id`, `answer`, `category` — mais le
- * type n'est **pas** importé depuis là : `storage/` importe déjà `game/`, et
- * l'inverse ferait un cycle entre les deux dossiers. TypeScript étant structurel,
- * une valeur `ImportedPuzzle` satisfait `ImportedDraft` sans aucun import.
+ * de `src/storage/codec.ts` — même forme, `id`, `answer`, `category`, et
+ * `bonusAnswer` hérité de `PuzzleDraft` — mais le type n'est **pas** importé
+ * depuis là : `storage/` importe déjà `game/`, et l'inverse ferait un cycle
+ * entre les deux dossiers. TypeScript étant structurel, une valeur
+ * `ImportedPuzzle` satisfait `ImportedDraft` sans aucun import.
  */
 export interface ImportedDraft extends PuzzleDraft {
   readonly id: string | null
@@ -57,7 +59,38 @@ export function nextCustomId(taken: readonly Puzzle[]): PuzzleId {
 
 /** Brouillon normalisé avant validation et stockage : forme canonique unique. */
 function normalizeDraft(draft: PuzzleDraft): PuzzleDraft {
-  return { answer: normalizeAnswer(draft.answer), category: draft.category.trim() }
+  const answer = normalizeAnswer(draft.answer)
+  const category = draft.category.trim()
+  // Le champ « réponse attendue » n'apparaît dans le formulaire que pour la
+  // catégorie « Question » : un utilisateur qui la saisit puis change de
+  // catégorie laisserait sinon une énigme ordinaire porter une réponse bonus
+  // fantôme, invisible à l'écran, qui ferait ouvrir une étape bonus sur une
+  // manche qui n'en est pas une. On l'écarte donc dès que la catégorie n'est
+  // plus « Question », quelle que soit la saisie.
+  if (category !== QUESTION_CATEGORY) return { answer, category }
+  const bonusAnswer = normalizeAnswer(draft.bonusAnswer ?? '')
+  // Vide après normalisation vaut absent, pas présent et vide : le reste du
+  // code distingue les deux (`Object.hasOwn`), et une clé vide traverserait
+  // la persistance pour ne rien dire.
+  return bonusAnswer.length === 0 ? { answer, category } : { answer, category, bonusAnswer }
+}
+
+/**
+ * Assemble un `Puzzle` avec `bonusAnswer` posé seulement quand il est présent
+ * — même motif que `snapshotPuzzle` (`src/game/engine.ts`) et `copyPuzzle`
+ * (`src/storage/snapshot.ts`) : une clé posée à `undefined` resterait dans
+ * l'objet et fausserait les comparaisons (`toEqual`, `Object.hasOwn`).
+ * Partagée entre `saveCustomPuzzle` et `mergeImported` pour qu'un seul endroit
+ * décide de cet assemblage, plutôt que deux qui finiraient par diverger.
+ */
+function buildPuzzle(id: PuzzleId, normalized: PuzzleDraft): Puzzle {
+  const base = {
+    id,
+    answer: normalized.answer,
+    category: normalized.category,
+    source: 'custom' as const,
+  }
+  return normalized.bonusAnswer === undefined ? base : { ...base, bonusAnswer: normalized.bonusAnswer }
 }
 
 /**
@@ -80,12 +113,7 @@ export function saveCustomPuzzle(
   const issues = draftIssues(normalized, others)
   if (issues.length > 0) return { ok: false, issues }
 
-  const puzzle: Puzzle = {
-    id: id ?? nextCustomId(pool),
-    answer: normalized.answer,
-    category: normalized.category,
-    source: 'custom',
-  }
+  const puzzle = buildPuzzle(id ?? nextCustomId(pool), normalized)
 
   if (id === null) return { ok: true, puzzles: [...custom, puzzle] }
 
@@ -163,7 +191,7 @@ export function mergeImported(
       id = nextCustomId(taken)
     }
 
-    accepted.push({ id, answer: normalized.answer, category: normalized.category, source: 'custom' })
+    accepted.push(buildPuzzle(id, normalized))
   }
 
   return {

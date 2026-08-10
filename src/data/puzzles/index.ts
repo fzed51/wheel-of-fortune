@@ -5,11 +5,18 @@ import { CUISINE } from './cuisine'
 import { EXPRESSIONS } from './expressions'
 import { LIEUX } from './lieux'
 import { NATURE } from './nature'
+import { QUESTIONS } from './questions'
 
 /**
  * Catalogue embarqué. `puzzles.test.ts` en contrôle l'intégralité — unicité des
  * identifiants, forme canonique des énoncés, jouabilité — et le test existe
  * depuis avant la première énigme.
+ *
+ * **Les questions n'en font pas partie**, et c'est structurel : ce tableau est
+ * ce que le tirage d'une manche ordinaire consomme. Une question qui s'y
+ * glisserait tomberait en manche 1, où rien ne permet d'y répondre, et
+ * `puzzles.test.ts` le vérifie en exigeant qu'aucune entrée d'ici ne porte de
+ * `bonusAnswer`.
  */
 export const PACK_PUZZLES: readonly Puzzle[] = [
   ...EXPRESSIONS,
@@ -18,6 +25,15 @@ export const PACK_PUZZLES: readonly Puzzle[] = [
   ...LIEUX,
   ...NATURE,
 ]
+
+/**
+ * Questions embarquées, tirées **uniquement** pour la manche finale. Réservoir
+ * distinct de `PACK_PUZZLES` plutôt qu'un filtre sur la catégorie : c'est
+ * l'appelant du tirage qui choisit son réservoir selon l'index de la manche
+ * (voir `GameProvider`), et deux tableaux séparés rendent cette décision
+ * impossible à oublier.
+ */
+export const PACK_QUESTIONS: readonly Puzzle[] = QUESTIONS
 
 /**
  * Tirage sans répétition, aléa injecté.

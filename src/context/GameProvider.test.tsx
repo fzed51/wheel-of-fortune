@@ -110,6 +110,17 @@ function Sonde() {
       <div role="group" aria-label="Énigmes déjà jouées">
         {partie === null ? '' : partie.playedPuzzleIds.join(' ')}
       </div>
+      {/*
+       * `Object.hasOwn`, jamais `!== undefined` : seul lui distingue « pas de
+       * `bonusAnswer` » de « `bonusAnswer` présent mais vide », distinction que
+       * le dépôt tient à préserver (voir `isQuestion`, qui s'appuie sur la même
+       * nuance pour la longueur repliée). Une énigme tirée dans le mauvais
+       * réservoir doit se voir ici, pas dans un `id` qu'il faudrait connaître
+       * par cœur.
+       */}
+      <div role="group" aria-label="Énigme de type question">
+        {manche === null ? '' : Object.hasOwn(manche.puzzle, 'bonusAnswer') ? 'oui' : 'non'}
+      </div>
       <button
         type="button"
         onClick={() => {
@@ -422,6 +433,60 @@ describe('GameProvider', () => {
       await user.click(screen.getByRole('button', { name: 'Résoudre correctement' }))
 
       expect(champ('Type de progression')).toBe('round-over')
+    })
+  })
+
+  describe('manche finale et réservoir de questions', () => {
+    it('tire une question pour la manche finale d’une partie d’une seule manche', async () => {
+      // `roundCount: 1` est le plus petit réglage possible (`MIN_ROUNDS`) : la
+      // manche 0 y est aussi la dernière, donc `isFinalRound(0, 1)` est vrai
+      // sans qu'il faille jouer plusieurs manches pour l'atteindre.
+      saveSettings({ ...DEFAULT_SETTINGS, roundCount: 1 })
+      const user = userEvent.setup()
+      monter(<Sonde />)
+
+      await user.click(screen.getByRole('button', { name: 'Jouer' }))
+
+      expect(champ('Nombre de manches')).toBe('1')
+      expect(champ('Énigme de type question')).toBe('oui')
+    })
+
+    it('ne tire jamais de question pour la manche 0 d’une partie de plusieurs manches', async () => {
+      saveSettings({ ...DEFAULT_SETTINGS, roundCount: 3 })
+      const user = userEvent.setup()
+      monter(<Sonde />)
+
+      await user.click(screen.getByRole('button', { name: 'Jouer' }))
+
+      expect(champ('Nombre de manches')).toBe('3')
+      expect(champ('Énigme de type question')).toBe('non')
+    })
+
+    it('sert la question de la manche finale au bon moment du passage de manche', async () => {
+      // Point dur signalé par la consigne : au moment où `nextRound` tire
+      // l'énigme, le reducer n'a pas encore poussé le résumé de la manche
+      // finie dans `game.history` (ça n'arrive qu'au dispatch de `round/next`,
+      // juste après). Avec `roundCount: 2`, la manche 0 vient de se terminer,
+      // `game.history.length` vaut donc 0 — et c'est bien l'index de la
+      // manche à venir (la manche 1, la finale) qu'il faut passer à `pickFor`.
+      // Un décalage d'un cran dans un sens ferait tirer la question dès la
+      // manche 0 (elle serait vue au clic sur « Jouer », avant même la
+      // résolution) ; dans l'autre sens, la manche 1 resterait dans `pool` et
+      // ne verrait jamais de question. Les deux assertions ci-dessous, prises
+      // ensemble, excluent les deux décalages à la fois.
+      saveSettings({ ...DEFAULT_SETTINGS, roundCount: 2 })
+      const user = userEvent.setup()
+      monter(<Sonde />)
+
+      await user.click(screen.getByRole('button', { name: 'Jouer' }))
+      expect(champ('Énigme de type question')).toBe('non')
+
+      await user.click(screen.getByRole('button', { name: 'Résoudre correctement' }))
+      await user.click(screen.getByRole('button', { name: 'Manche suivante' }))
+
+      expect(champ('Nombre de manches')).toBe('2')
+      expect(champ('Type de progression')).toBe('round')
+      expect(champ('Énigme de type question')).toBe('oui')
     })
   })
 

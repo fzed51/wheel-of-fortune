@@ -3,7 +3,7 @@ import type { ChangeEvent } from 'react'
 import { PuzzleForm, PuzzleList, downloadJson } from '../components/PuzzleEditor'
 import { BUTTON_PRIMARY, CARD } from '../components/classes'
 import { CATEGORIES } from '../data/categories'
-import { PACK_PUZZLES } from '../data/puzzles'
+import { PACK_PUZZLES, PACK_QUESTIONS } from '../data/puzzles'
 import { mergeImported, removeCustomPuzzle, saveCustomPuzzle } from '../game/customPuzzles'
 import type { Puzzle, PuzzleId } from '../game/types'
 import type { PuzzleDraft } from '../game/validate'
@@ -55,7 +55,12 @@ function importReportMessage(added: number, duplicates: number, invalid: number)
  * `mergeImported` sont la seule source de vérité, partagée avec `PuzzleForm`.
  */
 export default function PuzzleEditorRoute() {
-  const { custom, pool, replace } = usePuzzles()
+  // `all` : l'éditeur valide et numérote les énigmes perso, il ne les tire
+  // jamais pour une manche. Il lui faut donc l'union des deux réservoirs —
+  // `pool` (manches ordinaires) et `questions` (manche finale) — pour ne pas
+  // manquer un doublon d'énoncé ni réattribuer un identifiant déjà pris par
+  // une énigme de l'autre nature.
+  const { custom, all, replace } = usePuzzles()
   const [editing, setEditing] = useState<Puzzle | null>(null)
   const [message, setMessage] = useState('')
   const importId = useId()
@@ -72,12 +77,12 @@ export default function PuzzleEditorRoute() {
 
   // L'énigme en cours de modification est exclue des « autres » : sinon elle
   // serait signalée comme son propre doublon pendant qu'on la corrige.
-  const others = editing === null ? pool : pool.filter((puzzle) => puzzle.id !== editing.id)
+  const others = editing === null ? all : all.filter((puzzle) => puzzle.id !== editing.id)
 
   const exportDisabled = custom.length === 0
 
   function handleSave(draft: PuzzleDraft) {
-    const result = saveCustomPuzzle(custom, pool, draft, editing?.id ?? null)
+    const result = saveCustomPuzzle(custom, all, draft, editing?.id ?? null)
     // En échec, rien à afficher de plus : `PuzzleForm` a déjà montré les mêmes
     // problèmes, la validation étant la même fonction (`draftIssues`). Un
     // second affichage d'erreurs ici ferait doublon avec celui du formulaire.
@@ -142,7 +147,7 @@ export default function PuzzleEditorRoute() {
       return
     }
 
-    const report = mergeImported(custom, pool, decoded.value.entries)
+    const report = mergeImported(custom, all, decoded.value.entries)
     replace(report.puzzles)
     setMessage(importReportMessage(report.added, report.duplicates, report.invalid + decoded.value.rejected))
   }
@@ -152,7 +157,12 @@ export default function PuzzleEditorRoute() {
       <section className={CARD}>
         <h2 className="font-semibold text-fg">Catalogue</h2>
         <p className="mt-1 text-sm text-fg-muted">
-          {PACK_PUZZLES.length} énigmes embarquées, {custom.length} énigme
+          {/* Le compte additionne les deux réservoirs embarqués : `PACK_PUZZLES`
+              (manches ordinaires) et `PACK_QUESTIONS` (manche finale). Ne
+              compter que `PACK_PUZZLES` sous-estimerait ce que l'application
+              embarque vraiment, alors que les deux catalogues cohabitent
+              désormais. */}
+          {PACK_PUZZLES.length + PACK_QUESTIONS.length} énigmes embarquées, {custom.length} énigme
           {custom.length > 1 ? 's' : ''} à vous.
         </p>
       </section>

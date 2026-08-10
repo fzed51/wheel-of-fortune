@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { PACK_PUZZLES } from '../data/puzzles'
+import { QUESTION_CATEGORY } from './bonus'
 import {
   mergeImported,
   nextCustomId,
@@ -9,6 +10,12 @@ import {
 } from './customPuzzles'
 import { asPuzzleId } from './types'
 import type { Puzzle } from './types'
+
+// Contraintes de `ANSWER_CHARS` : dix à quarante-deux caractères, au moins
+// trois consonnes et deux voyelles distinctes, sans point d'interrogation
+// (interdit par le jeu de caractères). Trente-sept caractères.
+const QUESTION_ANSWER = "QUELLE EST LA CAPITALE DE L'AUSTRALIE"
+const BONUS_ANSWER = 'CANBERRA'
 
 function puzzle(id: string, answer: string, category = 'Divers'): Puzzle {
   return { id: asPuzzleId(id), answer, category, source: 'custom' }
@@ -113,6 +120,112 @@ describe('saveCustomPuzzle', () => {
     )
     expect(result.ok).toBe(true)
   })
+
+  it('conserve la réponse attendue d’une question, sous forme normalisée', () => {
+    const result = saveCustomPuzzle(
+      [],
+      PACK_PUZZLES,
+      { answer: QUESTION_ANSWER, category: QUESTION_CATEGORY, bonusAnswer: 'canberra' },
+      null,
+    )
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const [added] = result.puzzles
+    // Tapée en minuscules, elle doit ressortir en majuscules — même forme
+    // canonique que l'énoncé, sinon deux saisies équivalentes produiraient
+    // deux comparaisons différentes au moment du bonus.
+    expect(added?.bonusAnswer).toBe(BONUS_ANSWER)
+  })
+
+  it('refuse une question sans réponse attendue', () => {
+    const result = saveCustomPuzzle(
+      [],
+      PACK_PUZZLES,
+      { answer: QUESTION_ANSWER, category: QUESTION_CATEGORY },
+      null,
+    )
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.issues.some((issue) => issue.kind === 'bonus-empty')).toBe(true)
+  })
+
+  it('refuse une question dont la réponse attendue figure dans l’énoncé', () => {
+    const result = saveCustomPuzzle(
+      [],
+      PACK_PUZZLES,
+      {
+        answer: "LA CAPITALE DE L'AUSTRALIE EST CANBERRA",
+        category: QUESTION_CATEGORY,
+        bonusAnswer: 'canberra',
+      },
+      null,
+    )
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.issues.some((issue) => issue.kind === 'bonus-in-answer')).toBe(true)
+  })
+
+  it('n’attache jamais de réponse attendue à une énigme d’une autre catégorie', () => {
+    const result = saveCustomPuzzle(
+      [],
+      PACK_PUZZLES,
+      { answer: 'la vie est belle', category: 'Expression', bonusAnswer: 'canberra' },
+      null,
+    )
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const [added] = result.puzzles
+    // `undefined` ne suffit pas à le prouver : seul `Object.hasOwn` distingue
+    // « absent » de « présent et vide », et c'est cette distinction que le
+    // reste du code (persistance, `isQuestion`) exploite.
+    expect(added !== undefined && Object.hasOwn(added, 'bonusAnswer')).toBe(false)
+  })
+
+  it('conserve la réponse attendue d’une question modifiée', () => {
+    const existing: Puzzle = {
+      id: asPuzzleId('user-010'),
+      answer: QUESTION_ANSWER,
+      category: QUESTION_CATEGORY,
+      source: 'custom',
+      bonusAnswer: BONUS_ANSWER,
+    }
+    const custom = [existing]
+    const pool = [...PACK_PUZZLES, ...custom]
+    const result = saveCustomPuzzle(
+      custom,
+      pool,
+      { answer: existing.answer, category: existing.category, bonusAnswer: 'canberra' },
+      existing.id,
+    )
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.puzzles[0]?.bonusAnswer).toBe(BONUS_ANSWER)
+  })
+
+  it('efface la réponse attendue quand une question devient une catégorie ordinaire', () => {
+    const existing: Puzzle = {
+      id: asPuzzleId('user-011'),
+      answer: QUESTION_ANSWER,
+      category: QUESTION_CATEGORY,
+      source: 'custom',
+      bonusAnswer: BONUS_ANSWER,
+    }
+    const custom = [existing]
+    const pool = [...PACK_PUZZLES, ...custom]
+    const result = saveCustomPuzzle(
+      custom,
+      pool,
+      // Le champ « réponse attendue » du formulaire garde sa valeur affichée
+      // même après le changement de catégorie : c'est exactement le cas que
+      // `normalizeDraft` doit couvrir.
+      { answer: existing.answer, category: 'Expression', bonusAnswer: 'canberra' },
+      existing.id,
+    )
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const [updated] = result.puzzles
+    expect(updated !== undefined && Object.hasOwn(updated, 'bonusAnswer')).toBe(false)
+  })
 })
 
 describe('removeCustomPuzzle', () => {
@@ -198,5 +311,36 @@ describe('mergeImported', () => {
     const report = mergeImported([existing], [...PACK_PUZZLES, existing], entries)
     expect(report.puzzles).toContainEqual(existing)
     expect(report.added).toBe(1)
+  })
+
+  it('conserve la réponse attendue d’une question importée', () => {
+    const entries: readonly ImportedDraft[] = [
+      { id: null, answer: QUESTION_ANSWER, category: QUESTION_CATEGORY, bonusAnswer: 'canberra' },
+    ]
+    const report = mergeImported([], PACK_PUZZLES, entries)
+    expect(report.added).toBe(1)
+    expect(report.puzzles[0]?.bonusAnswer).toBe(BONUS_ANSWER)
+  })
+
+  it('refuse une question importée sans réponse attendue, comptée invalide et non doublon', () => {
+    const entries: readonly ImportedDraft[] = [
+      { id: null, answer: QUESTION_ANSWER, category: QUESTION_CATEGORY },
+    ]
+    const report = mergeImported([], PACK_PUZZLES, entries)
+    // `bonus-empty` n'est pas `answer-duplicate` : le refus le plus informatif
+    // gagne, cette entrée compte donc dans `invalid`, jamais dans `duplicates`.
+    expect(report.added).toBe(0)
+    expect(report.invalid).toBe(1)
+    expect(report.duplicates).toBe(0)
+    expect(report.puzzles).toHaveLength(0)
+  })
+
+  it('n’attache pas de réponse attendue à une entrée importée de catégorie ordinaire', () => {
+    const entries: readonly ImportedDraft[] = [
+      { id: null, answer: 'une enigme importee ordinaire', category: 'Divers', bonusAnswer: 'canberra' },
+    ]
+    const report = mergeImported([], PACK_PUZZLES, entries)
+    const [added] = report.puzzles
+    expect(added !== undefined && Object.hasOwn(added, 'bonusAnswer')).toBe(false)
   })
 })

@@ -32,6 +32,7 @@ import {
   jouer,
   manche,
   proposer,
+  question,
   resoudre,
   tourner,
 } from '../test/game'
@@ -469,6 +470,78 @@ describe('enchaînement des manches', () => {
     if (progress.kind === 'game-over') {
       expect([...progress.winners].sort()).toEqual([asPlayerId('alice'), asPlayerId('bob')])
     }
+  })
+})
+
+describe('réponse attendue de la manche finale', () => {
+  // Le libellé respecte les contraintes du catalogue (10 à 42 caractères,
+  // majuscules accentuées, espace, apostrophe droite, trait d'union — donc pas
+  // de point d'interrogation) : c'est le même énoncé qu'accepterait l'éditeur.
+  const enonce = "quelle est la capitale de l'australie"
+  const attendue = 'CANBERRA'
+
+  it('conserve la réponse attendue d’une partie démarrée sur une question', () => {
+    const state = demarrer({ answer: enonce, bonusAnswer: attendue })
+    expect(manche(state).puzzle.bonusAnswer).toBe(attendue)
+  })
+
+  it('ne pose jamais de clé bonusAnswer fantôme sur une énigme ordinaire', () => {
+    // `toBeUndefined()` passerait même si `snapshotPuzzle` posait `bonusAnswer:
+    // undefined` : seul `Object.hasOwn` distingue « absent » de « présent et vide ».
+    const state = demarrer()
+    expect(Object.hasOwn(manche(state).puzzle, 'bonusAnswer')).toBe(false)
+  })
+
+  it('porte la réponse attendue jusqu’au résumé d’une manche gagnée par résolution', () => {
+    const state = demarrer({ answer: enonce, bonusAnswer: attendue })
+    const resolu = resoudre(state, manche(state).puzzle.answer)
+    const progress = jeu(resolu).progress
+    expect(progress.kind).toBe('round-over')
+    if (progress.kind === 'round-over') {
+      expect(progress.summary.puzzle.bonusAnswer).toBe(attendue)
+    }
+  })
+
+  it('porte la réponse attendue jusqu’au résumé d’une manche annulée pour blocage', () => {
+    let state = avecLettres(demarrer({ answer: enonce, bonusAnswer: attendue }), [...CONSONANTS])
+    state = jouer(state, { type: 'turn/pass', by: courant(state).id })
+    state = jouer(state, { type: 'turn/pass', by: courant(state).id })
+    expect(manche(state).phase.kind).toBe('blocked')
+
+    const suivante = jouer(state, {
+      type: 'round/next',
+      puzzle: enigme('mon chat'),
+      firstPlayer: 0,
+    })
+    const resume = jeu(suivante).history[0]
+    expect(resume?.outcome).toEqual({ kind: 'void', reason: 'blocked' })
+    expect(resume?.puzzle.bonusAnswer).toBe(attendue)
+  })
+
+  it('fait arriver intacte dans la manche suivante la réponse attendue passée à round/next', () => {
+    const depart = demarrer({ answer: 'le vent' })
+    const suivante = jouer(resoudre(depart, manche(depart).puzzle.answer), {
+      type: 'round/next',
+      puzzle: question('mon chat', attendue),
+      firstPlayer: 0,
+    })
+    expect(manche(suivante).puzzle.bonusAnswer).toBe(attendue)
+  })
+
+  it('protège la réponse attendue d’une mutation de l’énigme après le démarrage', () => {
+    const puzzle = question(enonce, attendue)
+    const state = reduce(initialState, {
+      type: 'game/start',
+      config: CONFIG,
+      players: [joueur('Alice')],
+      puzzle,
+      firstPlayer: 0,
+    })
+    // Mutation tardive de l'objet reçu par `game/start` : l'instantané doit être
+    // une copie par valeur, jamais la référence — sinon l'éditeur d'énigmes
+    // pourrait modifier une partie en cours.
+    Object.assign(puzzle, { bonusAnswer: 'AUTRE REPONSE' })
+    expect(manche(state).puzzle.bonusAnswer).toBe(attendue)
   })
 })
 

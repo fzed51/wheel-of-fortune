@@ -296,4 +296,35 @@ describe('GameRoute', () => {
     expect(screen.getByRole('heading', { name: /^Manche 2 sur 3/ })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Manche bloquée' })).not.toBeInTheDocument()
   })
+
+  it('annonce la manche finale quand l’énigme en cours est une question', () => {
+    saveGame(
+      jeu(demarrer({ players: [joueur('Alice')], answer: 'le vent', bonusAnswer: 'ZBRAXOFINGUE' })),
+    )
+    monterApp('/jeu')
+
+    expect(screen.getByText(/Manche finale/)).toBeInTheDocument()
+  })
+
+  it('ne mentionne pas la manche finale sur une énigme ordinaire', () => {
+    saveGame(jeu(demarrer({ players: [joueur('Alice')] })))
+    monterApp('/jeu')
+
+    expect(screen.queryByText(/Manche finale/)).not.toBeInTheDocument()
+  })
+
+  /**
+   * Le plus important des trois : la réponse attendue de l'étape bonus ne
+   * doit fuiter nulle part dans le DOM — ni en texte visible, ni dans un
+   * attribut, ni dans un `aria-label`. L'étape bonus qui l'affichera n'existe
+   * pas encore : à ce stade, cette valeur n'a rien à faire à l'écran.
+   */
+  it('n’affiche jamais la réponse attendue de la question, sous aucune forme', () => {
+    saveGame(
+      jeu(demarrer({ players: [joueur('Alice')], answer: 'le vent', bonusAnswer: 'ZBRAXOFINGUE' })),
+    )
+    const { container } = monterApp('/jeu')
+
+    expect(container.innerHTML).not.toContain('ZBRAXOFINGUE')
+  })
 })

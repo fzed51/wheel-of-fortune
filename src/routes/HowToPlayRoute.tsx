@@ -112,6 +112,12 @@ export default function HowToPlayRoute() {
           {MIN_ROUNDS} et {MAX_ROUNDS}) et le nombre d’adversaires (jusqu’à {MAX_OPPONENTS}) se
           choisissent avant de lancer la partie.
         </p>
+        <p className="mt-2 text-fg-muted">
+          La manche finale porte une énigme un peu différente : sa catégorie affichée est{' '}
+          <strong>Question</strong>, et l’énoncé prend la forme d’une question plutôt que d’un mot
+          ou d’une expression. Elle se joue en tout point comme les autres manches — roue,
+          consonnes, voyelles et Résoudre fonctionnent à l’identique.
+        </p>
       </section>
 
       <section className={CARD}>

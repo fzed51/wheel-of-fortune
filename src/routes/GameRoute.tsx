@@ -10,6 +10,7 @@ import Wheel from '../components/Wheel'
 import { BUTTON_PRIMARY, CARD } from '../components/classes'
 import { useCurrentPlayer, useGame, useGameCommands, useLastEvent, useRound } from '../context/selectors'
 import { announcePuzzle, formatEuros } from '../game/announce'
+import { isQuestion } from '../game/bonus'
 import {
   canResolve,
   canSpin,
@@ -111,6 +112,13 @@ export default function GameRoute() {
           {game.config.roundCount}
           {round !== null && ` — gains ×${multiplierFor(round.index)}`}
         </h2>
+        {round !== null && isQuestion(round.puzzle) && (
+          // C'est l'énigme qui porte l'information (`isQuestion`), jamais
+          // l'index de la manche : un repli aurait pu servir une énigme
+          // ordinaire à la dernière manche faute de question disponible, et
+          // cette mention doit alors rester silencieuse.
+          <p className="mt-1 text-sm text-accent">Manche finale : l’énigme est une question.</p>
+        )}
         {player !== null && (
           <p className="mt-1 text-sm text-fg-muted">
             Au tour de {player.name} — cagnotte {formatEuros(player.pot)}

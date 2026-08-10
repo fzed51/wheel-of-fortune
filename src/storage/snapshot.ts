@@ -49,14 +49,22 @@ export interface PersistedGame {
   readonly progress: PersistedProgress
 }
 
-/** Copies par valeur : rien de ce qui sort d'un `JSON.parse` ne doit rester partagé. */
+/**
+ * Copies par valeur : rien de ce qui sort d'un `JSON.parse` ne doit rester partagé.
+ *
+ * Copie conditionnelle de `bonusAnswer`, comme dans `snapshotPuzzle` côté moteur :
+ * poser la clé à `undefined` la ferait apparaître dans l'objet (`toEqual` distingue
+ * `{ x: undefined }` de `{}`), et un champ oublié ici ferait disparaître la réponse
+ * attendue de la manche finale au premier rechargement, sans le moindre message d'erreur.
+ */
 function copyPuzzle(puzzle: Puzzle): Puzzle {
-  return {
+  const base = {
     id: puzzle.id,
     answer: puzzle.answer,
     category: puzzle.category,
     source: puzzle.source,
   }
+  return puzzle.bonusAnswer === undefined ? base : { ...base, bonusAnswer: puzzle.bonusAnswer }
 }
 
 function copyPlayer(player: Player): Player {

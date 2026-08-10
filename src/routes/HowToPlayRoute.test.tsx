@@ -108,6 +108,32 @@ describe('HowToPlayRoute', () => {
     expect(item.textContent).toContain('le même joueur rejoue aussitôt')
   })
 
+  it('précise que la manche finale porte une question de catégorie « Question »', () => {
+    monterApp('/regles')
+
+    const item = screen.getByText(/manche finale porte une énigme/).closest('p')
+    if (item === null) {
+      throw new Error('Le paragraphe décrivant la manche finale est introuvable.')
+    }
+    expect(item.textContent).toContain('Question')
+  })
+
+  /**
+   * Ce test tombera le jour où l'étape bonus (gain associé à la question)
+   * sera livrée et que ce paragraphe sera réécrit pour l'annoncer — c'est le
+   * signal voulu : il rappelle qu'il reste un texte à compléter ici, pas
+   * seulement dans le moteur.
+   */
+  it('ne promet aucun gain associé à la question de la manche finale', () => {
+    monterApp('/regles')
+
+    const item = screen.getByText(/manche finale porte une énigme/).closest('p')
+    if (item === null) {
+      throw new Error('Le paragraphe décrivant la manche finale est introuvable.')
+    }
+    expect(item.textContent).not.toMatch(/gagn|rapporte|rapport|€|prime|récompense/i)
+  })
+
   it('structure l’écran en sections nommées par des titres de niveau 2', () => {
     monterApp('/regles')
 
