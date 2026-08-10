@@ -13,7 +13,6 @@ import {
   angleForLanding,
   forceLabel,
   normalizeDegrees,
-  pickSpinOutcome,
   resolveThrow,
   segmentAt,
   throwFromForce,
@@ -73,29 +72,6 @@ describe('segmentAt', () => {
   it('lève sur un index hors bornes plutôt que de rendre undefined', () => {
     expect(() => segmentAt(-1)).toThrow()
     expect(() => segmentAt(SEGMENT_COUNT)).toThrow()
-  })
-})
-
-describe('pickSpinOutcome', () => {
-  it('reste dans les bornes de la roue, même aux valeurs extrêmes du générateur', () => {
-    for (const value of [0, 0.5, 0.999_999, 1]) {
-      const outcome = pickSpinOutcome(() => value, 1)
-      expect(outcome.index).toBeGreaterThanOrEqual(0)
-      expect(outcome.index).toBeLessThan(SEGMENT_COUNT)
-      expect(Math.abs(outcome.offset)).toBeLessThan(SEGMENT_ANGLE / 2)
-    }
-  })
-
-  it('reporte le spinId reçu', () => {
-    expect(pickSpinOutcome(() => 0.5, 42).spinId).toBe(42)
-  })
-
-  it('couvre toute la roue sur une séquence uniforme', () => {
-    const seen = new Set<number>()
-    for (let i = 0; i < SEGMENT_COUNT; i += 1) {
-      seen.add(pickSpinOutcome(() => i / SEGMENT_COUNT, i).index)
-    }
-    expect(seen.size).toBe(SEGMENT_COUNT)
   })
 })
 

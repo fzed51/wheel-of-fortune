@@ -40,8 +40,10 @@ export type Segment =
   | { readonly kind: 'pass'; readonly index: number }
 
 /**
- * Résultat d'un tirage, décidé par l'appelant à partir du générateur injecté.
- * L'animation de la roue ne tire rien : elle exécute un résultat déjà connu.
+ * Ce que la roue a désigné — jamais un tirage. Depuis le lancer à la force,
+ * personne ne choisit plus de case : `index` et `offset` sont **déduits** de
+ * l'angle où l'aiguille s'est arrêtée (voir `resolveThrow` dans `wheel.ts`),
+ * à partir d'un `WheelThrow` qui ne décide qu'une distance à parcourir.
  */
 export interface SpinOutcome {
   /** Index du segment dans WHEEL. */
@@ -105,7 +107,7 @@ export interface GameConfig {
 
 export type Phase =
   | { readonly kind: 'awaiting-action' }
-  | { readonly kind: 'spinning'; readonly segment: Segment; readonly spin: SpinOutcome }
+  | { readonly kind: 'spinning'; readonly segment: Segment; readonly spin: SpinLanding }
   | { readonly kind: 'awaiting-consonant'; readonly value: number; readonly segment: Segment }
   | { readonly kind: 'blocked' }
 

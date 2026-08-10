@@ -12,7 +12,7 @@ import { canBuyVowel, canGuess, canResolve, currentPlayerOf, isBotTurn } from '.
 import { configFrom, playersFrom } from '../game/setup'
 import type { Setup } from '../game/setup'
 import type { GameProgress, GameState, Letter, Puzzle, PuzzleId } from '../game/types'
-import { pickSpinOutcome } from '../game/wheel'
+import { randomForce, throwFromForce } from '../game/wheel'
 import { useAnnouncer } from '../hooks/useAnnouncer'
 import { useGameEffects } from '../hooks/useGameEffects'
 import { usePuzzles } from '../hooks/usePuzzles'
@@ -285,19 +285,25 @@ export function GameProvider({ children }: { readonly children: ReactNode }) {
     })
   }, [dispatch, rng])
 
-  const spin = useCallback(() => {
-    const current = stateRef.current
-    if (current.kind !== 'playing' || current.game.progress.kind !== 'round') return
-    // Garde structurelle : l'interface grise ses boutons pendant le tour d'un
-    // bot, mais le clavier physique et un futur composant n'ont pas à repasser
-    // par cette décision. Sans elle l'humain pourrait jouer à la place du bot,
-    // le reducer acceptant l'action au nom du joueur courant sans distinguer qui
-    // l'a réellement déclenchée.
-    if (isBotTurn(current.game)) return
-    const player = current.game.players[current.game.progress.currentPlayer]
-    if (player === undefined) return
-    dispatch({ type: 'wheel/spin', by: player.id, spin: pickSpinOutcome(rng, nextSpinId()) })
-  }, [dispatch, rng, nextSpinId])
+  const spin = useCallback(
+    (force?: number) => {
+      const current = stateRef.current
+      if (current.kind !== 'playing' || current.game.progress.kind !== 'round') return
+      // Garde structurelle : l'interface grise ses boutons pendant le tour d'un
+      // bot, mais le clavier physique et un futur composant n'ont pas à repasser
+      // par cette décision. Sans elle l'humain pourrait jouer à la place du bot,
+      // le reducer acceptant l'action au nom du joueur courant sans distinguer qui
+      // l'a réellement déclenchée.
+      if (isBotTurn(current.game)) return
+      const player = current.game.players[current.game.progress.currentPlayer]
+      if (player === undefined) return
+      // `force` omise : un humain qui tourne sans jauge (clavier physique, par
+      // exemple) obtient quand même un lancer, tiré au hasard.
+      const applied = force ?? randomForce(rng)
+      dispatch({ type: 'wheel/spin', by: player.id, thrown: throwFromForce(applied, rng, nextSpinId()) })
+    },
+    [dispatch, rng, nextSpinId],
+  )
 
   /**
    * Trouver le `spinId` et le joueur courant, c'est lire l'état de la partie :

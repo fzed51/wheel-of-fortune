@@ -1,4 +1,4 @@
-import type { Segment, SpinLanding, SpinOutcome, WheelThrow } from './types'
+import type { Segment, SpinLanding, WheelThrow } from './types'
 
 /**
  * Disposition de la roue, du haut dans le sens horaire.
@@ -54,16 +54,6 @@ export function segmentAt(index: number): Segment {
     throw new Error(`Index de segment hors bornes : ${index}`)
   }
   return segment
-}
-
-/**
- * Tire un segment. L'aléa est fourni par l'appelant, jamais par le reducer.
- * `spinId` doit être strictement croissant sur la durée d'une partie.
- */
-export function pickSpinOutcome(rng: () => number, spinId: number): SpinOutcome {
-  const index = Math.min(SEGMENT_COUNT - 1, Math.floor(rng() * SEGMENT_COUNT))
-  const offset = (rng() * 2 - 1) * OFFSET_BOUND
-  return { index, offset, spinId }
 }
 
 /** En dessous, un lancer serait trop mou pour paraître réel : deux tours pleins sont le plancher. */

@@ -15,6 +15,7 @@ import {
   jeu,
   jouer,
   joueur,
+  lancer,
   manche,
   partieTerminee,
   proposer,
@@ -27,7 +28,10 @@ import { fromPersisted, toPersisted } from './snapshot'
 /** Lance la roue sans la laisser s'arrêter : c'est l'état `spinning`. */
 function enRotation(state: GameState, index: number): Game {
   const by = courant(state).id
-  return jeu(jouer(state, { type: 'wheel/spin', by, spin: { index, offset: 12.5, spinId: 7 } }))
+  // Offset non nul (5°), pour prouver que l'aiguille en position exacte n'a pas
+  // d'importance ici : c'est la persistance de l'angle qui est testée, pas la
+  // précision du lancer.
+  return jeu(jouer(state, lancer(jeu(state), by, index, 7, 5)))
 }
 
 /**
@@ -126,7 +130,10 @@ describe('toPersisted', () => {
 describe('fromPersisted', () => {
   it('reconstitue une partie identique, aller-retour compris', () => {
     const game = jeu(proposer(tourner(demarrer(), cash(500)), 'V'))
-    expect(fromPersisted(toPersisted(game))).toEqual(game)
+    // `wheelAngle` fait exception : `tourner` l'a fait avancer, mais il n'a pas
+    // d'équivalent dans `PersistedGame` (voir le docblock de `toPersisted`) et
+    // revient donc à son angle de repos initial, pas à celui d'avant l'écriture.
+    expect(fromPersisted(toPersisted(game))).toEqual({ ...game, wheelAngle: 0 })
   })
 
   it('reconstitue une manche terminée', () => {
