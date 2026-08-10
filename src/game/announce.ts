@@ -3,6 +3,7 @@ import type { Cell } from './puzzle'
 import { cellsOf, countOccurrences, revealedLetters } from './puzzle'
 import { activeRound, bonusPlayerOf, currentPlayerOf, multiplierFor } from './rules'
 import type { Consonant, Game, GameState, Letter, Player, PlayerId, RoundState, Vowel } from './types'
+import { forceLabel } from './wheel'
 
 /**
  * Chaînes lues par le lecteur d'écran. Module pur : aucun JSX, aucun DOM,
@@ -283,6 +284,19 @@ function roundNextAnnouncement(nextGame: Game): string {
   return roundIntroPhrase(nextGame)
 }
 
+/**
+ * `wheel/spin` porte une distance, pas un résultat : rien à annoncer de la
+ * case tombée avant `wheel/settled`. Seule la force du lancer est déjà connue
+ * — c'est justement l'information que la jauge de puissance ne rend pas à un
+ * lecteur d'écran. Repli défensif si la manche courante n'est pas (ou plus)
+ * `spinning` : le reducer a refusé le lancer, ou une forme future de l'état.
+ */
+function spinAnnouncement(nextGame: Game): string {
+  const round = activeRound(nextGame)
+  if (round === null || round.phase.kind !== 'spinning') return 'La roue tourne…'
+  return `La roue tourne — lancer ${forceLabel(round.phase.spin.travel)}.`
+}
+
 function settledAnnouncement(prevGame: Game, nextGame: Game): string {
   const prevRound = activeRound(prevGame)
   if (prevRound === null || prevRound.phase.kind !== 'spinning') return ''
@@ -394,7 +408,7 @@ function heardAnnouncement(prev: GameState, next: GameState, action: GameAction)
 
   switch (action.type) {
     case 'wheel/spin':
-      return { status: 'La roue tourne…', alert: '' }
+      return { status: spinAnnouncement(nextGame), alert: '' }
     case 'wheel/settled':
       return { status: settledAnnouncement(prevGame, nextGame), alert: '' }
     case 'letter/consonant':
