@@ -47,6 +47,29 @@ const RACINE = resolve(import.meta.dirname, '..', '..')
  */
 const CLE_FACTICE = 'controle-navigateur-aucune-requete'
 
+/*
+ * Version du schéma de stockage, lue dans la source plutôt que recopiée en
+ * dur : un `version: 1` figé ici s'est déjà périmé une fois en silence quand
+ * `SCHEMA_VERSION` est passé à 2 dans `src/storage/keys.ts` — `codec.ts`
+ * rejette alors l'enveloppe écrite par ce contrôle et l'application retombe
+ * sur ses réglages par défaut (thème système, donc clair), faisant échouer
+ * « thème posé avant le premier rendu » pour une raison qui n'a rien à voir
+ * avec le thème. Même doctrine que `src/theme/theme.test.ts`, qui compare
+ * `theme-init.js` à sa source plutôt que de suivre à l'œil.
+ */
+const SCHEMA_VERSION = (() => {
+  const source = readFileSync(join(RACINE, 'src', 'storage', 'keys.ts'), 'utf8')
+  const trouve = source.match(/export const SCHEMA_VERSION = (\d+)/)
+  if (trouve === null) {
+    console.error(
+      'SCHEMA_VERSION introuvable dans src/storage/keys.ts : ' +
+        'le contrôle du thème ne peut pas écrire une enveloppe de version valide.',
+    )
+    process.exit(1)
+  }
+  return Number(trouve[1])
+})()
+
 const CONSONNES = ['S', 'R', 'T', 'N', 'L', 'M', 'D', 'P', 'C', 'V', 'B', 'F', 'G']
 
 const resultats = []
@@ -168,6 +191,42 @@ async function tournerJusquAConsonne(client, essais = 6) {
   return null
 }
 
+/**
+ * Grimpe la cagnotte jusqu'à ce qu'une voyelle devienne achetable (250 €).
+ * Rien ne le garantit dès `demarrerPartie` : la cagnotte du joueur part de
+ * zéro, donc les cinq voyelles sont aussi verrouillées que les consonnes au
+ * tout premier rendu. Une consonne devinée juste ajoute son gain à la
+ * cagnotte sans la vider (`letter/consonant` dans `engine.ts`), donc quelques
+ * tours suffisent presque toujours — la plus petite case non nulle de la roue
+ * vaut déjà 50 €. `H` n'est jamais tenté : c'est le témoin verrouillé que le
+ * contrôle appelant relève ensuite, il doit rester intact.
+ */
+async function atteindreVoyelleAchetable(client, essais = 10) {
+  for (let essai = 0; essai < essais; essai += 1) {
+    const achetable = await evaluate(
+      client,
+      `const cible = document.querySelector('button[aria-label^="Lettre A"]')
+       return cible ? cible.getAttribute('aria-disabled') === 'false' : false`,
+    )
+    if (achetable) return true
+
+    const vu = await evaluate(client, 'return window.__h.jeu()')
+    if (vu.controls['Tourner'] === 'false') {
+      await evaluate(client, `return window.__h.click('Tourner')`)
+      await sleep(4600)
+      continue
+    }
+    // Priorité aux consonnes les plus fréquentes en français : sans elle, le
+    // budget d'essais s'épuiserait vite sur des lettres rares (`B`, `F`, `G`…).
+    const lettre = CONSONNES.find((candidate) => vu.jouables.includes(candidate))
+      ?? vu.jouables.find((candidate) => candidate !== 'H')
+    if (lettre === undefined) return false
+    await evaluate(client, `return window.__h.clickLettre('${lettre}')`)
+    await sleep(400)
+  }
+  return false
+}
+
 async function main() {
   const serveur = await demarrerServeur()
   const telechargements = mkdtempSync(join(tmpdir(), 'wof-telechargements-'))
@@ -215,7 +274,7 @@ async function main() {
       await evaluate(
         client,
         `localStorage.setItem('wof:settings:1', JSON.stringify({
-           version: 1,
+           version: ${SCHEMA_VERSION},
            value: { roundCount: 3, opponents: 1, botLevel: 'normal', theme: '${theme}', mistralModel: 'mistral-small-latest' },
          }))
          return true`,
@@ -502,6 +561,62 @@ async function main() {
     exiger(horsLigne.entete === 'La Roue de la Fortune', 'l’application ne se charge pas hors ligne', horsLigne)
     exiger(horsLigne.controls['Tourner'] !== 'absent', 'l’écran de jeu n’est pas rendu hors ligne', horsLigne)
     return horsLigne
+  })
+
+  await controle('un bouton inerte s’estompe vraiment', async () => {
+    await demarrerPartie(client)
+
+    /*
+     * `getComputedStyle` est le seul juge possible : jsdom ne calcule pas
+     * d'opacité, et ce dépôt interdit les sélecteurs de classe dans les
+     * tests Vitest — ce contrôle ne peut donc exister qu'ici, au navigateur.
+     * « Tourner », actif, sert de témoin : sans lui, une `opacity: .5` posée
+     * par erreur sur tous les boutons passerait quand même au vert.
+     */
+    const boutons = await evaluate(
+      client,
+      `const passer = window.__h.byName('Passer la main')
+       const tourner = window.__h.byName('Tourner')
+       return {
+         passer: passer && { disabled: passer.getAttribute('aria-disabled'), opacite: getComputedStyle(passer).opacity },
+         tourner: tourner && { disabled: tourner.getAttribute('aria-disabled'), opacite: getComputedStyle(tourner).opacity },
+       }`,
+    )
+    exiger(boutons.passer !== null, 'bouton « Passer la main » introuvable', boutons)
+    exiger(boutons.tourner !== null, 'bouton « Tourner » introuvable', boutons)
+    // Si ce n'est pas vrai, le contrôle ne mesure pas ce qu'il croit : à
+    // l'arrivée sur l'écran de jeu, aucun tour n'a encore été joué, donc
+    // rien n'est encore jouable (`isStuck` de `rules.ts`).
+    exiger(
+      boutons.passer.disabled === 'true',
+      '« Passer la main » n’est pas inerte à l’arrivée sur l’écran de jeu',
+      boutons.passer,
+    )
+    exiger(parseFloat(boutons.passer.opacite) < 0.9, '« Passer la main » inerte garde une opacité pleine', boutons.passer)
+    exiger(parseFloat(boutons.tourner.opacite) === 1, '« Tourner », actif, est lui aussi estompé', boutons.tourner)
+
+    // `KeyboardKey.tsx` compose ses classes hors de `BUTTON_PRIMARY`/`BUTTON_GHOST` :
+    // corrigé séparément, il mérite son propre témoin.
+    const cagnotte = await atteindreVoyelleAchetable(client)
+    exiger(cagnotte, 'impossible d’obtenir une voyelle achetable pour comparer le clavier')
+
+    const clavier = await evaluate(
+      client,
+      `const consonne = document.querySelector('button[aria-label^="Lettre H"]')
+       const voyelle = document.querySelector('button[aria-label^="Lettre A"]')
+       return {
+         consonne: consonne && { disabled: consonne.getAttribute('aria-disabled'), opacite: getComputedStyle(consonne).opacity },
+         voyelle: voyelle && { disabled: voyelle.getAttribute('aria-disabled'), opacite: getComputedStyle(voyelle).opacity },
+       }`,
+    )
+    exiger(clavier.consonne !== null, 'touche « Lettre H » introuvable', clavier)
+    exiger(clavier.voyelle !== null, 'touche « Lettre A » introuvable', clavier)
+    exiger(clavier.consonne.disabled === 'true', 'la consonne « H » n’est pas verrouillée en phase « awaiting-action »', clavier.consonne)
+    exiger(parseFloat(clavier.consonne.opacite) < 0.9, 'une touche verrouillée garde une opacité pleine', clavier.consonne)
+    exiger(clavier.voyelle.disabled === 'false', 'la voyelle « A » n’est pas devenue achetable', clavier.voyelle)
+    exiger(parseFloat(clavier.voyelle.opacite) === 1, 'une touche jouable est estompée', clavier.voyelle)
+
+    return { boutons, clavier }
   })
 
   await controle('aucune violation de CSP sur tout le parcours', async () => {

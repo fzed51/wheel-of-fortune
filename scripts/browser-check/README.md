@@ -12,7 +12,7 @@ le script va au bout de ses contrôles avant de rendre son code de sortie.
 
 ## Ce que ça vérifie
 
-Quatorze contrôles, dans cet ordre :
+Quinze contrôles, dans cet ordre :
 
 | # | Contrôle | Ce qui casserait sans lui |
 | --- | --- | --- |
@@ -29,10 +29,21 @@ Quatorze contrôles, dans cet ordre :
 | 11 | manifest et icônes | application non installable, sans le moindre message d'erreur |
 | 12 | service worker actif, rien de Mistral en cache | precache vide, ou un verdict du juge mis en cache |
 | 13 | hors ligne | l'application ne repart pas sans réseau |
-| 14 | aucune violation de CSP sur tout le parcours | une violation apparue en cours de partie, pas au chargement |
+| 14 | un bouton inerte s'estompe vraiment | un bouton rendu inerte qui garde l'apparence d'un bouton actif |
+| 15 | aucune violation de CSP sur tout le parcours | une violation apparue en cours de partie, pas au chargement |
 
 Le contrôle 10 crée une énigme perso et exporte le fichier : c'est le seul qui écrit
 quelque chose, et il écrit dans un profil Chrome jetable.
+
+Le contrôle 14 compare, par `getComputedStyle`, l'opacité d'un bouton inerte
+(« Passer la main », inerte dès l'arrivée sur l'écran de jeu) à celle d'un bouton
+actif (« Tourner »), puis fait la même comparaison sur le clavier de lettres —
+une consonne verrouillée contre une voyelle achetable. jsdom ne calcule pas
+d'opacité et ce dépôt interdit les sélecteurs de classe dans les tests Vitest :
+aucun test automatisé ne peut atteindre `aria-disabled:opacity-50`, seul un vrai
+navigateur le peut. Aucune voyelle n'étant achetable dès `demarrerPartie` (la
+cagnotte du joueur part de zéro), ce contrôle joue vraiment quelques tours pour
+en obtenir une.
 
 ## Ce que ça ne vérifie pas, exprès
 
@@ -68,7 +79,7 @@ sur son port, et compare le document servi à `dist/index.html` avant de commenc
 | --- | --- |
 | `cdp.mjs` | pilote Chrome par le DevTools Protocol : lancement, navigation, `evaluate`, clavier, souris, hors ligne, `prefers-reduced-motion` |
 | `page.mjs` | boîte à outils injectée dans la page avant son premier script : requêtes par nom accessible, mouchards du thème et des violations CSP |
-| `check.mjs` | les quatorze contrôles, et le serveur d'aperçu qu'ils utilisent |
+| `check.mjs` | les quinze contrôles, et le serveur d'aperçu qu'ils utilisent |
 
 Aucune dépendance : Node fournit `fetch` et `WebSocket`, Chrome fournit le reste.
 Playwright coûterait un navigateur à télécharger pour un contrôle passé à la main de
