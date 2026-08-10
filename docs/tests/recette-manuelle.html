@@ -1,0 +1,638 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Recette manuelle — La Roue de la Fortune</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f6f4;
+    --card: #ffffff;
+    --fg: #1c1c1a;
+    --muted: #63635e;
+    --line: #dedcd6;
+    --accent: #7a5a12;
+    --ok-bg: #dff2e1;
+    --ok-fg: #14532d;
+    --ko-bg: #fbe0e0;
+    --ko-fg: #7f1d1d;
+    --na-bg: #ececea;
+    --na-fg: #4b4b47;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #17171a;
+      --card: #202024;
+      --fg: #ececea;
+      --muted: #a2a29c;
+      --line: #35353b;
+      --accent: #e0b451;
+      --ok-bg: #14351f;
+      --ok-fg: #a7e0b8;
+      --ko-bg: #3b1717;
+      --ko-fg: #f2b0b0;
+      --na-bg: #2a2a30;
+      --na-fg: #b5b5b0;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 1.5rem 1rem 5rem;
+    background: var(--bg);
+    color: var(--fg);
+    font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 62rem; margin: 0 auto; }
+  h1 { font-size: 1.7rem; line-height: 1.25; margin: 0 0 .3rem; }
+  h2 { font-size: 1.2rem; margin: 0; }
+  h3 { font-size: .95rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 1.4rem 0 .5rem; }
+  p { margin: .5rem 0; }
+  .lede { color: var(--muted); margin-bottom: 1.5rem; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: .8rem;
+    padding: 1rem 1.1rem;
+    margin-bottom: 1rem;
+  }
+  .scenario > header { display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: baseline; }
+  .tag {
+    font: 600 .75rem/1 system-ui, sans-serif;
+    letter-spacing: .06em;
+    padding: .35rem .5rem;
+    border-radius: .4rem;
+    background: var(--na-bg);
+    color: var(--na-fg);
+  }
+  .tag.prio { background: var(--accent); color: var(--card); }
+  .goal { color: var(--muted); margin: .5rem 0 0; }
+  .prereq { margin: .7rem 0 0; padding-left: 1.1rem; color: var(--muted); font-size: .93rem; }
+  .steps { list-style: none; margin: 1rem 0 0; padding: 0; }
+  .step { border-top: 1px solid var(--line); padding: .9rem 0 .3rem; }
+  .step p { margin: 0 0 .35rem; }
+  .step .action { font-weight: 600; }
+  .step .expect { color: var(--muted); font-size: .95rem; }
+  .step .expect::before { content: "Attendu : "; font-weight: 600; color: var(--fg); }
+  .marks { display: flex; flex-wrap: wrap; gap: .4rem; margin: .5rem 0 .4rem; }
+  .marks label {
+    display: inline-flex; align-items: center; gap: .35rem;
+    border: 1px solid var(--line); border-radius: .5rem;
+    padding: .35rem .6rem; cursor: pointer; font-size: .9rem;
+    min-height: 2.4rem;
+  }
+  .marks input { width: 1.05rem; height: 1.05rem; accent-color: var(--accent); margin: 0; }
+  .marks label:has(input:checked) { font-weight: 600; }
+  .marks label.ok:has(input:checked) { background: var(--ok-bg); color: var(--ok-fg); border-color: var(--ok-fg); }
+  .marks label.ko:has(input:checked) { background: var(--ko-bg); color: var(--ko-fg); border-color: var(--ko-fg); }
+  .marks label.na:has(input:checked) { background: var(--na-bg); color: var(--na-fg); }
+  textarea, input[type=text] {
+    width: 100%; font: inherit; font-size: .93rem;
+    color: var(--fg); background: var(--bg);
+    border: 1px solid var(--line); border-radius: .5rem; padding: .5rem .6rem;
+  }
+  textarea { resize: vertical; }
+  .note { margin-top: .2rem; }
+  .ctx { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: .8rem; }
+  .ctx label { display: block; font-size: .85rem; color: var(--muted); }
+  .bar {
+    position: sticky; top: 0; z-index: 5;
+    background: var(--card); border: 1px solid var(--line); border-radius: .8rem;
+    padding: .7rem .9rem; margin-bottom: 1rem;
+    display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; justify-content: space-between;
+  }
+  .counts { display: flex; gap: .5rem; flex-wrap: wrap; font-size: .9rem; }
+  .counts span { padding: .25rem .55rem; border-radius: .4rem; background: var(--na-bg); color: var(--na-fg); }
+  .counts .c-ok { background: var(--ok-bg); color: var(--ok-fg); }
+  .counts .c-ko { background: var(--ko-bg); color: var(--ko-fg); }
+  button {
+    font: inherit; font-size: .92rem; cursor: pointer;
+    border: 1px solid var(--line); border-radius: .5rem;
+    padding: .5rem .8rem; min-height: 2.5rem;
+    background: var(--bg); color: var(--fg);
+  }
+  button.primary { background: var(--accent); color: var(--card); border-color: var(--accent); font-weight: 600; }
+  .report textarea { min-height: 18rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem; }
+  .hint { font-size: .85rem; color: var(--muted); }
+  .out-of-scope { font-size: .9rem; }
+  .out-of-scope code { font-size: .85em; }
+  code { background: var(--na-bg); padding: .1rem .3rem; border-radius: .25rem; }
+  a { color: var(--accent); }
+  @media print { .bar, .report, button { display: none; } }
+</style>
+</head>
+<body>
+<main>
+
+<h1>Recette manuelle — La Roue de la Fortune</h1>
+<p class="lede">
+  Les contrôles qu'aucun test Vitest ni <code>yarn check:browser</code> ne couvre.
+  Coche au fil de l'eau, note ce que tu observes quand ça diverge, puis copie le compte rendu en bas de page.
+  La progression est enregistrée dans le navigateur : tu peux fermer et reprendre.
+</p>
+
+<div class="card out-of-scope">
+  <h3 style="margin-top:0">Ne pas rejouer ici</h3>
+  <p>
+    Les règles du jeu, la validation de l'éditeur, la navigation et les bornes des réglages sont couvertes en jsdom
+    (plus de 700 tests). La CSP, le thème avant premier rendu, l'animation de la roue,
+    <code>prefers-reduced-motion</code>, l'arbre d'accessibilité, les live regions, le clavier physique,
+    le <code>&lt;dialog&gt;</code> natif, l'export sous CSP, le manifest, le service worker et le hors-ligne sont
+    couverts par les quatorze contrôles de <code>yarn build &amp;&amp; yarn check:browser</code>.
+  </p>
+</div>
+
+<section class="card">
+  <h3 style="margin-top:0">Contexte de la session</h3>
+  <div class="ctx" id="ctx">
+    <label>Date et heure<input type="text" data-ctx="date" placeholder="2026-08-10 14:30"></label>
+    <label>Origine testée<input type="text" data-ctx="origine" placeholder="https://fzed51.github.io/wheel-of-fortune/"></label>
+    <label>Commit / version<input type="text" data-ctx="commit" placeholder="28ad645"></label>
+    <label>Appareil<input type="text" data-ctx="appareil" placeholder="MacBook Pro M1 / iPhone 13"></label>
+    <label>Navigateur et version<input type="text" data-ctx="navigateur" placeholder="Chrome 141 / Safari iOS 18"></label>
+    <label>Clé d'API Mistral disponible ?<input type="text" data-ctx="cle" placeholder="oui / non"></label>
+  </div>
+  <p class="hint" style="margin-top:.7rem">
+    Origine en ligne : <code>https://fzed51.github.io/wheel-of-fortune/</code> —
+    aperçu local : <code>yarn build &amp;&amp; yarn preview</code> puis <code>http://localhost:4173/wheel-of-fortune/</code>.
+    L'installation réelle et le service worker exigent l'origine en ligne : <code>localhost</code> n'est une origine sécurisée que sur la machine elle-même.
+  </p>
+</section>
+
+<div class="bar">
+  <div class="counts" id="counts"></div>
+  <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+    <button type="button" id="go-report" class="primary">Aller au compte rendu</button>
+    <button type="button" id="reset">Tout réinitialiser</button>
+  </div>
+</div>
+
+<div id="scenarios"></div>
+
+<section class="card report" id="report">
+  <h2>Compte rendu</h2>
+  <p class="hint">
+    Généré à partir de ce qui est coché. Copie-le et donne-le à Claude Code : il contient
+    les écarts, leurs notes et ce qui n'a pas été testé, sans rien d'autre.
+  </p>
+  <p><label class="hint" for="free">Remarques libres (facultatif)</label></p>
+  <textarea id="free" rows="3" placeholder="Impressions générales, ce qui a gêné, idées d'amélioration…"></textarea>
+  <p style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.8rem">
+    <button type="button" id="build" class="primary">Générer</button>
+    <button type="button" id="copy">Copier</button>
+    <span class="hint" id="copy-state" role="status" aria-live="polite"></span>
+  </p>
+  <textarea id="out" rows="20" spellcheck="false" aria-label="Compte rendu à copier"></textarea>
+</section>
+
+</main>
+
+<script>
+const SCENARIOS = [
+  {
+    id: 'S1',
+    titre: 'Le jeu complet, sans aucune clé d’API',
+    prio: true,
+    but: 'Vérifier que le jeu est entièrement jouable sans clé, et que l’étape bonus disparaît au lieu de bloquer.',
+    prereq: [
+      'Réglages → « Effacer la clé » si une clé est enregistrée.',
+      'Onglet Réseau des DevTools ouvert, filtre « mistral ».'
+    ],
+    etapes: [
+      { a: 'Ouvrir Réglages.', e: 'Le texte annonce « Aucune clé enregistrée » et précise que le jeu se joue entièrement sans, la clé ne servant qu’à la question bonus (500 € fixes) et à « Tester la clé ».' },
+      { a: 'Lancer une partie : 2 manches, 1 adversaire, niveau Normal.', e: 'L’écran de jeu affiche « Manche 1 sur 2 — gains ×1 ».' },
+      { a: 'Pendant son tour, regarder le bouton « Résoudre ».', e: 'Il est actif, non estompé, et ouvre la boîte « Proposer une réponse ». Aucun message ne réclame de clé.' },
+      { a: 'Proposer une réponse volontairement fausse.', e: 'Verdict immédiat « incorrect », la main passe, et l’onglet Réseau reste vide (rien vers api.mistral.ai).' },
+      { a: 'Proposer la bonne réponse sans accents, en minuscules, avec un espace en trop au début.', e: 'Acceptée. La comparaison est locale et tolérante.' },
+      { a: 'Jouer jusqu’à la fin de la manche 2 (la manche finale).', e: 'Aucune carte « Question bonus » : la partie passe directement à l’écran des résultats.' },
+      { a: 'Relire l’onglet Réseau sur toute la partie.', e: 'Zéro requête vers api.mistral.ai, du premier au dernier tour.' }
+    ]
+  },
+  {
+    id: 'S2',
+    titre: 'La question bonus avec une vraie clé — chemin nominal',
+    prio: true,
+    but: 'C’est le seul chemin du code qu’aucun automate ne joue jamais : check:browser écrit une clé factice et ne soumet rien.',
+    prereq: [
+      'Une clé Mistral valide, dédiée et révocable, enregistrée dans les Réglages.',
+      'Partie à 1 manche et 0 adversaire : la manche 1 est alors la manche finale, et personne ne peut la gagner à votre place.'
+    ],
+    etapes: [
+      { a: 'Gagner la manche finale en résolvant l’énigme.', e: 'Une carte « Question bonus » s’affiche avec l’énoncé, la ligne « Cagnotte en jeu : 500 € — au tour de Vous », un champ « Votre réponse » et deux boutons « Répondre » et « Passer ».' },
+      { a: 'Soumettre le champ vide.', e: '« Tapez une réponse avant de la proposer. », et rien ne part sur le réseau.' },
+      { a: 'Répondre juste, mais sous forme de phrase (ex. « c’est Canberra »).', e: 'Acceptée. Le score gagne 500 €, visibles sur l’écran des résultats.' },
+      { a: 'Observer l’état de la carte pendant l’attente du verdict.', e: 'Le champ passe en lecture seule, « Répondre » et « Passer » sont estompés et sans effet, un message d’attente s’affiche.' },
+      { a: 'Rejouer une partie et répondre complètement hors sujet.', e: 'Refusée, aucun crédit de 500 €, passage aux résultats.' },
+      { a: 'Rejouer une partie et cliquer « Passer ».', e: 'Passage direct aux résultats, aucun crédit, aucune requête après le clic.' }
+    ]
+  },
+  {
+    id: 'S3',
+    titre: 'La question bonus — chemins dégradés',
+    prio: true,
+    but: 'Ce que devient l’étape bonus quand le réseau, la page ou le joueur lâche en cours de route.',
+    prereq: ['Clé valide enregistrée. Partie à 1 manche pour atteindre vite la manche finale.'],
+    etapes: [
+      { a: 'Couper le réseau (DevTools → Network → Offline) juste après avoir cliqué « Répondre ».', e: 'Un message annonce que le juge est injoignable. Aucune pénalité, aucun verdict inventé.' },
+      { a: 'Rétablir le réseau et retenter la même réponse.', e: 'Un nouvel essai est possible, le bonus est toujours à gagner.' },
+      { a: 'Recharger la page pendant l’attente du verdict.', e: 'Retour en attente de réponse sur la même question, bonus toujours à gagner. Jamais d’écran figé en attente.' },
+      { a: 'Effacer la clé depuis les Réglages dans un autre onglet, revenir sur la partie et soumettre.', e: 'Aucune erreur, aucun écran cassé. Décrire dans la note ce qui se passe exactement.' },
+      { a: 'Lancer une partie à 1 manche avec 3 adversaires, laisser un bot gagner la manche finale.', e: '« <nom du bot> répond à la question bonus. », aucun champ de saisie proposé, la partie se termine seule.' }
+    ]
+  },
+  {
+    id: 'S4',
+    titre: 'La clé d’API dans les Réglages',
+    but: 'Le bouton « Tester la clé » face à une vraie clé, et le traitement de la clé elle-même.',
+    prereq: ['Une clé valide et une clé volontairement fausse sous la main.', 'Onglets Réseau et Console ouverts.'],
+    etapes: [
+      { a: 'Enregistrer la clé valide, cliquer « Tester la clé ».', e: 'Message de succès explicite.' },
+      { a: 'Remplacer par une clé fausse, cliquer « Tester la clé ».', e: 'Message d’échec explicite (pas de code brut, pas d’écran cassé).' },
+      { a: 'Cliquer « Tester la clé » deux fois très vite.', e: 'Le second clic est ignoré pendant environ deux secondes.' },
+      { a: 'Regarder comment la clé enregistrée est évoquée à l’écran.', e: 'Ses quatre derniers caractères seulement, précédés de points de suspension. Le champ est de type mot de passe, « Afficher » le bascule en clair.' },
+      { a: 'Dans l’onglet Réseau, regarder où voyage la clé pendant « Tester la clé ».', e: 'Dans un en-tête, jamais dans l’URL. Noter seulement « en-tête » ou « URL », sans recopier la valeur.' },
+      { a: 'Parcourir la console après ces manipulations.', e: 'Aucune trace de la clé, aucun objet de requête journalisé. Noter le constat, pas le contenu.' },
+      { a: 'Cliquer « Effacer la clé ».', e: 'L’écran repasse en « Aucune clé enregistrée », et l’entrée wof:mistral-key:1 disparaît du localStorage.' }
+    ]
+  },
+  {
+    id: 'S5',
+    titre: 'Installation réelle sur un appareil',
+    prio: true,
+    but: 'Une PWA ne s’installe que depuis une origine sécurisée. C’est le déploiement en ligne qui rend ce scénario possible.',
+    prereq: ['Tester sur https://fzed51.github.io/wheel-of-fortune/, jamais sur localhost.', 'Un téléphone Android et un iPhone si possible — sinon cocher « non testé » sur la moitié manquante.'],
+    etapes: [
+      { a: 'Android / Chrome : ouvrir l’origine, accepter l’invite d’installation.', e: 'L’invite apparaît, l’icône s’ajoute à l’écran d’accueil avec le bon visuel et le bon nom.' },
+      { a: 'Lancer l’application installée.', e: 'Ouverture en plein écran, sans barre d’URL, barre d’état à la couleur du thème. Une partie se joue de bout en bout.' },
+      { a: 'iOS / Safari : Partager → « Sur l’écran d’accueil », puis lancer.', e: 'Icône correcte, lancement plein écran, jeu utilisable au doigt.' },
+      { a: 'iOS : démarrer une partie dans Safari, puis ouvrir l’application installée.', e: 'La partie en cours de Safari n’y apparaît pas : les deux stockages sont distincts. C’est le comportement attendu, que l’écran des Réglages annonce.' },
+      { a: 'Couper le réseau et relancer l’application installée.', e: 'Elle démarre et reste jouable lettre par lettre.' },
+      { a: 'Jouer dix minutes au doigt sur téléphone.', e: 'Aucune cible de clic trop petite, aucun défilement horizontal, rien d’inatteignable au pouce.' }
+    ]
+  },
+  {
+    id: 'S6',
+    titre: 'La bannière de mise à jour du service worker',
+    but: 'Deux chemins d’UpdatePrompt que jsdom ne peut pas atteindre : le plugin PWA y remplace le module virtuel par un stub dont needRefresh vaut toujours faux.',
+    prereq: [
+      'Un premier build servi en ligne, l’onglet (ou l’application installée) ouvert dessus.',
+      'Un second déploiement : onglet Actions → deploy.yml → Run workflow. Un redéploiement sans commit suffit.'
+    ],
+    etapes: [
+      { a: 'Rester sur l’onglet ouvert pendant le second déploiement.', e: 'Une invite de mise à jour finit par apparaître. Noter son libellé exact dans la note.' },
+      { a: 'Ne rien cliquer et observer.', e: 'Aucun rechargement silencieux : la page ne se recharge pas toute seule.' },
+      { a: 'Cliquer sur l’invite.', e: 'L’application se recharge et sert la nouvelle version.' },
+      { a: 'Refaire l’expérience en mettant l’onglet en arrière-plan, puis en revenant dessus.', e: 'L’invite apparaît au retour, sans avoir eu à recharger à la main.' }
+    ]
+  },
+  {
+    id: 'S7',
+    titre: 'Audit Lighthouse',
+    but: 'Aucun script du dépôt ne lance Lighthouse : le dossier scripts/browser-check n’a aucune dépendance, par doctrine.',
+    prereq: ['Origine en ligne, fenêtre de navigation privée, aucune extension active.', 'Mode mobile.'],
+    etapes: [
+      { a: 'Lancer l’audit sur les quatre catégories.', e: 'Noter les quatre scores dans la note, tels quels.' },
+      { a: 'Lire le détail de la catégorie Accessibilité.', e: 'Aucun point échoué. Sinon lister les intitulés exacts dans la note.' },
+      { a: 'Lire le verdict d’installabilité / manifest.', e: 'Application signalée installable, sans avertissement sur le manifest ni sur les icônes.' },
+      { a: 'Lire le détail de la catégorie Performance.', e: 'Noter les deux ou trois opportunités les plus coûteuses, sans les corriger.' }
+    ]
+  },
+  {
+    id: 'S8',
+    titre: 'axe DevTools, écran par écran',
+    but: 'check:browser lit l’arbre d’accessibilité de Chrome et compte les live regions, mais ne passe aucun analyseur de règles.',
+    prereq: ['Extension axe DevTools installée.', 'Passer chaque écran dans les deux thèmes, clair et sombre.'],
+    etapes: [
+      { a: 'Analyser l’Accueil.', e: 'Aucune violation critique ni sérieuse. Noter les modérées.' },
+      { a: 'Analyser l’écran de Jeu au repos, puis pendant la rotation de la roue, puis pendant le tour d’un bot.', e: 'Aucune violation critique ni sérieuse dans les trois états.' },
+      { a: 'Analyser l’écran de Jeu pendant l’étape « Question bonus » (clé requise).', e: 'Aucune violation critique ni sérieuse.' },
+      { a: 'Analyser Résultats, Règles, Mes énigmes, Réglages et la page introuvable.', e: 'Aucune violation critique ni sérieuse sur les cinq.' },
+      { a: 'Analyser la boîte « Proposer une réponse » ouverte.', e: 'Aucune violation critique ni sérieuse.' }
+    ]
+  },
+  {
+    id: 'S9',
+    titre: 'Le rendu, que seul l’œil juge',
+    prio: true,
+    but: 'Lisibilité et estompage : aucune assertion ne sait juger ça, et l’opacité calculée n’existe pas en jsdom.',
+    prereq: ['À faire au moins une fois sur mobile, une fois sur poste fixe.'],
+    etapes: [
+      { a: 'Regarder la roue à taille mobile.', e: 'Les cases 50, 100 et 150 sont lisibles, et la case 0 aussi. Au tirage, elle est annoncée « 0 euro ».' },
+      { a: 'Parcourir chaque écran en thème Clair, Sombre, puis Système.', e: 'Aucun texte illisible, aucun contraste douteux, rien qui disparaisse sur le fond.' },
+      { a: 'Passer en thème Sombre puis recharger la page.', e: 'Aucun flash clair au chargement.' },
+      { a: 'Sur mobile, regarder la barre d’état dans les deux thèmes.', e: 'Elle prend la couleur du thème actif.' },
+      { a: 'Pendant la rotation de la roue, regarder « Tourner », « Résoudre » et « Passer la main ».', e: 'Les trois sont visiblement estompés, tout en restant atteignables au Tab. C’est le correctif aria-disabled:opacity-50 qu’on vérifie ici.' },
+      { a: 'Regarder les touches de voyelle quand la cagnotte est sous 250 €, et une lettre déjà proposée.', e: 'Elles sont visiblement estompées, et se distinguent d’une touche jouable au premier coup d’œil.' },
+      { a: 'Zoomer à 200 %.', e: 'Rien ne déborde, aucun défilement horizontal de la page, aucun texte tronqué.' }
+    ]
+  },
+  {
+    id: 'S10',
+    titre: 'États limites qui demandent un vrai navigateur',
+    but: 'Rechargement, arrière-plan, données qui bougent sous la partie : des cas où le chien de garde et la sauvegarde se croisent.',
+    prereq: ['Aucun.'],
+    etapes: [
+      { a: 'Recharger la page pendant la rotation de la roue.', e: 'État cohérent au retour, jamais figé en « rotation » : soit le tour a abouti, soit la roue est à nouveau lançable.' },
+      { a: 'Mettre l’onglet en arrière-plan pendant la rotation, attendre dix secondes, revenir.', e: 'Le tour s’est terminé, le résultat est annoncé. Le chien de garde a pris le relais de l’animation.' },
+      { a: 'Supprimer une énigme personnelle depuis un autre onglet pendant qu’elle est jouée, puis revenir jouer.', e: 'La partie continue intacte : lettres, cagnotte et énoncé inchangés.' },
+      { a: 'Lancer une partie 2 manches, 3 adversaires, niveau le plus dur, et ne rien faire.', e: 'La partie va jusqu’aux résultats sans intervention, avec un classement cohérent.' },
+      { a: 'Ouvrir la même partie dans deux onglets et jouer un coup dans chacun.', e: 'Aucun écran cassé. Décrire le comportement dans la note : c’est un cas non spécifié, on cherche à le documenter.' },
+      { a: 'Jouer une manche, quitter par le titre d’en-tête, revenir par « Reprendre ».', e: 'Manche reprise dans le même état : lettres sorties, cagnotte, joueur courant.' }
+    ]
+  },
+  {
+    id: 'S11',
+    titre: 'Énigmes personnelles, au-delà de l’export déjà couvert',
+    but: 'La réponse attendue d’une question doit survivre à l’export, à l’import et à un tour complet.',
+    prereq: ['Écran « Mes énigmes ».'],
+    etapes: [
+      { a: 'Créer une question avec son énoncé et sa « Réponse attendue ».', e: 'Enregistrée, visible dans la liste.' },
+      { a: 'Exporter, effacer toutes les données, puis réimporter le fichier.', e: 'La question revient, avec sa réponse attendue intacte.' },
+      { a: 'Jouer une partie jusqu’à tirer cette question en manche finale (clé requise).', e: 'C’est bien la réponse attendue saisie à l’édition qui sert de référence au jugement.' },
+      { a: 'Vérifier les entrées du localStorage après tout ça.', e: 'Uniquement wof:settings:1, wof:puzzles:1, wof:save:1 et wof:mistral-key:1. Aucune autre clé préfixée wof:.' }
+    ]
+  }
+]
+
+const STORAGE_KEY = 'wof-recette-manuelle-v1'
+const MARKS = [
+  { value: 'ok', label: '✅ Conforme', cls: 'ok' },
+  { value: 'ko', label: '❌ Écart', cls: 'ko' },
+  { value: 'na', label: '— Non testé', cls: 'na' }
+]
+
+/** Un seul objet plat : { 'ctx:date': '…', 'S1.2': 'ok', 'S1.2:note': '…', free: '…' } */
+let state = load()
+
+function load() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    return raw ? JSON.parse(raw) : {}
+  } catch { return {} }
+}
+
+function save() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)) } catch { /* mode privé : tant pis */ }
+}
+
+function stepKey(scenario, index) { return scenario.id + '.' + (index + 1) }
+
+function render() {
+  const host = document.getElementById('scenarios')
+  host.textContent = ''
+
+  for (const scenario of SCENARIOS) {
+    const section = document.createElement('section')
+    section.className = 'card scenario'
+
+    const header = document.createElement('header')
+    const h2 = document.createElement('h2')
+    h2.textContent = scenario.id + ' — ' + scenario.titre
+    header.append(h2)
+    if (scenario.prio) {
+      const tag = document.createElement('span')
+      tag.className = 'tag prio'
+      tag.textContent = 'PRIORITAIRE'
+      header.append(tag)
+    }
+    section.append(header)
+
+    const but = document.createElement('p')
+    but.className = 'goal'
+    but.textContent = scenario.but
+    section.append(but)
+
+    if (scenario.prereq.length > 0) {
+      const h3 = document.createElement('h3')
+      h3.textContent = 'Prérequis'
+      const ul = document.createElement('ul')
+      ul.className = 'prereq'
+      for (const item of scenario.prereq) {
+        const li = document.createElement('li')
+        li.textContent = item
+        ul.append(li)
+      }
+      section.append(h3, ul)
+    }
+
+    const ol = document.createElement('ol')
+    ol.className = 'steps'
+    scenario.etapes.forEach((etape, index) => {
+      const key = stepKey(scenario, index)
+      const li = document.createElement('li')
+      li.className = 'step'
+
+      const action = document.createElement('p')
+      action.className = 'action'
+      action.textContent = key + '. ' + etape.a
+      const expect = document.createElement('p')
+      expect.className = 'expect'
+      expect.textContent = etape.e
+      li.append(action, expect)
+
+      const marks = document.createElement('div')
+      marks.className = 'marks'
+      marks.setAttribute('role', 'group')
+      marks.setAttribute('aria-label', 'État de l’étape ' + key)
+      for (const mark of MARKS) {
+        const label = document.createElement('label')
+        label.className = mark.cls
+        const input = document.createElement('input')
+        input.type = 'radio'
+        input.name = key
+        input.value = mark.value
+        input.checked = (state[key] ?? 'na') === mark.value
+        input.addEventListener('change', () => {
+          state[key] = mark.value
+          save()
+          refreshCounts()
+        })
+        label.append(input, document.createTextNode(mark.label))
+        marks.append(label)
+      }
+      li.append(marks)
+
+      const note = document.createElement('input')
+      note.type = 'text'
+      note.className = 'note'
+      note.placeholder = 'Ce que tu as observé (obligatoire si écart)'
+      note.setAttribute('aria-label', 'Note pour l’étape ' + key)
+      note.value = state[key + ':note'] ?? ''
+      note.addEventListener('input', () => {
+        state[key + ':note'] = note.value
+        save()
+      })
+      li.append(note)
+
+      ol.append(li)
+    })
+    section.append(ol)
+    host.append(section)
+  }
+
+  for (const field of document.querySelectorAll('[data-ctx]')) {
+    const key = 'ctx:' + field.dataset.ctx
+    field.value = state[key] ?? ''
+    field.addEventListener('input', () => { state[key] = field.value; save() })
+  }
+
+  const free = document.getElementById('free')
+  free.value = state.free ?? ''
+  free.addEventListener('input', () => { state.free = free.value; save() })
+
+  refreshCounts()
+}
+
+function allSteps() {
+  const out = []
+  for (const scenario of SCENARIOS) {
+    scenario.etapes.forEach((etape, index) => {
+      const key = stepKey(scenario, index)
+      out.push({ scenario, etape, key, mark: state[key] ?? 'na', note: (state[key + ':note'] ?? '').trim() })
+    })
+  }
+  return out
+}
+
+function refreshCounts() {
+  const steps = allSteps()
+  const ok = steps.filter((s) => s.mark === 'ok').length
+  const ko = steps.filter((s) => s.mark === 'ko').length
+  const na = steps.length - ok - ko
+  const counts = document.getElementById('counts')
+  counts.textContent = ''
+  const plural = (n, singulier, pluriel) => n + ' ' + (n > 1 ? pluriel : singulier)
+  const cells = [
+    ['c-ok', plural(ok, 'conforme', 'conformes')],
+    ['c-ko', plural(ko, 'écart', 'écarts')],
+    ['c-na', plural(na, 'non testée', 'non testées')],
+    ['c-tot', steps.length + ' étapes']
+  ]
+  for (const [cls, text] of cells) {
+    const span = document.createElement('span')
+    span.className = cls
+    span.textContent = text
+    counts.append(span)
+  }
+}
+
+function buildReport() {
+  const steps = allSteps()
+  const ctx = (name) => (state['ctx:' + name] ?? '').trim() || '(non renseigné)'
+  const lines = []
+
+  lines.push('# Recette manuelle — La Roue de la Fortune')
+  lines.push('')
+  lines.push('- Date : ' + ctx('date'))
+  lines.push('- Origine testée : ' + ctx('origine'))
+  lines.push('- Commit / version : ' + ctx('commit'))
+  lines.push('- Appareil : ' + ctx('appareil'))
+  lines.push('- Navigateur : ' + ctx('navigateur'))
+  lines.push('- Clé d’API disponible : ' + ctx('cle'))
+  lines.push('')
+
+  const ok = steps.filter((s) => s.mark === 'ok').length
+  const ko = steps.filter((s) => s.mark === 'ko').length
+  const na = steps.length - ok - ko
+  const plural = (n, singulier, pluriel) => n + ' ' + (n > 1 ? pluriel : singulier)
+  lines.push('Avancement : ' + plural(ok, 'conforme', 'conformes')
+    + ', ' + plural(ko, 'écart', 'écarts')
+    + ', ' + plural(na, 'non testée', 'non testées')
+    + ', sur ' + steps.length + ' étapes.')
+  lines.push('')
+
+  lines.push('## Synthèse par scénario')
+  lines.push('')
+  lines.push('| Scénario | Conformes | Écarts | Non testées |')
+  lines.push('| --- | --- | --- | --- |')
+  for (const scenario of SCENARIOS) {
+    const mine = steps.filter((s) => s.scenario.id === scenario.id)
+    const o = mine.filter((s) => s.mark === 'ok').length
+    const k = mine.filter((s) => s.mark === 'ko').length
+    lines.push('| ' + scenario.id + ' ' + scenario.titre + ' | ' + o + ' | ' + k + ' | ' + (mine.length - o - k) + ' |')
+  }
+  lines.push('')
+
+  const ecarts = steps.filter((s) => s.mark === 'ko')
+  lines.push('## Écarts')
+  lines.push('')
+  if (ecarts.length === 0) {
+    lines.push('Aucun écart relevé.')
+  } else {
+    for (const step of ecarts) {
+      lines.push('### ' + step.key + ' — ' + step.scenario.titre)
+      lines.push('')
+      lines.push('- Action : ' + step.etape.a)
+      lines.push('- Attendu : ' + step.etape.e)
+      lines.push('- Observé : ' + (step.note || '(note non remplie)'))
+      lines.push('')
+    }
+  }
+
+  const notesHorsEcart = steps.filter((s) => s.mark !== 'ko' && s.note !== '')
+  if (notesHorsEcart.length > 0) {
+    lines.push('## Observations relevées sur des étapes conformes ou non testées')
+    lines.push('')
+    for (const step of notesHorsEcart) {
+      lines.push('- ' + step.key + ' (' + (step.mark === 'ok' ? 'conforme' : 'non testée') + ') : ' + step.note)
+    }
+    lines.push('')
+  }
+
+  const nonTestees = steps.filter((s) => s.mark === 'na')
+  if (nonTestees.length > 0) {
+    lines.push('## Non testé')
+    lines.push('')
+    for (const step of nonTestees) {
+      lines.push('- ' + step.key + ' : ' + step.etape.a)
+    }
+    lines.push('')
+  }
+
+  const free = (state.free ?? '').trim()
+  if (free !== '') {
+    lines.push('## Remarques libres')
+    lines.push('')
+    lines.push(free)
+    lines.push('')
+  }
+
+  return lines.join('\n')
+}
+
+document.getElementById('build').addEventListener('click', () => {
+  document.getElementById('out').value = buildReport()
+  document.getElementById('copy-state').textContent = ''
+})
+
+document.getElementById('copy').addEventListener('click', async () => {
+  const out = document.getElementById('out')
+  if (out.value.trim() === '') out.value = buildReport()
+  const state_ = document.getElementById('copy-state')
+  try {
+    await navigator.clipboard.writeText(out.value)
+    state_.textContent = 'Copié.'
+  } catch {
+    out.select()
+    state_.textContent = 'Sélectionné : fais Cmd+C.'
+  }
+})
+
+document.getElementById('go-report').addEventListener('click', () => {
+  document.getElementById('out').value = buildReport()
+  document.getElementById('report').scrollIntoView({ behavior: 'smooth' })
+})
+
+document.getElementById('reset').addEventListener('click', () => {
+  if (!confirm('Effacer toutes les coches et toutes les notes ?')) return
+  state = {}
+  save()
+  document.getElementById('out').value = ''
+  render()
+})
+
+render()
+</script>
+</body>
+</html>
