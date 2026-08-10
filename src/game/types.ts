@@ -52,6 +52,23 @@ export interface SpinOutcome {
   readonly spinId: number
 }
 
+/**
+ * Ce qu'un lanceur décide : une distance à parcourir, pas un résultat.
+ * L'aléa (la petite imprécision de ±1 case) est déjà inclus dans `travel`.
+ */
+export interface WheelThrow {
+  readonly spinId: number
+  readonly travel: number // degrés parcourus, toujours ≥ MIN_TRAVEL_DEGREES − JITTER_DEGREES
+  readonly durationMs: number
+}
+
+/** Ce que le reducer déduit d'un lancer, à partir de l'angle où la roue était au repos. */
+export interface SpinLanding extends SpinOutcome {
+  readonly travel: number // corrigé par l'écart aux bords, à animer tel quel
+  readonly durationMs: number
+  readonly angle: number // angle de repos après le lancer, dans [0, 360)
+}
+
 export type PlayerKind =
   | { readonly type: 'human' }
   | { readonly type: 'bot'; readonly level: 'easy' | 'normal' }

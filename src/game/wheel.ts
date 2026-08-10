@@ -1,4 +1,4 @@
-import type { Segment, SpinOutcome } from './types'
+import type { Segment, SpinLanding, SpinOutcome, WheelThrow } from './types'
 
 /**
  * Disposition de la roue, du haut dans le sens horaire.
@@ -64,4 +64,74 @@ export function pickSpinOutcome(rng: () => number, spinId: number): SpinOutcome 
   const index = Math.min(SEGMENT_COUNT - 1, Math.floor(rng() * SEGMENT_COUNT))
   const offset = (rng() * 2 - 1) * OFFSET_BOUND
   return { index, offset, spinId }
+}
+
+/** En dessous, un lancer serait trop mou pour paraître réel : deux tours pleins sont le plancher. */
+export const MIN_TRAVEL_DEGREES = 720
+
+/** Amplitude ajoutée au plancher par la force du lancer : jusqu'à quatre tours de plus. */
+export const TRAVEL_SPAN_DEGREES = 1440
+
+/** Imprécision humaine du lancer : au plus une case en trop ou en moins autour de la cible. */
+export const JITTER_DEGREES = SEGMENT_ANGLE
+
+/** Durée minimale de l'animation, pour un lancer au ralenti. */
+export const SPIN_MIN_MS = 2600
+
+/** Durée maximale de l'animation, pour un lancer à pleine puissance. */
+export const SPIN_MAX_MS = 4200
+
+export function normalizeDegrees(degrees: number): number {
+  return ((degrees % 360) + 360) % 360
+}
+
+/** Angle de rotation qui amène (index, offset) sous l'aiguille. Inverse de la dérivation d'index. */
+export function angleForLanding(index: number, offset: number): number {
+  return normalizeDegrees(-(index * SEGMENT_ANGLE + SEGMENT_ANGLE / 2 + offset))
+}
+
+export function randomForce(rng: () => number): number {
+  return rng()
+}
+
+export function throwFromForce(force: number, rng: () => number, spinId: number): WheelThrow {
+  const clamped = Math.min(1, Math.max(0, force))
+  const jitter = (rng() * 2 - 1) * JITTER_DEGREES
+  return {
+    spinId,
+    travel: MIN_TRAVEL_DEGREES + clamped * TRAVEL_SPAN_DEGREES + jitter,
+    durationMs: Math.round(SPIN_MIN_MS + clamped * (SPIN_MAX_MS - SPIN_MIN_MS)),
+  }
+}
+
+/**
+ * Déduit l'atterrissage à partir de l'angle de repos précédent et d'un lancer.
+ * Une roue arrêtée pile sur une séparation entre deux segments ne peut pas être
+ * tranchée à l'œil : `offset` est rabattu dans `[-OFFSET_BOUND, OFFSET_BOUND]`, et
+ * `travel` est corrigé du même montant que `offset` pour que l'image animée et le
+ * modèle disent la même chose. La correction vaut au plus 2°, la marge laissée par
+ * `OFFSET_BOUND` aux bords du segment.
+ */
+export function resolveThrow(fromAngle: number, thrown: WheelThrow): SpinLanding {
+  const under = normalizeDegrees(-normalizeDegrees(fromAngle + thrown.travel))
+  const index = Math.min(SEGMENT_COUNT - 1, Math.floor(under / SEGMENT_ANGLE))
+  const raw = under - (index * SEGMENT_ANGLE + SEGMENT_ANGLE / 2)
+  const offset = Math.max(-OFFSET_BOUND, Math.min(OFFSET_BOUND, raw))
+  const travel = thrown.travel + (raw - offset)
+  return {
+    spinId: thrown.spinId,
+    durationMs: thrown.durationMs,
+    travel,
+    index,
+    offset,
+    angle: normalizeDegrees(fromAngle + travel),
+  }
+}
+
+/** Étiquette de force, pour l'annonce vocale. */
+export function forceLabel(travel: number): 'faible' | 'moyen' | 'fort' {
+  const over = travel - MIN_TRAVEL_DEGREES
+  if (over < TRAVEL_SPAN_DEGREES / 3) return 'faible'
+  if (over < (TRAVEL_SPAN_DEGREES * 2) / 3) return 'moyen'
+  return 'fort'
 }
