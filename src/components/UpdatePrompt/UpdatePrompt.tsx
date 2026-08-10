@@ -1,20 +1,32 @@
 import { useEffect, useRef } from 'react'
-import { useRegisterSW } from 'virtual:pwa-register/react'
+import { useRegisterSW as useRegisterSWDefault } from 'virtual:pwa-register/react'
 import { useAnnouncer } from '../../hooks/useAnnouncer'
 import UpdateBanner, { UPDATE_MESSAGE } from './UpdateBanner'
+
+interface UpdatePromptProps {
+  /**
+   * Couture d'injection, à l'image de `createJudge` (`src/llm/index.ts`), qui
+   * reçoit un `fetchImpl` de test plutôt que de mocker `fetch` globalement.
+   * En production, la valeur par défaut est le vrai hook du module virtuel :
+   * le comportement livré ne change pas d'un iota.
+   *
+   * En dev comme en test, le plugin PWA remplace `virtual:pwa-register/react`
+   * par un stub inerte dont `needRefresh` vaut toujours `false` — sans cette
+   * prop, l'annonce et le rappel de `visibilitychange` resteraient hors de
+   * portée de tout test et ne se vérifieraient qu'à la main, sur un vrai
+   * build servi par `yarn preview`. Les tests de ce dossier fournissent un
+   * stub qui pilote `needRefresh` et livre une fausse
+   * `ServiceWorkerRegistration`.
+   */
+  readonly useRegisterSW?: typeof useRegisterSWDefault
+}
 
 /**
  * Coquille de câblage : elle isole le hook d'infrastructure (`useRegisterSW`,
  * qui parle au service worker réel) du composant d'affichage testable
  * `UpdateBanner`.
- *
- * Elle n'est pas testée, et ne peut pas l'être en l'état : en dev comme en test,
- * le plugin remplace le module virtuel par un stub inerte dont `needRefresh`
- * vaut toujours `false`. Aucun test ne peut donc atteindre ni l'annonce, ni le
- * rappel de `visibilitychange` — ces deux chemins ne se vérifient qu'à la main,
- * sur un vrai build servi par `yarn preview`.
  */
-export default function UpdatePrompt() {
+export default function UpdatePrompt({ useRegisterSW = useRegisterSWDefault }: UpdatePromptProps = {}) {
   const registrationRef = useRef<ServiceWorkerRegistration | undefined>(undefined)
   const { say } = useAnnouncer()
 

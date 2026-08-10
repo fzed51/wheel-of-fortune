@@ -14,8 +14,11 @@ interface KeyboardKeyProps {
   readonly buttonRef: Ref<HTMLButtonElement>
 }
 
+// `aria-disabled:opacity-50`, jamais `disabled:` : la touche indisponible
+// porte déjà `aria-disabled` (jamais `disabled`, qui lui ferait perdre le
+// focus), et Tailwind v4 sait cibler cet attribut directement.
 const BASE_CLASSES =
-  'flex min-h-11 min-w-11 items-center justify-center rounded-md border text-base font-semibold uppercase'
+  'flex min-h-11 min-w-11 items-center justify-center rounded-md border text-base font-semibold uppercase aria-disabled:opacity-50'
 
 /**
  * `aria-label` porte l'état : un lecteur d'écran n'a pas d'autre moyen de savoir
