@@ -18,9 +18,11 @@ import {
   MAX_OPPONENTS,
   MAX_ROUND_COUNT,
   THEMES,
+  THROW_MODES,
   type BotLevel,
   type Settings,
   type Theme,
+  type ThrowMode,
 } from './settings'
 
 /**
@@ -289,6 +291,9 @@ export function decodeSettings(raw: string): Decoded<Settings> {
     isCount(stored.opponents) && stored.opponents <= MAX_OPPONENTS
       ? stored.opponents
       : DEFAULT_SETTINGS.opponents
+  const throwMode: ThrowMode = isOneOf(stored.throwMode, THROW_MODES)
+    ? stored.throwMode
+    : DEFAULT_SETTINGS.throwMode
 
   return {
     ok: true,
@@ -300,6 +305,7 @@ export function decodeSettings(raw: string): Decoded<Settings> {
       roundCount,
       opponents,
       botLevel,
+      throwMode,
     },
   }
 }

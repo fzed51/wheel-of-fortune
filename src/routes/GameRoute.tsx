@@ -33,6 +33,7 @@ import {
 } from '../game/rules'
 import type { Game, RoundState } from '../game/types'
 import { usePhysicalKeyboard } from '../hooks/usePhysicalKeyboard'
+import { useSettings } from '../hooks/useSettings'
 
 /**
  * Phrase de fin de manche : victoire (gagnant, gain, réponse) ou manche annulée
@@ -77,6 +78,10 @@ export default function GameRoute() {
     useGameCommands()
   const lastEvent = useLastEvent()
   const judgeFailure = useJudgeFailure()
+  const { settings } = useSettings()
+  // Réglage persisté : un seul clic lance la roue, la force est tirée au
+  // hasard par le provider (`spin()` sans argument). Rien d'autre ne change.
+  const simpleThrow = settings.throwMode === 'simple'
 
   // La boîte est un élément d'interface, pas un état de partie : le reducer
   // n'a aucune raison de savoir qu'un dialogue est affiché. `ResolveDialog` se
@@ -131,8 +136,15 @@ export default function GameRoute() {
   // Premier appel : arme la jauge sans encore lancer. Second appel : lit la
   // force accumulée et déclenche le vrai lancer. C'est ce qui fait d'un
   // second « Espace » l'équivalent d'un second clic, sans que le hook clavier
-  // n'ait besoin de connaître la jauge.
+  // n'ait besoin de connaître la jauge. En mode simple, un seul appel suffit :
+  // `spin()` sans argument tire la force au hasard côté provider. C'est aussi
+  // ce qui vaut pour la touche « Espace » — le hook clavier physique appelle
+  // cette même fonction, il ne sait rien du mode de lancer.
   function handleSpin(): void {
+    if (simpleThrow) {
+      spin()
+      return
+    }
     if (!gauge.charging) {
       gauge.start()
       return
@@ -161,6 +173,8 @@ export default function GameRoute() {
    * de bot.
    */
   const botTurn = isBotTurn(game)
+
+  const spinLabel = simpleThrow ? 'Tourner' : gauge.charging ? 'Stop' : 'Lancer'
 
   return (
     <div className="flex flex-col gap-4">
@@ -225,7 +239,12 @@ export default function GameRoute() {
           canPass={isStuck(game) && !botTurn}
           vowelCost={game.config.vowelCost}
           spinning={round.phase.kind === 'spinning'}
-          charging={gauge.charging}
+          // Double garde : en mode simple `gauge.start()` n'est jamais appelé,
+          // donc `gauge.charging` ne peut pas valoir vrai — mais l'écrire ainsi
+          // rend le mode simple insensible à ce que fait la jauge, ce qui est
+          // le sens même du réglage.
+          charging={!simpleThrow && gauge.charging}
+          spinLabel={spinLabel}
           markerRef={gauge.markerRef}
           onSpin={handleSpin}
           onResolve={openResolve}

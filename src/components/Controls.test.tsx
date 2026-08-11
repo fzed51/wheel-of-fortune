@@ -18,6 +18,7 @@ function props(overrides: Partial<Parameters<typeof Controls>[0]> = {}) {
     vowelCost: 250,
     spinning: false,
     charging: false,
+    spinLabel: 'Lancer',
     markerRef: createRef<HTMLDivElement | null>(),
     onSpin: vi.fn(),
     onResolve: vi.fn(),
@@ -27,21 +28,22 @@ function props(overrides: Partial<Parameters<typeof Controls>[0]> = {}) {
 }
 
 describe('Controls', () => {
-  it('affiche « Lancer » au repos et « Stop » en charge', () => {
-    const { rerender } = render(<Controls {...props({ charging: false })} />)
-    expect(screen.getByRole('button', { name: 'Lancer' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument()
+  it('affiche le libellé de lancer reçu en prop, tel quel', () => {
+    // Le composant ne calcule plus ce libellé (mode de lancer, état de
+    // charge) : il se contente de l'afficher, la route en décide.
+    const { rerender } = render(<Controls {...props({ spinLabel: 'Tourner' })} />)
+    expect(screen.getByRole('button', { name: 'Tourner' })).toBeInTheDocument()
 
-    rerender(<Controls {...props({ charging: true })} />)
+    rerender(<Controls {...props({ spinLabel: 'Stop' })} />)
     expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Lancer' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Tourner' })).not.toBeInTheDocument()
   })
 
   it('en charge, le bouton de lancer reste actif même quand canSpin est faux', () => {
     // Preuve que l'arrêt de la jauge n'est jamais bloqué : la charge n'a pu
     // démarrer que sur un lancer légal, et `canSpin` peut changer sous elle
     // (par exemple si le tour venait à changer) sans que « Stop » ne se fige.
-    render(<Controls {...props({ charging: true, canSpin: false, spinning: false })} />)
+    render(<Controls {...props({ charging: true, canSpin: false, spinning: false, spinLabel: 'Stop' })} />)
 
     expect(screen.getByRole('button', { name: 'Stop' })).toHaveAttribute('aria-disabled', 'false')
   })

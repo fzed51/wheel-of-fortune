@@ -4,7 +4,8 @@ import { act, fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { CONSONANTS } from '../game/puzzle'
 import type { GameState, Player } from '../game/types'
-import { clearAllData, saveGame, saveMistralKey } from '../storage/persist'
+import { clearAllData, saveGame, saveMistralKey, saveSettings } from '../storage/persist'
+import { DEFAULT_SETTINGS } from '../storage/settings'
 import {
   avecLettres,
   avecPhase,
@@ -213,6 +214,37 @@ describe('GameRoute', () => {
     // tourne : `spin` n'a pas encore été appelé, seule la charge a démarré.
     expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument()
     expect(screen.getByRole('status')).not.toHaveTextContent('La roue tourne')
+  })
+
+  it('en mode « lancer simple », un seul clic sur « Tourner » lance la roue', async () => {
+    saveSettings({ ...DEFAULT_SETTINGS, throwMode: 'simple' })
+    saveGame(jeu(demarrer({ players: [joueur('Alice')] })))
+    const user = userEvent.setup()
+    monterApp('/jeu')
+
+    await user.click(screen.getByRole('button', { name: 'Tourner' }))
+
+    // Un seul appui suffit : la partie entre en rotation, gelant les
+    // commandes — le même mécanisme que les autres tests de cette suite.
+    expect(screen.getByRole('button', { name: 'Tourner' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+  })
+
+  it('en mode « lancer simple », ni « Lancer », ni « Stop », ni jauge n’apparaissent', async () => {
+    saveSettings({ ...DEFAULT_SETTINGS, throwMode: 'simple' })
+    saveGame(jeu(demarrer({ players: [joueur('Alice')] })))
+    const user = userEvent.setup()
+    monterApp('/jeu')
+
+    expect(screen.queryByRole('button', { name: 'Lancer' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Tourner' }))
+
+    expect(screen.queryByRole('button', { name: 'Lancer' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument()
   })
 
   it('deux « Espace » arment puis lancent la roue, comme deux clics', () => {

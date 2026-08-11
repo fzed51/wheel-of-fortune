@@ -325,6 +325,28 @@ describe('decodeSettings', () => {
     const decoded = decodeSettings(enveloppe({ ...DEFAULT_SETTINGS, apiKey: 'sk-secret' }))
     expect(decoded.ok && Object.keys(decoded.value)).toEqual(Object.keys(DEFAULT_SETTINGS))
   })
+
+  it('relit une sauvegarde écrite avant ce réglage, sans `throwMode`, sans perdre le reste', () => {
+    // Cas réel d'une mise à jour de l'application : `SCHEMA_VERSION` ne bouge
+    // pas pour ce champ, une entrée qui en manque doit retomber sur 'gauge'.
+    const sansThrowMode: Record<string, unknown> = { ...DEFAULT_SETTINGS, theme: 'dark' }
+    delete sansThrowMode.throwMode
+    const decoded = decodeSettings(enveloppe(sansThrowMode))
+    expect(decoded).toEqual({
+      ok: true,
+      value: { ...DEFAULT_SETTINGS, theme: 'dark', throwMode: 'gauge' },
+    })
+  })
+
+  it('conserve `throwMode: simple` à l’aller-retour', () => {
+    const settings = { ...DEFAULT_SETTINGS, throwMode: 'simple' as const }
+    expect(decodeSettings(encodeRecord(settings))).toEqual({ ok: true, value: settings })
+  })
+
+  it('retombe sur `gauge` quand `throwMode` porte une valeur inconnue', () => {
+    const decoded = decodeSettings(enveloppe({ ...DEFAULT_SETTINGS, throwMode: 'zigzag' }))
+    expect(decoded).toEqual({ ok: true, value: DEFAULT_SETTINGS })
+  })
 })
 
 describe('decodePuzzles', () => {

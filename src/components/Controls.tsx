@@ -13,6 +13,8 @@ export interface ControlsProps {
   readonly spinning: boolean
   /** La jauge de puissance est en charge : le bouton de lancer devient le bouton d'arrêt. */
   readonly charging: boolean
+  /** Libellé du bouton de lancer : dépend du mode de lancer et de l'état de charge, que ce composant n'a pas à connaître. */
+  readonly spinLabel: string
   readonly markerRef: RefObject<HTMLDivElement | null>
   readonly onSpin: () => void
   readonly onResolve: () => void
@@ -33,6 +35,7 @@ export default function Controls({
   vowelCost,
   spinning,
   charging,
+  spinLabel,
   markerRef,
   onSpin,
   onResolve,
@@ -58,7 +61,7 @@ export default function Controls({
             onSpin()
           }}
         >
-          {charging ? 'Stop' : 'Lancer'}
+          {spinLabel}
         </button>
         <button
           type="button"
