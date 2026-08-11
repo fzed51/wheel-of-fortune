@@ -314,15 +314,14 @@ const SCENARIOS = [
     id: 'S9',
     titre: 'Le rendu, que seul l’œil juge',
     prio: true,
-    but: 'Lisibilité et estompage : aucune assertion ne sait juger ça, et l’opacité calculée n’existe pas en jsdom.',
+    but: 'Lisibilité, contraste et thèmes : ce que seul l’œil peut encore juger. L’opacité de l’estompage elle-même est vérifiée par check:browser (contrôle « un bouton inerte s’estompe vraiment ») dans un vrai Chrome, où getComputedStyle existe ; il reste ici la question de savoir si cet estompage se voit et se distingue bien, dans les deux thèmes.',
     prereq: ['À faire au moins une fois sur mobile, une fois sur poste fixe.'],
     etapes: [
       { a: 'Regarder la roue à taille mobile.', e: 'Les cases 50, 100 et 150 sont lisibles, et la case 0 aussi. Au tirage, elle est annoncée « 0 euro ».' },
       { a: 'Parcourir chaque écran en thème Clair, Sombre, puis Système.', e: 'Aucun texte illisible, aucun contraste douteux, rien qui disparaisse sur le fond.' },
       { a: 'Passer en thème Sombre puis recharger la page.', e: 'Aucun flash clair au chargement.' },
       { a: 'Sur mobile, regarder la barre d’état dans les deux thèmes.', e: 'Elle prend la couleur du thème actif.' },
-      { a: 'Pendant la rotation de la roue, regarder « Lancer », « Résoudre » et « Passer la main ».', e: 'Les trois sont visiblement estompés, tout en restant atteignables au Tab. C’est le correctif aria-disabled:opacity-50 qu’on vérifie ici.' },
-      { a: 'Regarder les touches de voyelle quand la cagnotte est sous 250 €, et une lettre déjà proposée.', e: 'Elles sont visiblement estompées, et se distinguent d’une touche jouable au premier coup d’œil.' },
+      { a: 'Pendant la rotation de la roue, regarder « Lancer », « Résoudre » et « Passer la main ».', e: 'Les trois sont visiblement estompés, tout en restant atteignables au Tab. check:browser ne mesure l’opacité qu’au repos (« Passer la main » contre « Lancer ») : cette étape reste la seule à vérifier les trois boutons pendant une vraie rotation, et le maintien au Tab.' },
       { a: 'Zoomer à 200 %.', e: 'Rien ne déborde, aucun défilement horizontal de la page, aucun texte tronqué.' }
     ]
   },
