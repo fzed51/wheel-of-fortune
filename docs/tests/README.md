@@ -5,7 +5,7 @@ de non-régression suivantes. Elles se rejouent à l'identique, campagne après 
 
 | Fichier | Rôle |
 | --- | --- |
-| [`recette-manuelle.html`](recette-manuelle.html) | Douze scénarios, soixante-dix étapes, cases à cocher et compte rendu copiable |
+| [`recette-manuelle.html`](recette-manuelle.html) | Douze scénarios, soixante-neuf étapes, cases à cocher et compte rendu copiable |
 | `rapports/` | Les comptes rendus des campagnes passées, un fichier par campagne |
 
 ## Passer une campagne
