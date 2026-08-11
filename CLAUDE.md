@@ -78,24 +78,28 @@ Découper chaque tâche en zones de fichiers bornées et **disjointes**, puis le
 graphify update .        # met le graphe à jour, incrémental, sans clé d'API
 ```
 
-Un graphe de 802 nœuds et 2273 arêtes couvre **tout le dépôt** — `src/`, mais aussi `scripts/browser-check/`, les `tsconfig`, `package.json` et `public/theme-init.js`. Il est reconstruit automatiquement par les hooks git après chaque commit et chaque changement de branche ; `graphify update .` n'est à lancer à la main qu'après des modifications non commitées.
+Un graphe de 959 nœuds et 2859 arêtes couvre **tout le dépôt** — `src/`, mais aussi `scripts/browser-check/`, les `tsconfig`, `package.json` et `public/theme-init.js`. Il est reconstruit automatiquement par les hooks git après chaque commit et chaque changement de branche ; `graphify update .` n'est à lancer à la main qu'après des modifications non commitées.
+
+L'outil est le paquet PyPI `graphifyy`, en version 0.9.39, installé dans le venv `~/.venvs/graphify` vers lequel `/opt/homebrew/bin/graphify` est un lien. Le mettre à jour, c'est `~/.venvs/graphify/bin/pip install -U graphifyy` puis `graphify hook install` pour que les hooks git repointent le bon interpréteur.
 
 Le graphe remplace une exploration à l'aveugle, à condition de l'interroger avec **les identifiants du code** — fonctions suffixées de `()`, fichiers avec leur extension. Coûts mesurés :
 
 | Commande | Sortie | Usage |
 | --- | --- | --- |
-| `graphify path "reduce()" "createJudge()"` | ~120 caractères | par où deux symboles se rejoignent |
-| `graphify explain "reduce()"` | ~1 000 caractères | source, communauté, voisins directs |
-| `graphify affected "reduce()"` | ~2 000 caractères | ce qui casse si on y touche |
+| `graphify path "jouer()" "reduce()"` | 70 à 120 caractères | par où deux symboles se rejoignent |
+| `graphify explain "reduce()"` | ~1 600 caractères | source, communauté, voisins directs |
+| `graphify affected "reduce()"` | ~3 000 caractères | ce qui casse si on y touche |
 
-`graphify-out/GRAPH_REPORT.md` (~8 600 caractères) ne vaut d'être lu que pour sa liste des nœuds les plus connectés — `Puzzle` à 32 arêtes, `reduce()` à 31, ce qui nomme les vraies abstractions du projet. La moitié du fichier est une liste de « Community N » sans nom : les communautés ne se nomment qu'avec une clé de LLM, qu'aucun backend supporté ne trouve ici.
+`graphify-out/GRAPH_REPORT.md` (~11 400 caractères) ne vaut d'être lu que pour sa liste des nœuds les plus connectés — `reduce()` à 38 arêtes, `Puzzle` à 33, `jouer()` à 32, ce qui nomme les vraies abstractions du projet. Le reste du fichier est une liste de 59 « Community N » sans nom : les communautés ne se nomment qu'avec une clé de LLM, qu'aucun backend supporté ne trouve ici.
 
-Quatre pièges, tous vérifiés :
+Six pièges, tous vérifiés :
 
-- **`graphify query` est à éviter.** Il fabrique ses nœuds de départ à partir des mots de la question ; posée en français, elle part sur des nœuds inexistants et rend 6 000 caractères de liste sans rapport. À la rigueur, avec les termes du code et `--budget 500`.
-- **Ne jamais lire `graphify-out/graph.json`.** Plus de 900 000 caractères, soit environ 260 000 tokens — il se requête, il ne se lit pas.
-- **Le graphe ignore les constantes et les valeurs.** `SCHEMA_VERSION` n'y figure pas ; ce genre de symbole se cherche au `grep`.
-- **`graphify extract` à la racine échoue**, faute de clé pour l'extraction sémantique du README, de `docs/` et des images. `graphify update` n'a pas ce défaut : il ne fait que de l'AST. Et **ne jamais viser un sous-dossier** (`graphify update src`) : la sortie est écrite dans `src/graphify-out/`, au milieu du code.
+- **`graphify path` ne suit que le sens des arêtes.** Deux symboles qu'aucune chaîne d'appels ne relie dans ce sens-là rendent « No directed path found ». Le contournement est `--undirected`, mais **placé après les deux nœuds** (`graphify path "reduce()" "createJudge()" --undirected`) : en tête il est pris pour un nom de nœud. Le flag est absent du `--help` de la commande.
+- **`graphify query` est à éviter.** Il fabrique ses nœuds de départ à partir des mots de la question ; posée en français, elle part sur des nœuds inexistants et rend 6 400 caractères de liste sans rapport. À la rigueur, avec les termes du code et `--budget 500`.
+- **Ne jamais lire `graphify-out/graph.json`.** Plus de 1 300 000 caractères, soit environ 380 000 tokens — il se requête, il ne se lit pas.
+- **Les constantes sont indexées, mais pas toutes.** 60 des 64 constantes exportées en majuscules sont dans le graphe, `SCHEMA_VERSION` compris ; manquent `WHEEL`, `CATEGORIES`, `INPUT` et `MAX_OPPONENTS`, ce dernier étant déclaré dans deux fichiers. Une absence du graphe ne prouve donc rien : la confirmer au `grep`.
+- **`graphify hook install` écrit un `.gitattributes`** déclarant un pilote de fusion pour `graphify-out/graph.json`. Ici il ne sert à rien — `graphify-out/` est ignoré par git, donc jamais en conflit. Le supprimer après coup ; `graphify hook uninstall` le retire aussi.
+- **`graphify extract` à la racine échoue**, faute de clé pour l'extraction sémantique du README, de `docs/` et des images. `graphify update` n'a pas ce défaut : il ne fait que de l'AST — il avertit seulement que `.claude/settings.json` ne produit aucun nœud, ce qui est un défaut de l'outil, sans conséquence ici. Et **ne jamais viser un sous-dossier** (`graphify update src`) : la sortie est écrite dans `src/graphify-out/`, au milieu du code.
 
 ## Git
 
