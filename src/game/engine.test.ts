@@ -15,7 +15,7 @@ import {
 } from './rules'
 import type { Game, GameState, Puzzle } from './types'
 import { asPlayerId } from './types'
-import { pickSpinOutcome } from './wheel'
+import { throwFromForce } from './wheel'
 import {
   BANQUEROUTE,
   CASH_ZERO,
@@ -33,6 +33,7 @@ import {
   joueur,
   joueurNomme,
   jouer,
+  lancer,
   manche,
   proposer,
   question,
@@ -51,6 +52,12 @@ describe('game/start', () => {
     expect(manche(state).guessed).toEqual([])
     expect(manche(state).phase.kind).toBe('awaiting-action')
     expect(game.playedPuzzleIds).toHaveLength(1)
+  })
+
+  it('démarre la roue à l’angle de repos de montage', () => {
+    // La partie neuve ne branche encore aucun lancer sur cet angle (ce sera T3) :
+    // seule sa valeur initiale est garantie ici.
+    expect(jeu(demarrer()).wheelAngle).toBe(0)
   })
 
   it('range l’énigme par valeur, pas par référence', () => {
@@ -106,24 +113,55 @@ describe('règlement du tirage', () => {
   })
 
   it('ignore un règlement dont le spinId est périmé', () => {
-    const by = courant(demarrer()).id
-    const lance = jouer(demarrer(), {
-      type: 'wheel/spin',
-      by,
-      spin: { index: cash(500), offset: 0, spinId: 7 },
-    })
+    const depart = demarrer()
+    const by = courant(depart).id
+    const lance = jouer(depart, lancer(jeu(depart), by, cash(500), 7))
     expect(reduce(lance, { type: 'wheel/settled', by, spinId: 8 })).toBe(lance)
   })
 
   it('refuse de lancer quand plus aucune consonne n’est disponible', () => {
     const state = avecLettres(demarrer(), [...CONSONANTS])
     expect(canSpin(jeu(state))).toBe(false)
-    const rejet = reduce(state, {
-      type: 'wheel/spin',
-      by: courant(state).id,
-      spin: { index: cash(500), offset: 0, spinId: 1 },
-    })
+    const rejet = reduce(state, lancer(jeu(state), courant(state).id, cash(500)))
     expect(rejet).toBe(state)
+  })
+})
+
+describe('wheel/spin — angle de la roue', () => {
+  it('avance wheelAngle jusqu’à l’angle où la phase spinning atterrit', () => {
+    const depart = demarrer()
+    expect(jeu(depart).wheelAngle).toBe(0)
+    const apres = jouer(depart, lancer(jeu(depart), courant(depart).id, cash(500)))
+    const game = jeu(apres)
+    expect(game.wheelAngle).not.toBe(0)
+    const phase = manche(apres).phase
+    expect(phase.kind).toBe('spinning')
+    if (phase.kind === 'spinning') expect(phase.spin.angle).toBe(game.wheelAngle)
+  })
+
+  it('un même lancer atterrit sur des cases différentes selon l’angle de repos précédent', () => {
+    const base = jeu(demarrer())
+    const by = currentPlayerOf(base).id
+    const action = { type: 'wheel/spin' as const, by, thrown: { spinId: 1, travel: 800, durationMs: 3000 } }
+
+    const depuisZero = manche(reduce({ kind: 'playing', game: base }, action)).phase
+    const depuis180 = manche(
+      reduce({ kind: 'playing', game: { ...base, wheelAngle: 180 } }, action),
+    ).phase
+
+    expect(depuisZero.kind).toBe('spinning')
+    expect(depuis180.kind).toBe('spinning')
+    if (depuisZero.kind === 'spinning' && depuis180.kind === 'spinning') {
+      expect(depuisZero.spin.index).not.toBe(depuis180.spin.index)
+    }
+  })
+
+  it('un travel calibré vers Banqueroute y fait bien atterrir la roue', () => {
+    const depart = demarrer()
+    const apres = jouer(depart, lancer(jeu(depart), courant(depart).id, BANQUEROUTE))
+    const phase = manche(apres).phase
+    expect(phase.kind).toBe('spinning')
+    if (phase.kind === 'spinning') expect(phase.segment.kind).toBe('bankrupt')
   })
 })
 
@@ -359,7 +397,7 @@ describe('appropriation des actions', () => {
     const state = avecPot(demarrer(), 0, 250)
     const intrus = joueurNomme(state, 'Bob').id
     const actions: readonly GameAction[] = [
-      { type: 'wheel/spin', by: intrus, spin: { index: cash(500), offset: 0, spinId: 1 } },
+      lancer(jeu(state), intrus, cash(500)),
       { type: 'wheel/settled', by: intrus, spinId: 1 },
       { type: 'letter/consonant', by: intrus, letter: 'T' },
       { type: 'letter/buy-vowel', by: intrus, letter: 'E' },
@@ -1014,7 +1052,9 @@ function actionPour(
 
   switch (type) {
     case 'wheel/spin':
-      return { type, by, spin: pickSpinOutcome(rng, tick) }
+      // Deux tirages consommés (force puis imprécision), comme l'ancien
+      // `pickSpinOutcome` : les graines du fuzz restent valables telles quelles.
+      return { type, by, thrown: throwFromForce(rng(), rng, tick) }
     case 'wheel/settled': {
       if (round.phase.kind !== 'spinning') throw new Error('Règlement hors rotation')
       return { type, by, spinId: round.phase.spin.spinId }

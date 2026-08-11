@@ -37,7 +37,8 @@ yarn lint && yarn test && yarn build
 | `src/llm/`, `src/components/BonusQuestion/`, l'étape bonus de `src/hooks/useGameEffects.ts`, la partie clé de `src/routes/SettingsRoute.tsx` | S2, S3, S4 |
 | `vite.config.ts`, `pwa-assets.config.ts`, `public/`, `src/components/UpdatePrompt/` | S5, S6, S7 |
 | `src/components/classes.ts`, les couleurs Tailwind, `public/theme-init.js`, `src/components/Wheel/` | S9 |
-| `src/game/wheel.ts`, `src/game/setup.ts` (barème, montants) | S1, S9 |
+| `src/game/wheel.ts`, `src/game/setup.ts` (barème, montants) | S1, S9, S12 |
+| `src/components/PowerGauge/`, `src/components/Wheel/useWheelSpin.ts`, le lancer de `src/routes/GameRoute.tsx` | S12 |
 | `src/storage/`, `SCHEMA_VERSION` | S10, S11 |
 | `src/components/PuzzleEditor/`, `src/data/puzzles/` | S11 |
 | Une route, un écran, un nom accessible | S8 |
@@ -60,6 +61,17 @@ Découper chaque tâche en zones de fichiers bornées et **disjointes**, puis le
 - Exiger de chaque agent qu'il dise **ce qu'il casserait pour faire rougir chacun de ses tests**. C'est ce qui révèle les tests complaisants.
 - Un agent peut mourir en vol (erreur d'API, watchdog). Si un rapport manque, **relire le diff de sa zone** avant de la considérer perdue : le travail est souvent déjà là.
 - Le contenu inventé (énigmes, questions) s'écrit dans le fil principal, validé par un fichier de test jetable qui passe les candidats par les vraies fonctions du dépôt.
+
+### Économiser le contexte du fil principal
+
+Le contexte du fil principal est la ressource rare du projet : c'est lui qui porte le plan, l'ordonnancement des vagues et les décisions déjà prises. Une fois plein, tout cela se perd dans un résumé. Le contexte d'un sous-agent, lui, est jetable — il meurt avec sa tâche. **Donc tout ce qui peut être lu par un sous-agent doit l'être.**
+
+- **Ne pas relire le diff produit par un sous-agent.** Son rapport, `git status --short` et `git diff --stat` suffisent à contrôler que la zone est respectée. Ne descendre dans le diff que sur un point précis que le rapport laisse douteux.
+- **Lire par extraits, pas par fichiers entiers.** `grep -n` avec du contexte, ou `sed -n 'a,bp'`, quand seules quelques lignes servent à vérifier un fait de brief. Lire un fichier en entier se justifie quand il est court ou qu'il faut vraiment le comprendre.
+- **Ne jamais lire le fichier de sortie JSONL d'un sous-agent** : c'est sa transcription complète, elle noie le contexte à elle seule.
+- **Écrire des briefs auto-suffisants.** Un brief qui contient les faits déjà vérifiés et le code à écrire évite au sous-agent une exploration — et évite au fil principal de la refaire pour la lui expliquer.
+- **Déléguer l'investigation bruyante** (balayage `grep` large, lecture de journaux, recherche à l'aveugle) à un sous-agent, et ne garder que ses conclusions.
+- Les portes finales (`yarn lint && yarn test && yarn build`) se relancent depuis le fil principal, mais en n'en gardant que la fin (`| tail -8`) : la sortie complète de Vitest ne dit rien de plus que son décompte.
 
 ## Invariants à ne pas casser
 

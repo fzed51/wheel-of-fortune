@@ -1,4 +1,4 @@
-import type { Consonant, GameConfig, PlayerId, Player, Puzzle, SpinOutcome, Vowel } from './types'
+import type { Consonant, GameConfig, PlayerId, Player, Puzzle, Vowel, WheelThrow } from './types'
 
 /**
  * Toute action de joueur porte `by`. Le reducer rejette celles qui ne viennent
@@ -16,7 +16,7 @@ export type GameAction =
       readonly puzzle: Puzzle
       readonly firstPlayer: number
     }
-  | { readonly type: 'wheel/spin'; readonly by: PlayerId; readonly spin: SpinOutcome }
+  | { readonly type: 'wheel/spin'; readonly by: PlayerId; readonly thrown: WheelThrow }
   | { readonly type: 'wheel/settled'; readonly by: PlayerId; readonly spinId: number }
   | { readonly type: 'letter/consonant'; readonly by: PlayerId; readonly letter: Consonant }
   | { readonly type: 'letter/buy-vowel'; readonly by: PlayerId; readonly letter: Vowel }

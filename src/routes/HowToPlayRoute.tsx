@@ -14,7 +14,7 @@ export default function HowToPlayRoute() {
       <section className={CARD}>
         <h2 className="font-semibold text-fg">En bref</h2>
         <ul className="mt-2 flex list-disc flex-col gap-1 pl-5 text-fg-muted">
-          <li>Tournez la roue, puis proposez une consonne.</li>
+          <li>Lancez la roue à la force, puis proposez une consonne.</li>
           <li>Chaque occurrence rapporte la valeur du segment, multipliée par le multiplicateur de la manche.</li>
           {/* Phrase interpolée d'un bloc, et non coupée autour de `formatEuros` :
               une valeur interpolée au milieu du JSX devient un nœud texte à part,
@@ -33,16 +33,44 @@ export default function HowToPlayRoute() {
       <section className={CARD}>
         <h2 className="font-semibold text-fg">Déroulement d’un tour</h2>
         <p className="mt-2 text-fg-muted">
-          Le joueur dont c’est le tour tourne la roue. Si elle s’arrête sur un montant, il propose
-          une consonne parmi celles jamais tentées.
+          Le joueur dont c’est le tour lance la roue à la force. Si elle s’arrête sur un montant,
+          il propose une consonne parmi celles jamais tentées.
         </p>
         <ul className="mt-2 flex list-disc flex-col gap-1 pl-5 text-fg-muted">
           <li>La consonne est présente dans la réponse : le gain est crédité et le même joueur rejoue, roue comprise.</li>
           <li>La consonne est absente : la main passe au joueur suivant.</li>
         </ul>
         <p className="mt-2 text-fg-muted">
-          Avant de tourner la roue, il est aussi possible d’acheter une voyelle ou de tenter de
+          Avant de lancer la roue, il est aussi possible d’acheter une voyelle ou de tenter de
           résoudre l’énigme, quand ces actions sont disponibles.
+        </p>
+      </section>
+
+      <section className={CARD}>
+        <h2 className="font-semibold text-fg">Lancer la roue</h2>
+        <p className="mt-2 text-fg-muted">
+          Le lancer se joue en deux temps. Un premier appui sur « Lancer » arme une jauge de
+          puissance qui balaie la barre d’un bord à l’autre ; le bouton s’appelle alors « Stop ».
+          Un second appui la fige : la position figée donne une force, qui fixe la distance
+          parcourue par la roue et la durée de sa rotation.
+        </p>
+        <p className="mt-2 text-fg-muted">
+          La case obtenue est celle qui se trouve sous l’aiguille quand la roue s’arrête — ce
+          n’est pas une case tirée au sort puis simplement animée. Une imprécision volontaire,
+          de l’ordre d’une demi-case, interdit toutefois de viser une case précise : le dosage du
+          geste déplace les chances, il ne choisit pas la case.
+        </p>
+        <p className="mt-2 text-fg-muted">
+          Au clavier physique, Espace suit exactement le bouton : un premier appui arme la
+          jauge, un second la fige — deux appuis, donc, pour un seul lancer.
+        </p>
+        <p className="mt-2 text-fg-muted">
+          Les Réglages proposent aussi un mode « Lancer simple (sans jauge de puissance) », dans
+          la section « Lancer de la roue ». Le bouton s’y appelle alors « Tourner » : un seul clic
+          ou un seul appui sur Espace suffit, et la force est tirée au hasard. Sous mouvement
+          réduit, la jauge continue de balayer, seulement ralentie, plutôt que de disparaître —
+          c’est ce mode « lancer simple » qui sert de vrai repli à qui ne veut aucun mouvement à
+          l’écran.
         </p>
       </section>
 
@@ -187,7 +215,7 @@ export default function HowToPlayRoute() {
         <h2 className="font-semibold text-fg">Au clavier physique</h2>
         <ul className="mt-2 flex list-disc flex-col gap-1 pl-5 text-fg-muted">
           <li>Une lettre (accentuée ou non) propose la consonne ou achète la voyelle correspondante.</li>
-          <li>Espace tourne la roue.</li>
+          <li>Espace lance la roue : un premier appui arme la jauge de puissance, un second la fige.</li>
           <li>Entrée ouvre la boîte « Résoudre ».</li>
         </ul>
         <p className="mt-2 text-fg-muted">

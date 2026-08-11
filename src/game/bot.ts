@@ -12,7 +12,7 @@ import {
   remainingVowels,
 } from './rules'
 import type { Consonant, Game, GameState, RoundState, Vowel } from './types'
-import { pickSpinOutcome } from './wheel'
+import { randomForce, throwFromForce } from './wheel'
 
 /**
  * Consonnes par fréquence décroissante en français. Un bot « normal » descend
@@ -188,7 +188,7 @@ export function decideBotAction(game: Game, rng: Rng, ticket: BotTicket): GameAc
   }
 
   if (canSpin(game)) {
-    return { type: 'wheel/spin', by, spin: pickSpinOutcome(rng, ticket.spinId) }
+    return { type: 'wheel/spin', by, thrown: throwFromForce(randomForce(rng), rng, ticket.spinId) }
   }
 
   // À partir d'ici, tourner est impossible : la voyelle reste une option
@@ -213,7 +213,8 @@ export function decideBotAction(game: Game, rng: Rng, ticket: BotTicket): GameAc
 /**
  * Pause de lisibilité avant qu'un bot ne joue son coup — pas une simulation de
  * réflexion : le joueur doit voir la main changer avant que l'action n'arrive.
- * Le tirage de roue a sa propre durée (`SPIN_MS` dans `game/wheel.ts`), qui
+ * Le tirage de roue a sa propre durée (entre `SPIN_MIN_MS` et `SPIN_MAX_MS`
+ * dans `game/wheel.ts`), qui
  * s'ajoute par-dessus plutôt que de s'y substituer. Elle vit ici, et non dans
  * le driver, pour que les tests avancent leurs horloges de la valeur exacte au
  * lieu d'en recopier une.

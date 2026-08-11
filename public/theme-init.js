@@ -6,10 +6,11 @@
  * imposerait `'unsafe-inline'`, ce qui annulerait l'essentiel de la protection
  * contre le vol de la clé d'API.
  *
- * Il duplique trois valeurs, faute de pouvoir importer quoi que ce soit :
- * la clé `wof:settings:1` (voir `src/storage/keys.ts`) et les deux couleurs de
- * fond (voir `src/theme/theme.ts` et `src/index.css`). `theme.test.ts` lit ce
- * fichier et vérifie que les copies concordent.
+ * Il duplique quatre valeurs, faute de pouvoir importer quoi que ce soit :
+ * la clé `wof:settings:1` (voir `src/storage/keys.ts`), le numéro `3` de
+ * `SCHEMA_VERSION` (idem) et les deux couleurs de fond (voir `src/theme/theme.ts`
+ * et `src/index.css`). `theme.test.ts` lit ce fichier et vérifie que les copies
+ * concordent.
  */
 ;(function () {
   try {
@@ -17,10 +18,17 @@
     var raw = window.localStorage.getItem('wof:settings:1')
     if (raw) {
       var stored = JSON.parse(raw)
-      var value = stored && stored.value
-      var candidate = value && value.theme
-      if (candidate === 'light' || candidate === 'dark' || candidate === 'system') {
-        theme = candidate
+      // Un enregistrement d'une version périmée (avant ou après un déploiement qui
+      // monte `SCHEMA_VERSION`) doit être traité comme absent, exactement comme le
+      // fait `src/storage/codec.ts` : sinon ce bootstrap applique un thème que
+      // l'application, elle, va rejeter au premier rendu — et c'est précisément le
+      // flash que ce fichier existe pour supprimer.
+      if (stored && stored.version === 3) {
+        var value = stored.value
+        var candidate = value && value.theme
+        if (candidate === 'light' || candidate === 'dark' || candidate === 'system') {
+          theme = candidate
+        }
       }
     }
 

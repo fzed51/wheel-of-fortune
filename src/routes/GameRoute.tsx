@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Navigate } from 'react-router'
 import BonusQuestion from '../components/BonusQuestion'
 import Controls from '../components/Controls'
 import EventFeedback from '../components/EventFeedback'
 import Keyboard from '../components/Keyboard'
+import { useForceGauge } from '../components/PowerGauge'
 import PuzzleBoard from '../components/PuzzleBoard'
 import ResolveDialog from '../components/ResolveDialog'
 import Scoreboard from '../components/Scoreboard'
@@ -32,6 +33,7 @@ import {
 } from '../game/rules'
 import type { Game, RoundState } from '../game/types'
 import { usePhysicalKeyboard } from '../hooks/usePhysicalKeyboard'
+import { useSettings } from '../hooks/useSettings'
 
 /**
  * Phrase de fin de manche : victoire (gagnant, gain, réponse) ou manche annulée
@@ -76,12 +78,42 @@ export default function GameRoute() {
     useGameCommands()
   const lastEvent = useLastEvent()
   const judgeFailure = useJudgeFailure()
+  const { settings } = useSettings()
+  // Réglage persisté : un seul clic lance la roue, la force est tirée au
+  // hasard par le provider (`spin()` sans argument). Rien d'autre ne change.
+  const simpleThrow = settings.throwMode === 'simple'
 
   // La boîte est un élément d'interface, pas un état de partie : le reducer
   // n'a aucune raison de savoir qu'un dialogue est affiché. `ResolveDialog` se
   // ferme désormais lui-même à la soumission (verdict synchrone, plus d'attente
   // à piloter depuis ici) : ce booléen ne fait plus qu'ouvrir la boîte.
   const [resolveOpen, setResolveOpen] = useState(false)
+
+  // Appelé avant les retours conditionnels ci-dessous : un hook ne peut pas
+  // être invoqué après un `return` anticipé.
+  const gauge = useForceGauge()
+
+  // Dernier `cancel` de la jauge, lu par l'effet ci-dessous. `gauge.cancel`
+  // change d'identité à chaque rendu (nouvelle closure de `useForceGauge`) ;
+  // le mettre en dépendance déclencherait l'effet à chaque rendu pour rien.
+  const cancelGaugeRef = useRef(gauge.cancel)
+  cancelGaugeRef.current = gauge.cancel
+
+  // Calculées ici, avant les retours conditionnels : un hook ne peut pas être
+  // invoqué après un `return` anticipé, et ces deux valeurs alimentent l'effet
+  // qui suit.
+  const phaseKind = round !== null ? round.phase.kind : null
+  const awaitingBotTurn = game !== null && isBotTurn(game)
+
+  // La charge n'a de sens que pendant `awaiting-action`, tour d'un humain :
+  // elle s'annule dès que la phase change (lancer résolu, manche bloquée…)
+  // ou que le tour passe à un bot, plutôt que de continuer à balayer pour
+  // rien derrière un plateau qui a changé de sens.
+  useEffect(() => {
+    if (phaseKind !== 'awaiting-action' || awaitingBotTurn) {
+      cancelGaugeRef.current()
+    }
+  }, [phaseKind, awaitingBotTurn])
 
   // Refusée en silence si l'action est illégale : partie non nulle,
   // `canResolve(game)`, et pas le tour d'un bot. Nécessaire ici et pas
@@ -90,7 +122,35 @@ export default function GameRoute() {
   // côté clavier physique.
   function openResolve(): void {
     if (game === null || isBotTurn(game) || !canResolve(game)) return
+    // Le dialogue masque le plateau : la jauge continuerait de balayer
+    // derrière lui pour rien si elle était en charge.
+    gauge.cancel()
     setResolveOpen(true)
+  }
+
+  function handlePass(): void {
+    gauge.cancel()
+    pass()
+  }
+
+  // Premier appel : arme la jauge sans encore lancer. Second appel : lit la
+  // force accumulée et déclenche le vrai lancer. C'est ce qui fait d'un
+  // second « Espace » l'équivalent d'un second clic, sans que le hook clavier
+  // n'ait besoin de connaître la jauge. En mode simple, un seul appel suffit :
+  // `spin()` sans argument tire la force au hasard côté provider. C'est aussi
+  // ce qui vaut pour la touche « Espace » — le hook clavier physique appelle
+  // cette même fonction, il ne sait rien du mode de lancer.
+  function handleSpin(): void {
+    if (simpleThrow) {
+      spin()
+      return
+    }
+    if (!gauge.charging) {
+      gauge.start()
+      return
+    }
+    const force = gauge.fire()
+    if (force !== null) spin(force)
   }
 
   // Clavier physique et clavier virtuel appellent les mêmes commandes : c'est
@@ -98,7 +158,7 @@ export default function GameRoute() {
   // le joueur vient de taper, quel que soit le chemin emprunté.
   const pressed = usePhysicalKeyboard({
     onLetter: playLetter,
-    onSpin: spin,
+    onSpin: handleSpin,
     onResolve: openResolve,
   })
 
@@ -113,6 +173,8 @@ export default function GameRoute() {
    * de bot.
    */
   const botTurn = isBotTurn(game)
+
+  const spinLabel = simpleThrow ? 'Tourner' : gauge.charging ? 'Stop' : 'Lancer'
 
   return (
     <div className="flex flex-col gap-4">
@@ -147,6 +209,7 @@ export default function GameRoute() {
 
       {round !== null && (
         <Wheel
+          angle={game.wheelAngle}
           // Lu directement sur `round.phase`, jamais via une variable
           // intermédiaire : TypeScript ne transporte pas le rétrécissement de
           // `phase.kind` à travers un alias.
@@ -176,9 +239,16 @@ export default function GameRoute() {
           canPass={isStuck(game) && !botTurn}
           vowelCost={game.config.vowelCost}
           spinning={round.phase.kind === 'spinning'}
-          onSpin={spin}
+          // Double garde : en mode simple `gauge.start()` n'est jamais appelé,
+          // donc `gauge.charging` ne peut pas valoir vrai — mais l'écrire ainsi
+          // rend le mode simple insensible à ce que fait la jauge, ce qui est
+          // le sens même du réglage.
+          charging={!simpleThrow && gauge.charging}
+          spinLabel={spinLabel}
+          markerRef={gauge.markerRef}
+          onSpin={handleSpin}
           onResolve={openResolve}
-          onPass={pass}
+          onPass={handlePass}
         />
       )}
 

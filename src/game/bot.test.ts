@@ -27,6 +27,7 @@ import {
   jeu,
   jouer,
   joueur,
+  lancer,
   manche,
   repondre,
   resoudre,
@@ -240,11 +241,7 @@ describe('décisions figées', () => {
 
   it('ne décide rien pendant une rotation de la roue', () => {
     const state = demarrer({ players: [bot('Bot')] })
-    const lance = reduce(state, {
-      type: 'wheel/spin',
-      by: currentPlayerOf(jeu(state)).id,
-      spin: { index: cash(500), offset: 0, spinId: 1 },
-    })
+    const lance = reduce(state, lancer(jeu(state), currentPlayerOf(jeu(state)).id, cash(500)))
     expect(decideBotAction(jeu(lance), constant, { spinId: 2, requestId: 'r' })).toBeNull()
   })
 })
@@ -282,7 +279,7 @@ describe('botTurnKey', () => {
     const state = avecPhase(demarrer({ players: [bot('Bot')] }), {
       kind: 'spinning',
       segment: { kind: 'cash', index: 0, value: 100 },
-      spin: { index: 0, offset: 0, spinId: 1 },
+      spin: { index: 0, offset: 0, spinId: 1, travel: 720, durationMs: 3000, angle: 0 },
     })
     expect(botTurnKey(state)).toBeNull()
   })

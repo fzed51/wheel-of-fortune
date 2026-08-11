@@ -10,6 +10,7 @@ import type {
   GameState,
   Letter,
   Phase,
+  PlayerId,
   Player,
   Puzzle,
   RoundState,
@@ -17,7 +18,7 @@ import type {
   Vowel,
 } from '../game/types'
 import { asPlayerId, asPuzzleId } from '../game/types'
-import { WHEEL } from '../game/wheel'
+import { MIN_TRAVEL_DEGREES, WHEEL, angleForLanding, normalizeDegrees } from '../game/wheel'
 
 /**
  * Fixtures du moteur. Elles ne servent qu'aux tests : les garder hors de
@@ -147,12 +148,34 @@ export const PASSE = indexOf((segment) => segment.kind === 'pass')
 /** Le seul segment `cash` de valeur nulle : sert à vérifier que la main reste au joueur sans rien lui rapporter. */
 export const CASH_ZERO = indexOf((segment) => segment.kind === 'cash' && segment.value === 0)
 
+/**
+ * Distance à parcourir depuis `fromAngle` pour que l'aiguille tombe sur `index`.
+ * Inverse de `resolveThrow` : c'est ce qui permet à un test de continuer à nommer
+ * la case qu'il veut, alors que le moteur ne la reçoit plus.
+ */
+export function travelToLand(fromAngle: number, index: number, offset = 0): number {
+  return normalizeDegrees(angleForLanding(index, offset) - fromAngle) + MIN_TRAVEL_DEGREES
+}
+
+/**
+ * Action `wheel/spin` calibrée pour atterrir sur `index`. `offset` est rabattu par
+ * `resolveThrow` à ±5,5° (`OFFSET_BOUND`) : au-delà, la case atteinte ne serait plus
+ * celle demandée.
+ */
+export function lancer(game: Game, by: PlayerId, index: number, spinId = 1, offset = 0): GameAction {
+  return {
+    type: 'wheel/spin',
+    by,
+    thrown: { spinId, travel: travelToLand(game.wheelAngle, index, offset), durationMs: 3000 },
+  }
+}
+
 /** Tirage complet : `wheel/spin` puis `wheel/settled`, par le joueur courant. */
 export function tourner(state: GameState, index: number, spinId = 1): GameState {
   const by = courant(state).id
   return jouer(
     state,
-    { type: 'wheel/spin', by, spin: { index, offset: 0, spinId } },
+    lancer(jeu(state), by, index, spinId),
     { type: 'wheel/settled', by, spinId },
   )
 }

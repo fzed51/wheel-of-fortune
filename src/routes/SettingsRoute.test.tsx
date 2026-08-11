@@ -22,6 +22,33 @@ afterEach(() => {
 })
 
 describe('SettingsRoute', () => {
+  it('la case « Lancer simple » est décochée par défaut', () => {
+    monterApp('/reglages')
+
+    expect(
+      screen.getByRole('checkbox', { name: 'Lancer simple (sans jauge de puissance)' }),
+    ).not.toBeChecked()
+  })
+
+  it('cocher « Lancer simple » persiste le réglage', async () => {
+    const user = userEvent.setup()
+    const premier = monterApp('/reglages')
+
+    await user.click(
+      screen.getByRole('checkbox', { name: 'Lancer simple (sans jauge de puissance)' }),
+    )
+    // Démonté avant de remonter : sans ça, les deux instances coexisteraient
+    // dans le même `document.body` et fausseraient les requêtes suivantes.
+    premier.unmount()
+
+    // Vérifié par le comportement observable, pas en lisant `localStorage` :
+    // remonter l'application doit relire le réglage persisté.
+    monterApp('/reglages')
+    expect(
+      screen.getByRole('checkbox', { name: 'Lancer simple (sans jauge de puissance)' }),
+    ).toBeChecked()
+  })
+
   it('sans clé enregistrée, rassure : le jeu se joue entièrement sans', () => {
     monterApp('/reglages')
 

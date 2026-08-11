@@ -140,6 +140,38 @@ describe('BonusQuestion', () => {
     expect(screen.getByText('Le juge examine votre réponse…')).toBeInTheDocument()
   })
 
+  it('le champ de réponse passe en lecture seule pendant le verdict, redevient modifiable sinon', () => {
+    const { rerender } = render(
+      <BonusQuestion
+        question="Une question"
+        playerName="Alice"
+        prize="500 €"
+        pending={false}
+        failure={null}
+        botTurn={false}
+        onSubmit={() => {}}
+        onSkip={() => {}}
+      />,
+    )
+
+    expect(champReponse()).not.toHaveAttribute('readonly')
+
+    rerender(
+      <BonusQuestion
+        question="Une question"
+        playerName="Alice"
+        prize="500 €"
+        pending
+        failure={null}
+        botTurn={false}
+        onSubmit={() => {}}
+        onSkip={() => {}}
+      />,
+    )
+
+    expect(champReponse()).toHaveAttribute('readonly')
+  })
+
   it('garde la frappe déjà saisie pendant le verdict', async () => {
     const user = userEvent.setup()
     const { rerender } = render(

@@ -12,7 +12,7 @@ le script va au bout de ses contrôles avant de rendre son code de sortie.
 
 ## Ce que ça vérifie
 
-Quatorze contrôles, dans cet ordre :
+Seize contrôles, dans cet ordre :
 
 | # | Contrôle | Ce qui casserait sans lui |
 | --- | --- | --- |
@@ -20,19 +20,28 @@ Quatorze contrôles, dans cet ordre :
 | 2 | CSP injectée et complète | la balise `<meta>` absente du build, ou une directive perdue |
 | 3 | thème posé avant le premier rendu | `theme-init.js` mal résolu → clignotement clair au chargement |
 | 4 | roue : animation réelle et angle conservé | `commitStyles()` bloqué faute de `style-src-attr` |
-| 5 | `prefers-reduced-motion` | la roue s'anime quand même, ou le tour n'aboutit plus |
-| 6 | arbre d'accessibilité : aucun graphique sans nom | un `<svg>` exposé sans nom au lecteur d'écran |
-| 7 | deux live regions, et deux seulement | une troisième région, et les annonces se marchent dessus |
-| 8 | clavier physique : Espace, lettre, Entrée | l'écouteur posé sur `document` ne réagit plus |
-| 9 | dialogue natif : Entrée, piège de focus, Échap | le `<dialog>` perd le focus ou ne le rend pas au déclencheur |
-| 10 | export : téléchargement d'un blob sous CSP | le téléchargement bloqué, ou la clé d'API dans le fichier |
-| 11 | manifest et icônes | application non installable, sans le moindre message d'erreur |
-| 12 | service worker actif, rien de Mistral en cache | precache vide, ou un verdict du juge mis en cache |
-| 13 | hors ligne | l'application ne repart pas sans réseau |
-| 14 | aucune violation de CSP sur tout le parcours | une violation apparue en cours de partie, pas au chargement |
+| 5 | jauge de puissance : armée puis relâchée | le lancer en deux temps réduit à un clic, ou la jauge qui survit à la rotation |
+| 6 | lancer simple : un seul clic suffit, sans jauge | le réglage sans effet, ou une jauge qui apparaît quand même |
+| 7 | `prefers-reduced-motion` | la roue s'anime quand même, ou le tour n'aboutit plus |
+| 8 | arbre d'accessibilité : aucun graphique sans nom | un `<svg>` exposé sans nom au lecteur d'écran |
+| 9 | deux live regions, et deux seulement | une troisième région, et les annonces se marchent dessus |
+| 10 | clavier physique : Espace, lettre, Entrée | l'écouteur posé sur `document` ne réagit plus |
+| 11 | dialogue natif : Entrée, piège de focus, Échap | le `<dialog>` perd le focus ou ne le rend pas au déclencheur |
+| 12 | export : téléchargement d'un blob sous CSP | le téléchargement bloqué, ou la clé d'API dans le fichier |
+| 13 | manifest et icônes | application non installable, sans le moindre message d'erreur |
+| 14 | service worker actif, rien de Mistral en cache | precache vide, ou un verdict du juge mis en cache |
+| 15 | hors ligne | l'application ne repart pas sans réseau |
+| 16 | aucune violation de CSP sur tout le parcours | une violation apparue en cours de partie, pas au chargement |
 
-Le contrôle 10 crée une énigme perso et exporte le fichier : c'est le seul qui écrit
-quelque chose, et il écrit dans un profil Chrome jetable.
+Les contrôles 4 à 7 comptent les animations **du rotor seul**, jamais celles de la
+page entière : la jauge de puissance est elle aussi animée, et un compte global
+laisserait passer une roue qui ne tourne plus.
+
+Le contrôle 6 écrit un réglage persisté, puis le remet à sa valeur par défaut et
+recharge la page — `SettingsProvider` ne relit pas le stockage de lui-même.
+
+Le contrôle 12 crée une énigme perso et exporte le fichier : c'est le seul qui écrit
+un fichier, et il écrit dans un profil Chrome jetable.
 
 ## Ce que ça ne vérifie pas, exprès
 
@@ -76,7 +85,7 @@ sur son port, et compare le document servi à `dist/index.html` avant de commenc
 | --- | --- |
 | `cdp.mjs` | pilote Chrome par le DevTools Protocol : lancement, navigation, `evaluate`, clavier, souris, hors ligne, `prefers-reduced-motion` |
 | `page.mjs` | boîte à outils injectée dans la page avant son premier script : requêtes par nom accessible, mouchards du thème et des violations CSP |
-| `check.mjs` | les quatorze contrôles, et le serveur d'aperçu qu'ils utilisent |
+| `check.mjs` | les seize contrôles, et le serveur d’aperçu qu’ils utilisent |
 
 Aucune dépendance : Node fournit `fetch` et `WebSocket`, Chrome fournit le reste.
 Playwright coûterait un navigateur à télécharger pour un contrôle passé à la main de
@@ -93,7 +102,7 @@ D'où `clickElement()`, qui dispatche un vrai clic de souris.
 
 **Le piège de focus traverse `document.body`.** Chrome passe une fois par la racine du
 document à chaque cycle de tabulation dans une boîte modale. Ce n'est pas une fuite :
-le contenu sous la boîte reste inatteignable. Le contrôle 9 l'accepte donc.
+le contenu sous la boîte reste inatteignable. Le contrôle 11 l'accepte donc.
 
 ## Quand ça échoue
 

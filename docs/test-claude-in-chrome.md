@@ -5,9 +5,10 @@ manuelle que le README liste dans « Ce qui n'est pas fait ». Il est écrit pou
 agent qui pilote un vrai navigateur : il n'a pas accès au code, seulement à la page.
 
 > **Une partie est automatisée.** `yarn build && yarn check:browser` rejoue sans
-> intervention la CSP, le service worker, le hors-ligne, le manifest, l'animation de
-> la roue, le clavier physique, le `<dialog>` natif et l'arbre d'accessibilité de
-> Chrome — soit l'essentiel des scénarios 4, 5 et 9, et tout le scénario 10 sauf
+> intervention la CSP, le service worker, le hors-ligne, le manifest, le lancer de la
+> roue à la jauge de puissance et son animation, le clavier physique, le `<dialog>`
+> natif et l'arbre d'accessibilité de Chrome — soit l'essentiel des scénarios 4, 5 et
+> 9, et tout le scénario 10 sauf
 > Lighthouse. Voir [`scripts/browser-check/README.md`](../scripts/browser-check/README.md).
 > Ce prompt reste utile pour ce qu'une assertion ne sait pas juger : la lisibilité,
 > le confort de jeu, un audit Lighthouse, une installation réelle sur un appareil.
@@ -63,7 +64,9 @@ code source et tu n'as pas à le demander.
   (`localStorage.getItem('wof:mistral-key:1') !== null`), rien de plus.
 - **Ne quitte pas `localhost`.** Aucun site externe, aucune recherche web.
 - Avant de conclure « ça ne marche pas », **retente une fois** : certaines actions
-  attendent une animation (rotation de roue ≈ 3,5 s) ou un tour de bot (≈ 0,8 s).
+  attendent une animation (en mode jauge, charge ≈ 0,5 s puis rotation de roue
+  ≈ 2,6 à 4,2 s ; en mode « lancer simple », rotation directe) ou un tour de bot
+  (≈ 0,8 s).
 - Note ce que tu **vois**, pas ce que tu supposes. Cite les libellés exacts.
 
 ### Vocabulaire de l'application
@@ -73,7 +76,10 @@ Mes énigmes `/enigmes`, Réglages `/reglages` (tous préfixés par `/wheel-of-f
 
 Noms accessibles que tu utiliseras (respecte-les au caractère près) :
 
-- boutons de jeu : `Tourner`, `Résoudre`, `Passer la main`, `Manche suivante` ;
+- boutons de jeu : le bouton de lancer porte trois libellés possibles — `Lancer`
+  au repos en mode jauge de puissance (le réglage par défaut), `Stop` pendant que
+  la jauge charge, `Tourner` si le mode « lancer simple » est actif dans les
+  Réglages — puis `Résoudre`, `Passer la main`, `Manche suivante` ;
 - clavier virtuel : groupe `Clavier des lettres`, touches libellées `Lettre A`,
   ou `Lettre A, déjà proposée`, ou `Lettre A, indisponible` ;
 - boîte « Résoudre » : titre `Proposer une réponse`, champ `Votre réponse`,
@@ -131,8 +137,11 @@ ou **écart**, avec ce que tu as observé.
 
 1. L'en-tête doit afficher `Manche 1 sur 2 — gains ×1` et
    `Au tour de Vous — cagnotte 0 euro`.
-2. Clique `Tourner`. La roue s'anime (≈ 3,5 s). Pendant l'animation, `Tourner`,
-   `Résoudre` et `Passer la main` doivent porter `aria-disabled="true"`.
+2. Clique `Lancer`. Une jauge de puissance apparaît au-dessus des boutons et balaie
+   d'un bord à l'autre ; le bouton devient `Stop`. Laisse-la charger environ une
+   demi-seconde, puis clique `Stop` : la roue s'anime alors (≈ 2,6 à 4,2 s selon la
+   force figée). Pendant la charge puis l'animation, le bouton de lancer, `Résoudre`
+   et `Passer la main` doivent porter `aria-disabled="true"`.
 3. À l'arrêt, un encadré de retour doit afficher une phrase du type
    `La roue s'arrête sur 500 euros.`, `Banqueroute…` ou `Passe…`.
    Après un arrêt sur un montant, les trois boutons **restent** inertes : le jeu
@@ -160,7 +169,8 @@ Sur l'écran de jeu, sans focus dans un champ :
 1. Tape une lettre au clavier : elle doit s'allumer brièvement sur le clavier virtuel
    et jouer exactement comme un clic.
 2. Appuie sur `Espace` (avec le focus sur le corps de page, pas sur un bouton) :
-   la roue doit tourner.
+   en mode jauge de puissance, un premier appui arme la jauge et un second la
+   fige, ce qui lance la roue ; en mode « lancer simple », un seul appui suffit.
 3. Appuie sur `Entrée` : la boîte `Proposer une réponse` doit s'ouvrir — **sauf** si
    aucune clé d'API n'est enregistrée, auquel cas rien ne doit se passer.
 4. Ouvre la boîte, tape une lettre dans le champ `Votre réponse` : la lettre doit
@@ -186,8 +196,11 @@ Sur l'écran de jeu, sans focus dans un champ :
 5. Le SVG de la roue doit être `aria-hidden`.
 6. Zoom : la balise `viewport` ne doit contenir ni `maximum-scale` ni `user-scalable=no`.
 7. Active `prefers-reduced-motion: reduce` (DevTools → Rendering → Emulate CSS media
-   feature). Clique `Tourner` : la roue ne doit **pas** s'animer, mais le tour doit se
-   dérouler normalement (résultat annoncé, consonne demandée). Remets le réglage après.
+   feature). Clique `Lancer` puis `Stop` : la roue ne doit **pas** s'animer, mais le
+   tour doit se dérouler normalement (résultat annoncé, consonne demandée). La jauge
+   de puissance, elle, continue de balayer pendant la charge — simplement ralentie
+   (≈ ×2,5) — donc un contrôle qui compterait toute animation de la page n'en verrait
+   pas zéro : seule la roue doit rester immobile. Remets le réglage après.
 
 ### 6. Résoudre — sans clé, puis avec clé
 

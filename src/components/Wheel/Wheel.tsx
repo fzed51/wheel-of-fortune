@@ -2,11 +2,13 @@ import WheelPointer from './WheelPointer'
 import WheelSegment from './WheelSegment'
 import { useWheelSpin } from './useWheelSpin'
 import { WHEEL } from '../../game/wheel'
-import type { SpinOutcome } from '../../game/types'
+import type { SpinLanding } from '../../game/types'
 
 export interface WheelProps {
+  /** Angle de repos courant, dans `[0, 360)` : ce que le modèle sait, hors rotation. */
+  readonly angle: number
   /** Tirage en cours d'animation, `null` hors rotation. */
-  readonly spin: SpinOutcome | null
+  readonly spin: SpinLanding | null
   /** Index du secteur sur lequel la roue s'est arrêtée, `null` pendant la rotation ou hors manche. */
   readonly highlighted: number | null
   /** Appelé quand l'animation atteint le secteur : le tour peut se poursuivre. */
@@ -17,8 +19,8 @@ export interface WheelProps {
  * Roue graphique. Aucune règle de jeu ici : `spin` et `highlighted` viennent
  * déjà décidés du reducer, ce composant ne fait que les dessiner et animer.
  */
-export default function Wheel({ spin, highlighted, onSettled }: WheelProps) {
-  const rotorRef = useWheelSpin(spin, onSettled)
+export default function Wheel({ angle, spin, highlighted, onSettled }: WheelProps) {
+  const rotorRef = useWheelSpin(angle, spin, onSettled)
 
   return (
     <div className="relative mx-auto aspect-square w-full max-w-xs">

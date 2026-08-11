@@ -35,6 +35,13 @@ export const MIN_ROUND_PRIZE = 250
  */
 export const BONUS_PRIZE = 500
 
+/**
+ * Angle de repos de la roue au montage d'une partie neuve. Aiguille sur le premier
+ * segment : c'est une règle de montage (comme le siège 0 pour l'humain), pas un
+ * réglage qu'un joueur pourrait choisir.
+ */
+export const INITIAL_WHEEL_ANGLE = 0
+
 export const HUMAN_ID = asPlayerId('you')
 export const HUMAN_NAME = 'Vous'
 

@@ -54,7 +54,10 @@ describe('sauvegarde de partie', () => {
   it('fait l’aller-retour', () => {
     const game = jeu(proposer(tourner(demarrer(), cash(500)), 'V'))
     saveGame(game)
-    expect(loadGame()).toEqual({ ok: true, value: game })
+    // `wheelAngle` fait exception : `tourner` l'a fait avancer, mais il n'a pas
+    // d'équivalent persisté (voir le docblock de `toPersisted`) et revient donc
+    // à son angle de repos initial, pas à celui d'avant la sauvegarde.
+    expect(loadGame()).toEqual({ ok: true, value: { ...game, wheelAngle: 0 } })
   })
 
   it('disparaît quand on l’efface', () => {

@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 // le système de fichiers.
 import script from '../../public/theme-init.js?raw'
 import styles from '../index.css?raw'
-import { STORAGE_KEYS } from '../storage/keys'
+import { SCHEMA_VERSION, STORAGE_KEYS } from '../storage/keys'
 import { THEME_COLORS, applyTheme, prefersDarkFrom, resolveTheme } from './theme'
 
 describe('resolveTheme', () => {
@@ -78,5 +78,14 @@ describe('bootstrap du thème', () => {
 
   it('n’est pas un module, pour rester chargeable en script classique', () => {
     expect(script).not.toMatch(/^\s*(import|export)\s/m)
+  })
+
+  it('rejette un enregistrement dont la version diffère de `SCHEMA_VERSION`', () => {
+    // Ancre sur la forme de la comparaison elle-même (`version === <SCHEMA_VERSION>`),
+    // pas sur la simple présence du chiffre : celui-ci apparaît déjà ailleurs (les
+    // couleurs hexadécimales), donc chercher juste `'3'` resterait vert même si la
+    // comparaison de version disparaissait du bootstrap.
+    const comparaisonDeVersion = new RegExp(String.raw`version\s*===\s*${SCHEMA_VERSION}\b`)
+    expect(script).toMatch(comparaisonDeVersion)
   })
 })

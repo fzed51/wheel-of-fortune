@@ -39,15 +39,17 @@ function testFailureMessage(reason: KeyTestFailureReason): string {
 }
 
 /**
- * Réglages : apparence, clé d'API Mistral (pour tester l'accès au service),
- * et remise à zéro des données. Les réglages de partie (manches, adversaires,
- * niveau des bots) vivent sur l'accueil et ne sont pas dupliqués ici.
+ * Réglages : apparence, mode de lancer de la roue, clé d'API Mistral (pour
+ * tester l'accès au service), et remise à zéro des données. Les réglages de
+ * partie (manches, adversaires, niveau des bots) vivent sur l'accueil et ne
+ * sont pas dupliqués ici.
  */
 export default function SettingsRoute() {
   const { settings, hasMistralKey, update, setMistralKey, forgetMistralKey } = useSettings()
 
   const apiKeyId = useId()
   const modelId = useId()
+  const throwModeId = useId()
 
   // Indice de la clé enregistrée : relu depuis le stockage au moment voulu,
   // jamais gardé plus que ces 4 caractères — la clé complète ne doit exister
@@ -170,6 +172,27 @@ export default function SettingsRoute() {
           <span className="text-fg">Thème</span>
           <ThemeToggle />
         </div>
+      </section>
+
+      <section className={CARD}>
+        <h2 className="font-semibold text-fg">Lancer de la roue</h2>
+        <div className={FIELD}>
+          <label htmlFor={throwModeId} className="text-fg">
+            Lancer simple (sans jauge de puissance)
+          </label>
+          <input
+            id={throwModeId}
+            type="checkbox"
+            checked={settings.throwMode === 'simple'}
+            onChange={(event) =>
+              update({ throwMode: event.target.checked ? 'simple' : 'gauge' })
+            }
+            className="size-5 accent-primary"
+          />
+        </div>
+        <p className="mt-1 text-sm text-fg-muted">
+          Un seul clic lance la roue, la force est tirée au hasard.
+        </p>
       </section>
 
       {/*

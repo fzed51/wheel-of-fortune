@@ -151,4 +151,18 @@ describe('HowToPlayRoute', () => {
     expect(titles).toContain('Les cases spéciales')
     expect(titles).toContain('Résoudre')
   })
+
+  it('explique le lancer en deux temps, avec les libellés réels des boutons', () => {
+    monterApp('/regles')
+
+    // Un titre seul ne prouve rien : on vérifie que la section cite bien le
+    // second libellé du bouton, celui qui n'existe que pendant la charge.
+    const heading = screen.getByRole('heading', { name: 'Lancer la roue' })
+    const section = heading.closest('section')
+    if (section === null) {
+      throw new Error('La section « Lancer la roue » est introuvable.')
+    }
+    expect(section.textContent).toContain('Stop')
+    expect(section.textContent).toContain('Lancer simple (sans jauge de puissance)')
+  })
 })

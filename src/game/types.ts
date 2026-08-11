@@ -40,8 +40,10 @@ export type Segment =
   | { readonly kind: 'pass'; readonly index: number }
 
 /**
- * Résultat d'un tirage, décidé par l'appelant à partir du générateur injecté.
- * L'animation de la roue ne tire rien : elle exécute un résultat déjà connu.
+ * Ce que la roue a désigné — jamais un tirage. Depuis le lancer à la force,
+ * personne ne choisit plus de case : `index` et `offset` sont **déduits** de
+ * l'angle où l'aiguille s'est arrêtée (voir `resolveThrow` dans `wheel.ts`),
+ * à partir d'un `WheelThrow` qui ne décide qu'une distance à parcourir.
  */
 export interface SpinOutcome {
   /** Index du segment dans WHEEL. */
@@ -50,6 +52,23 @@ export interface SpinOutcome {
   readonly offset: number
   /** Identifiant monotone : rejoue l'animation même sur deux tirages successifs du même segment. */
   readonly spinId: number
+}
+
+/**
+ * Ce qu'un lanceur décide : une distance à parcourir, pas un résultat.
+ * L'aléa (la petite imprécision de ±1 case) est déjà inclus dans `travel`.
+ */
+export interface WheelThrow {
+  readonly spinId: number
+  readonly travel: number // degrés parcourus, toujours ≥ MIN_TRAVEL_DEGREES − JITTER_DEGREES
+  readonly durationMs: number
+}
+
+/** Ce que le reducer déduit d'un lancer, à partir de l'angle où la roue était au repos. */
+export interface SpinLanding extends SpinOutcome {
+  readonly travel: number // corrigé par l'écart aux bords, à animer tel quel
+  readonly durationMs: number
+  readonly angle: number // angle de repos après le lancer, dans [0, 360)
 }
 
 export type PlayerKind =
@@ -88,7 +107,7 @@ export interface GameConfig {
 
 export type Phase =
   | { readonly kind: 'awaiting-action' }
-  | { readonly kind: 'spinning'; readonly segment: Segment; readonly spin: SpinOutcome }
+  | { readonly kind: 'spinning'; readonly segment: Segment; readonly spin: SpinLanding }
   | { readonly kind: 'awaiting-consonant'; readonly value: number; readonly segment: Segment }
   | { readonly kind: 'blocked' }
 
@@ -175,6 +194,12 @@ export interface Game {
   readonly history: readonly RoundSummary[]
   readonly playedPuzzleIds: readonly PuzzleId[]
   readonly progress: GameProgress
+  /**
+   * Angle de repos de la roue, en degrés dans [0, 360). Le lancer part de là : sans lui dans l'état,
+   * le résultat dépendrait d'une ref de composant et le fuzz ne serait plus reproductible.
+   * Jamais persisté (voir le docblock de storage/snapshot.ts) : vaut 0 à la reprise d'une partie.
+   */
+  readonly wheelAngle: number
 }
 
 export type GameState =

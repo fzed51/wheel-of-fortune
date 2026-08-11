@@ -14,6 +14,7 @@ import {
   jeu,
   joueur,
   jouer,
+  lancer,
   manche,
   proposer,
   question,
@@ -177,20 +178,56 @@ describe('announceTransition — démarrage et enchaînement de manche', () => {
 })
 
 describe('announceTransition — roue', () => {
-  it('annonce le lancer sans révéler le résultat', () => {
+  it('annonce un lancer faible', () => {
     const prev = demarrer()
     const by = courant(prev).id
-    const action = { type: 'wheel/spin' as const, by, spin: { index: cash(500), offset: 0, spinId: 1 } }
+    // `over` = 900 − 720 = 180, sous 480 (un tiers de TRAVEL_SPAN_DEGREES) : faible.
+    const action = { type: 'wheel/spin' as const, by, thrown: { spinId: 1, travel: 900, durationMs: 3000 } }
     const next = jouer(prev, action)
-    expect(announceTransition(prev, next, action)).toEqual({ status: 'La roue tourne…', alert: '' })
+    expect(announceTransition(prev, next, action)).toEqual({
+      status: 'La roue tourne — lancer faible.',
+      alert: '',
+    })
+  })
+
+  it('annonce un lancer moyen', () => {
+    const prev = demarrer()
+    const by = courant(prev).id
+    // `over` = 1500 − 720 = 780, entre 480 et 960 : moyen.
+    const action = { type: 'wheel/spin' as const, by, thrown: { spinId: 1, travel: 1500, durationMs: 3000 } }
+    const next = jouer(prev, action)
+    expect(announceTransition(prev, next, action)).toEqual({
+      status: 'La roue tourne — lancer moyen.',
+      alert: '',
+    })
+  })
+
+  it('annonce un lancer fort', () => {
+    const prev = demarrer()
+    const by = courant(prev).id
+    // `over` = 2000 − 720 = 1280, au-dessus de 960 : fort.
+    const action = { type: 'wheel/spin' as const, by, thrown: { spinId: 1, travel: 2000, durationMs: 3000 } }
+    const next = jouer(prev, action)
+    expect(announceTransition(prev, next, action)).toEqual({
+      status: 'La roue tourne — lancer fort.',
+      alert: '',
+    })
+  })
+
+  it('replie sur « La roue tourne… » si la phase résultante n’est pas spinning', () => {
+    // Cas défensif : le reducer aurait refusé l'action, ou une forme future de
+    // l'état. On force une phase `awaiting-action` sans passer par le reducer,
+    // pour isoler ce repli sans dépendre d'un vrai rejet d'action.
+    const prev = demarrer()
+    const by = courant(prev).id
+    const forced = avecPhase(prev, { kind: 'awaiting-action' })
+    const action = { type: 'wheel/spin' as const, by, thrown: { spinId: 1, travel: 900, durationMs: 3000 } }
+    expect(announceTransition(prev, forced, action)).toEqual({ status: 'La roue tourne…', alert: '' })
   })
 
   it('annonce le montant sur un segment payant, sans changer de joueur', () => {
-    const prev = jouer(demarrer(), {
-      type: 'wheel/spin',
-      by: courant(demarrer()).id,
-      spin: { index: cash(500), offset: 0, spinId: 1 },
-    })
+    const depart = demarrer()
+    const prev = jouer(depart, lancer(jeu(depart), courant(depart).id, cash(500)))
     const action = { type: 'wheel/settled' as const, by: courant(prev).id, spinId: 1 }
     const next = jouer(prev, action)
     expect(announceTransition(prev, next, action)).toEqual({
@@ -200,11 +237,8 @@ describe('announceTransition — roue', () => {
   })
 
   it('annonce le segment à 0 : la lettre compte mais ne rapporte rien, sans changer de joueur', () => {
-    const prev = jouer(demarrer(), {
-      type: 'wheel/spin',
-      by: courant(demarrer()).id,
-      spin: { index: cash(0), offset: 0, spinId: 1 },
-    })
+    const depart = demarrer()
+    const prev = jouer(depart, lancer(jeu(depart), courant(depart).id, cash(0)))
     const action = { type: 'wheel/settled' as const, by: courant(prev).id, spinId: 1 }
     const next = jouer(prev, action)
     expect(announceTransition(prev, next, action)).toEqual({
@@ -215,11 +249,7 @@ describe('announceTransition — roue', () => {
 
   it('annonce la banqueroute et nomme le joueur suivant', () => {
     const depart = demarrer({ players: [joueur('Alice'), BOT_1] })
-    const prev = jouer(depart, {
-      type: 'wheel/spin',
-      by: courant(depart).id,
-      spin: { index: BANQUEROUTE, offset: 0, spinId: 1 },
-    })
+    const prev = jouer(depart, lancer(jeu(depart), courant(depart).id, BANQUEROUTE))
     const action = { type: 'wheel/settled' as const, by: courant(prev).id, spinId: 1 }
     const next = jouer(prev, action)
     expect(announceTransition(prev, next, action)).toEqual({
@@ -230,11 +260,7 @@ describe('announceTransition — roue', () => {
 
   it('annonce la passe et nomme le joueur suivant', () => {
     const depart = demarrer({ players: [joueur('Alice'), BOT_1] })
-    const prev = jouer(depart, {
-      type: 'wheel/spin',
-      by: courant(depart).id,
-      spin: { index: PASSE, offset: 0, spinId: 1 },
-    })
+    const prev = jouer(depart, lancer(jeu(depart), courant(depart).id, PASSE))
     const action = { type: 'wheel/settled' as const, by: courant(prev).id, spinId: 1 }
     const next = jouer(prev, action)
     expect(announceTransition(prev, next, action)).toEqual({

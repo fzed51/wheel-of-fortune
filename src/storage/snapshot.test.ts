@@ -15,6 +15,7 @@ import {
   jeu,
   jouer,
   joueur,
+  lancer,
   manche,
   partieTerminee,
   proposer,
@@ -27,7 +28,10 @@ import { fromPersisted, toPersisted } from './snapshot'
 /** Lance la roue sans la laisser s'arrêter : c'est l'état `spinning`. */
 function enRotation(state: GameState, index: number): Game {
   const by = courant(state).id
-  return jeu(jouer(state, { type: 'wheel/spin', by, spin: { index, offset: 12.5, spinId: 7 } }))
+  // Offset non nul (5°), pour prouver que l'aiguille en position exacte n'a pas
+  // d'importance ici : c'est la persistance de l'angle qui est testée, pas la
+  // précision du lancer.
+  return jeu(jouer(state, lancer(jeu(state), by, index, 7, 5)))
 }
 
 /**
@@ -43,9 +47,11 @@ function versEtapeBonus(expected = 'CANBERRA'): GameState {
 }
 
 describe('toPersisted', () => {
-  it('conserve tel quel un état déjà persistable', () => {
+  it('conserve tel quel un état déjà persistable, hormis l’angle de la roue', () => {
+    // `wheelAngle` n'a pas d'équivalent dans `PersistedGame` (voir le docblock) :
+    // on le neutralise ici plutôt que de comparer champ par champ.
     const game = jeu(proposer(tourner(demarrer(), cash(500)), 'V'))
-    expect(toPersisted(game)).toEqual(game)
+    expect(toPersisted(game)).toEqual({ ...game, wheelAngle: undefined })
   })
 
   it('applique l’issue du segment plutôt que d’escamoter le tirage', () => {
@@ -91,7 +97,7 @@ describe('toPersisted', () => {
       JSON.stringify(toPersisted(enRotation(demarrer(), cash(400)))),
       JSON.stringify(toPersisted(enJugement)),
     ].join(' ')
-    for (const champ of ['spinId', 'offset', 'requestId', 'attempt', 'spin']) {
+    for (const champ of ['spinId', 'offset', 'requestId', 'attempt', 'spin', 'wheelAngle', 'travel']) {
       expect(ecrit, `${champ} ne doit pas être persisté`).not.toContain(champ)
     }
   })
@@ -124,7 +130,10 @@ describe('toPersisted', () => {
 describe('fromPersisted', () => {
   it('reconstitue une partie identique, aller-retour compris', () => {
     const game = jeu(proposer(tourner(demarrer(), cash(500)), 'V'))
-    expect(fromPersisted(toPersisted(game))).toEqual(game)
+    // `wheelAngle` fait exception : `tourner` l'a fait avancer, mais il n'a pas
+    // d'équivalent dans `PersistedGame` (voir le docblock de `toPersisted`) et
+    // revient donc à son angle de repos initial, pas à celui d'avant l'écriture.
+    expect(fromPersisted(toPersisted(game))).toEqual({ ...game, wheelAngle: 0 })
   })
 
   it('reconstitue une manche terminée', () => {
@@ -202,6 +211,13 @@ describe('fromPersisted', () => {
     expect(Object.hasOwn(persisted.progress, 'bonus')).toBe(true)
     expect(persisted.progress.bonus).toBeNull()
     expect(fromPersisted(persisted)).toEqual(game)
+  })
+
+  it('ramène l’angle de la roue à 0, même s’il n’était pas nul avant l’écriture', () => {
+    // L'angle n'a pas de forme persistée (voir le docblock de `PersistedGame`) :
+    // un rechargement doit toujours retrouver la roue au repos de montage.
+    const enCours: Game = { ...jeu(tourner(demarrer(), cash(500))), wheelAngle: 137 }
+    expect(fromPersisted(toPersisted(enCours)).wheelAngle).toBe(0)
   })
 
   it('recopie tout : muter l’enregistrement relu ne touche pas la partie', () => {

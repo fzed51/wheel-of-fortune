@@ -2,9 +2,9 @@
 
 **→ [Jouer en ligne](https://fzed51.github.io/wheel-of-fortune/)**
 
-Jeu d'énigmes à lettres, en français, installable comme application. On tourne une roue, on propose une consonne, on achète une voyelle, et on tente de deviner l'énoncé caché — seul ou contre des bots.
+Jeu d'énigmes à lettres, en français, installable comme application. On lance une roue à la force, on propose une consonne, on achète une voyelle, et on tente de deviner l'énoncé caché — seul ou contre des bots.
 
-Ce n'est pas un tirage au sort : la roue ne fait que fixer la valeur du coup suivant. Tout le reste est du raisonnement sur les lettres.
+Le lancer se joue à la jauge de puissance : le dosage du geste compte, sans jamais fixer la case à coup sûr. Tout le reste — les lettres qu'on propose, l'énoncé qu'on devine — est du pur raisonnement.
 
 Application entièrement locale : rien n'est envoyé nulle part, à deux exceptions près — le bouton « Tester la clé » des Réglages et le verdict de la question bonus de la manche finale, décrits plus bas — et les deux exigent une clé d'API que rien n'oblige à enregistrer.
 
@@ -32,7 +32,7 @@ Le service worker est désactivé en développement, sinon le cache masquerait c
 
 L'écran `/regles` de l'application les donne en entier, et il les tire des mêmes constantes que le moteur : il ne peut donc pas mentir sur un prix ou un plafond. En résumé :
 
-- on tourne la roue, puis on propose une **consonne** ; présente, on rejoue ; absente, la main passe ;
+- on lance la roue à la force, puis on propose une **consonne** ; présente, on rejoue ; absente, la main passe ;
 - une consonne présente rapporte la valeur du segment × son nombre d'occurrences × le numéro de la manche, dans la cagnotte de la manche ;
 - une **voyelle** s'achète — en appuyant directement dessus sur le clavier, il n'y a pas de bouton dédié — et ne rapporte rien ;
 - **Banqueroute** vide la cagnotte de la manche et fait passer la main ; **Passe** fait seulement passer la main ;
@@ -91,6 +91,7 @@ Quelques principes qui expliquent la forme du code mieux que le code lui-même :
 - **une action illégale est indispatchable, pas rejetée.** Un reducer qui « rejette avec un retour visuel » ne fonctionne pas : renvoyer la même référence d'état ne provoque aucun rendu, donc aucun retour. Les prédicats (`canSpin`, `canResolve`, `canBuyVowel`…) vivent donc dans `game/rules.ts`, où l'interface, le bot et le reducer les lisent tous les trois ;
 - **les composants d'affichage prennent des props, pas de contexte.** Le câblage contexte → props se fait dans les routes. C'est ce qui les rend testables sans provider ;
 - **aucun composant ne dispatche d'effet de jeu.** La roue anime ; c'est la route qui signale l'arrêt au provider ;
+- **la case n'est plus tirée puis animée, elle est lue à l'arrivée de la rotation.** Le geste de lancer fixe une force, la force fixe la distance parcourue, et la case sous l'aiguille au repos en est le résultat direct — l'ancienne rotation n'était qu'une animation décorative vers un résultat déjà choisi ;
 - **`aria-disabled`, jamais `disabled`.** Un bouton `disabled` qui portait le focus le perd au profit de `<body>`, et le lecteur d'écran se tait au moment précis où le joueur attend une explication. Les gestionnaires sortent tôt quand l'action est illégale ;
 - **exactement deux live regions**, montées une fois pour toutes par `components/LiveRegions.tsx` : une `polite` pour le déroulement du jeu, une `role="alert"` réservée aux échecs techniques. Une région créée au moment où le message arrive n'annonce rien — le navigateur doit l'observer avant que son contenu change. Aucun autre composant ne doit en ajouter une troisième.
 
@@ -98,11 +99,11 @@ Quelques principes qui expliquent la forme du code mieux que le code lui-même :
 
 Objectif tenu de bout en bout, pas ajouté après coup :
 
-- **partie entière au clavier physique** : les lettres, `Espace` pour tourner, `Entrée` pour ouvrir « Résoudre ». La boîte « Résoudre » passe par un `<dialog>` natif ouvert en `showModal()`, ce qui lui donne gratuitement le piège de focus, la fermeture par `Échap` et le retour du focus au déclencheur — trois choses qu'une boîte faite main devrait réécrire. La question bonus de la manche finale, elle, n'est **pas** un dialogue : c'est une simple carte (`<section>`), parce qu'à cette étape le plateau, la roue et le clavier sont déjà masqués — rien à recouvrir, donc rien à piéger (voir le docblock de `BonusQuestion`) ;
+- **partie entière au clavier physique** : les lettres, `Espace` pour lancer la roue — un appui l'arme, un second fige la jauge de puissance ; un seul suffit en mode « lancer simple » —, `Entrée` pour ouvrir « Résoudre ». La boîte « Résoudre » passe par un `<dialog>` natif ouvert en `showModal()`, ce qui lui donne gratuitement le piège de focus, la fermeture par `Échap` et le retour du focus au déclencheur — trois choses qu'une boîte faite main devrait réécrire. La question bonus de la manche finale, elle, n'est **pas** un dialogue : c'est une simple carte (`<section>`), parce qu'à cette étape le plateau, la roue et le clavier sont déjà masqués — rien à recouvrir, donc rien à piéger (voir le docblock de `BonusQuestion`) ;
 - clavier virtuel en `roving tabindex` : une seule tabulation pour le traverser, pas 26 ;
 - l'énigme est **épelée** pour le lecteur d'écran, jamais lue telle quelle — `LACLÉ` se prononcerait comme un mot ;
 - le SVG de la roue est `aria-hidden` : sa valeur passe par la live region ;
-- `prefers-reduced-motion` respecté — la roue ne tourne pas, mais le tour se déroule à l'identique ;
+- `prefers-reduced-motion` respecté — la roue ne tourne pas, mais le tour se déroule à l'identique ; la jauge de puissance, elle, continue de balayer, seulement ralentie (×2,5), faute de quoi le lancer perdrait tout jeu ; le mode « lancer simple » reste le vrai repli pour qui ne veut aucun mouvement ;
 - palette de la roue à contraste vérifié (au moins 9:1 sur les six remplissages, soit le double du seuil), thème clair et thème sombre ;
 - aucun `maximum-scale` ni `user-scalable=no` dans le `viewport` : ce serait un échec WCAG 1.4.4.
 
@@ -112,7 +113,7 @@ Quatre entrées de localStorage, **versionnées enregistrement par enregistremen
 
 | Clé | Contenu |
 | --- | --- |
-| `wof:settings:1` | réglages (manches, adversaires, niveau, thème, modèle) |
+| `wof:settings:1` | réglages (manches, adversaires, niveau, thème, modèle, mode de lancer) |
 | `wof:puzzles:1` | énigmes perso |
 | `wof:save:1` | partie en cours |
 | `wof:mistral-key:1` | clé d'API, isolée exprès |
@@ -171,7 +172,7 @@ Doctrine, appliquée sans exception :
 yarn build && yarn check:browser
 ```
 
-Quatorze contrôles dans un vrai Chrome, sur le build de production, pour ce que jsdom ne peut pas atteindre : la CSP réelle, le service worker et le hors-ligne, le manifest, l'animation de la roue par la Web Animations API, l'arbre d'accessibilité de Chrome, le `<dialog>` natif et l'écouteur clavier posé sur `document`. Sans aucune dépendance : le pilote parle directement le Chrome DevTools Protocol.
+Seize contrôles dans un vrai Chrome, sur le build de production, pour ce que jsdom ne peut pas atteindre : la CSP réelle, le service worker et le hors-ligne, le manifest, le lancer de la roue à la jauge de puissance et son animation par la Web Animations API, l'arbre d'accessibilité de Chrome, le `<dialog>` natif et l'écouteur clavier posé sur `document`. Sans aucune dépendance : le pilote parle directement le Chrome DevTools Protocol.
 
 Ce n'est **pas** dans la CI ni dans `yarn test` — c'est une porte de déploiement passée à la main, qui lance Chrome et dure une minute. Aucune requête ne part vers Mistral : la seule clé écrite dans le profil jetable est factice, et sert uniquement à vérifier qu'elle ne se retrouve pas dans l'export des énigmes.
 

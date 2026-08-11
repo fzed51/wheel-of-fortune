@@ -6,7 +6,7 @@ import userEvent from '@testing-library/user-event'
 import { BOT_DELAY_MS } from '../game/bot'
 import { CONSONANTS } from '../game/puzzle'
 import { HUMAN_ID } from '../game/setup'
-import { SPIN_MS } from '../game/wheel'
+import { SPIN_MAX_MS } from '../game/wheel'
 import { useGameEffects } from '../hooks/useGameEffects'
 import { useAnnouncements } from '../hooks/useAnnouncer'
 import { createJudge } from '../llm'
@@ -587,7 +587,7 @@ describe('GameProvider', () => {
 
         // Moins que le délai : le filet ne doit pas encore s'être déclenché.
         act(() => {
-          vi.advanceTimersByTime(SPIN_MS)
+          vi.advanceTimersByTime(SPIN_MAX_MS)
         })
         expect(champ('Phase de la manche')).toBe('spinning')
 
@@ -667,7 +667,7 @@ describe('GameProvider', () => {
             // privée à `useGameEffects`, et la recopier ici ferait échouer ce
             // test en silence — la boucle s'épuiserait — le jour où elle change.
             act(() => {
-              vi.advanceTimersByTime(SPIN_MS * 2)
+              vi.advanceTimersByTime(SPIN_MAX_MS * 2)
             })
           }
           lettresJouees = champ('Lettres jouées')

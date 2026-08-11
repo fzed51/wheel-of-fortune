@@ -3,6 +3,8 @@ import { isFinalRound, isQuestion } from './bonus'
 import { matchesAnswer } from './compare'
 import { countOccurrences, isConsonant, isSolved, isVowel } from './puzzle'
 import { canBuyVowel, canResolve, canSpin, isStuck, multiplierFor } from './rules'
+import { INITIAL_WHEEL_ANGLE } from './setup'
+import { resolveThrow } from './wheel'
 import type {
   BonusResult,
   BonusState,
@@ -190,6 +192,7 @@ export function reduce(state: GameState, action: GameAction): GameState {
         players: action.players,
         history: [],
         playedPuzzleIds: [puzzle.id],
+        wheelAngle: INITIAL_WHEEL_ANGLE,
         progress: {
           kind: 'round',
           currentPlayer: seatOf(action.firstPlayer, action.players.length),
@@ -202,17 +205,24 @@ export function reduce(state: GameState, action: GameAction): GameState {
       const turn = turnOf(state, action.by)
       if (turn === null || !canSpin(turn.game)) return state
 
+      // La case n'est plus choisie par l'appelant : elle est déduite de l'angle
+      // de repos précédent et du lancer reçu. `wheelAngle` avance dès ce lancer,
+      // pas au règlement (`wheel/settled`) — l'issue est déjà tranchée ici, et
+      // `toPersisted` s'appuie sur ce fait pour régler une phase `spinning`
+      // avant d'écrire l'état sur le disque.
+      const spin = resolveThrow(turn.game.wheelAngle, action.thrown)
       // Un index hors bornes est une action malformée : on l'ignore plutôt que
       // de faire lever le reducer, qui casserait le rendu.
-      const segment = WHEEL[action.spin.index]
+      const segment = WHEEL[spin.index]
       if (segment === undefined) return state
 
       return playing({
         ...turn.game,
+        wheelAngle: spin.angle,
         progress: {
           kind: 'round',
           currentPlayer: turn.seat,
-          round: { ...turn.round, phase: { kind: 'spinning', segment, spin: action.spin } },
+          round: { ...turn.round, phase: { kind: 'spinning', segment, spin } },
         },
       })
     }

@@ -43,6 +43,23 @@ window.__h = {
     el.click()
     return true
   },
+  /*
+   * Le bouton de lancer change de nom selon le mode et l'état de charge —
+   * « Lancer » au repos et « Stop » pendant la charge en mode jauge, « Tourner »
+   * en mode lancer simple — mais c'est toujours le même bouton. Un contrôle qui
+   * cherche l'un de ces trois libellés en dur casse dès qu'il tombe sur un autre
+   * état ; celui-ci essaie les trois et clique le premier trouvé.
+   */
+  clickLancer() {
+    for (const nom of ['Lancer', 'Stop', 'Tourner']) {
+      const el = window.__h.byName(nom)
+      if (el) {
+        el.click()
+        return nom
+      }
+    }
+    throw new Error('Bouton de lancer introuvable (ni Lancer, ni Stop, ni Tourner)')
+  },
   labelled(labelText) {
     const label = window.__h.all('label').find((l) => window.__h.txt(l) === labelText)
     if (!label) return null
@@ -65,6 +82,18 @@ window.__h = {
     field.dispatchEvent(new Event('change', { bubbles: true }))
     return field.value
   },
+  /*
+   * Coche une case en la cliquant, jamais en écrivant \`checked\` directement :
+   * React ne verrait rien passer et réécrirait l'état non coché au rendu
+   * suivant. Idempotent, pour rester utilisable même si l'état de départ n'est
+   * pas connu à l'appel.
+   */
+  setChecked(labelText, coche) {
+    const field = window.__h.labelled(labelText)
+    if (!field) throw new Error('Champ introuvable : ' + labelText)
+    if (field.checked !== coche) field.click()
+    return field.checked
+  },
   bodyText() { return document.body.innerText.replace(/\\s+/g, ' ').trim() },
   has(text) { return window.__h.bodyText().includes(text) },
   url() { return location.pathname },
@@ -83,9 +112,17 @@ window.__h = {
   /** Instantané de l'écran de jeu, tel qu'un joueur le lit. */
   jeu() {
     const controls = {}
-    for (const nom of ['Tourner', 'Résoudre', 'Passer la main', 'Manche suivante']) {
+    for (const nom of ['Résoudre', 'Passer la main', 'Manche suivante']) {
       const el = window.__h.byName(nom)
       controls[nom] = el ? el.getAttribute('aria-disabled') : 'absent'
+    }
+    // Bouton de lancer à part : son libellé même change (« Lancer », « Stop »,
+    // « Tourner » selon le mode et l'état de charge), un seul de ces trois est
+    // présent à la fois — c'est \`controls\` ci-dessus qui garde les libellés fixes.
+    const lancerEl = window.__h.byName('Lancer') || window.__h.byName('Stop') || window.__h.byName('Tourner')
+    const lancer = {
+      nom: lancerEl ? window.__h.txt(lancerEl) : null,
+      gele: lancerEl ? lancerEl.getAttribute('aria-disabled') : 'absent',
     }
     const paragraphes = window.__h.all('main p').map(window.__h.txt)
     return {
@@ -93,6 +130,7 @@ window.__h = {
       tour: paragraphes.find((t) => t.startsWith('Au tour de')) || null,
       evenement: paragraphes.find((t) => /roue s'arrête|Banqueroute|Passe\\.|Pas de |fois\\.|Voyelle payée|Manche gagnée|Manche annulée/.test(t)) || null,
       controls,
+      lancer,
       jouables: window.__h.lettresJouables(),
       dialogue: document.querySelector('dialog[open]') !== null,
     }

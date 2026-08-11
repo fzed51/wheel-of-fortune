@@ -1,4 +1,5 @@
 import { reduce } from '../game/engine'
+import { INITIAL_WHEEL_ANGLE } from '../game/setup'
 import type {
   BonusResult,
   BonusState,
@@ -17,9 +18,9 @@ import type {
 /**
  * Frontière entre ce qui mérite d'être écrit et ce qui ne doit jamais l'être.
  *
- * **Jamais persisté** : angle de rotation, `spinId`, texte en cours de frappe,
- * toast, minuterie, état du générateur aléatoire. Tout cela n'a de sens que
- * dans l'onglet qui l'a produit ; le relire ferait rejouer une animation.
+ * **Jamais persisté** : angle de rotation (`Game.wheelAngle`), `spinId`, texte en
+ * cours de frappe, toast, minuterie, état du générateur aléatoire. Tout cela n'a
+ * de sens que dans l'onglet qui l'a produit ; le relire ferait rejouer une animation.
  */
 export type PersistedPhase =
   | { readonly kind: 'awaiting-action' }
@@ -283,5 +284,8 @@ export function fromPersisted(persisted: PersistedGame): Game {
     history: persisted.history.map(copySummary),
     playedPuzzleIds: [...persisted.playedPuzzleIds],
     progress: reviveProgress(persisted.progress),
+    // Jamais écrit (voir le docblock plus haut) : il n'y a donc rien à relire, la
+    // roue reprend toujours au repos de montage plutôt qu'à son dernier angle.
+    wheelAngle: INITIAL_WHEEL_ANGLE,
   }
 }

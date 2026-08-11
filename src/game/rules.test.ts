@@ -12,6 +12,7 @@ import {
   enigme,
   jeu,
   jouer,
+  lancer,
   manche,
   proposer,
   repondre,
@@ -203,12 +204,9 @@ describe('legalActions', () => {
   })
 
   it('n’offre que le règlement du tirage pendant la rotation', () => {
-    const by = courant(demarrer()).id
-    const state = jouer(demarrer(), {
-      type: 'wheel/spin',
-      by,
-      spin: { index: cash(500), offset: 0, spinId: 1 },
-    })
+    const depart = demarrer()
+    const by = courant(depart).id
+    const state = jouer(depart, lancer(jeu(depart), by, cash(500)))
     expect(legalActions(jeu(state))).toEqual(['wheel/settled'])
   })
 

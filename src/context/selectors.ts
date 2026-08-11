@@ -30,8 +30,11 @@ export interface GameCommands {
   readonly startGame: (setup?: Partial<Setup>) => void
   /** Enchaîne la manche suivante, avec une énigme jamais jouée dans cette partie. */
   readonly nextRound: () => void
-  /** Lance la roue : tire le segment ici, l'animation ne fera que l'exécuter. */
-  readonly spin: () => void
+  /**
+   * Lance la roue avec une force entre 0 et 1 ; la case sera celle où la roue s'arrête.
+   * Force omise : tirée au hasard.
+   */
+  readonly spin: (force?: number) => void
   /** Clôt la rotation en cours : appelée par l'animation de la roue quand elle atteint le segment. */
   readonly settleSpin: () => void
   /** Joue une lettre : consonne devinée ou voyelle achetée, selon la lettre et la phase. */
