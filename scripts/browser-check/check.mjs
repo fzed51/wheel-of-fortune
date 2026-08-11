@@ -222,6 +222,52 @@ async function tournerJusquAConsonne(client, essais = 6) {
   return null
 }
 
+/**
+ * Grimpe la cagnotte du joueur jusqu'à ce que la voyelle « A » devienne
+ * achetable (`VOWEL_COST` de `src/game/setup.ts`, 250 €). Rien ne le garantit
+ * dès `demarrerPartie` : la cagnotte part de zéro, donc les cinq voyelles sont
+ * aussi verrouillées que les consonnes au tout premier rendu.
+ *
+ * `window.__h.jeu().jouables` ne liste que les lettres réellement cliquables
+ * (`lettresJouables()` filtre sur le libellé nu « Lettre X », que seul l'état
+ * « available » de `KeyboardKey` produit) : sa présence dit donc à elle seule
+ * si on attend un lancer (`lancer.gele === 'false'`) ou une consonne
+ * (`jouables` rempli de consonnes pendant que le lancer reste gelé), sans
+ * qu'il faille suivre la phase du moteur depuis ce script.
+ *
+ * `H` n'est jamais tentée : c'est le témoin verrouillé que le contrôle appelant
+ * relève ensuite, il doit rester intact — jamais proposé, donc jamais « déjà
+ * proposée » à sa place.
+ */
+async function atteindreVoyelleAchetable(client, essais = 14) {
+  for (let essai = 0; essai < essais; essai += 1) {
+    const vu = await evaluate(client, 'return window.__h.jeu()')
+    if (vu.jouables.includes('A')) return true
+
+    if (vu.lancer.gele === 'false') {
+      // Geste en deux temps, comme partout ailleurs dans ce fichier : hors
+      // « lancer simple » (le défaut de la configuration servie ici), un
+      // premier clic n'arme que l'arc de visée, le second fige l'angle.
+      await evaluate(client, 'return window.__h.clickLancer()')
+      await sleep(CHARGE_ARC_MS)
+      await evaluate(client, 'return window.__h.clickLancer()')
+      await sleep(4300)
+      continue
+    }
+
+    // Le bouton de lancer est gelé : une consonne est attendue. Priorité aux
+    // lettres les plus fréquentes en français, sans elle le budget d'essais
+    // s'épuiserait vite sur des lettres rares (`B`, `F`, `G`…) — et jamais `H`.
+    const lettre =
+      CONSONNES.find((candidate) => vu.jouables.includes(candidate)) ??
+      vu.jouables.find((candidate) => candidate !== 'H')
+    if (lettre === undefined) return false
+    await evaluate(client, `return window.__h.clickLettre('${lettre}')`)
+    await sleep(400)
+  }
+  return false
+}
+
 async function main() {
   const serveur = await demarrerServeur()
   const telechargements = mkdtempSync(join(tmpdir(), 'wof-telechargements-'))
@@ -752,6 +798,106 @@ async function main() {
     exiger(horsLigne.entete === 'La Roue de la Fortune', 'l’application ne se charge pas hors ligne', horsLigne)
     exiger(horsLigne.lancer.nom !== null, 'l’écran de jeu n’est pas rendu hors ligne', horsLigne)
     return horsLigne
+  })
+
+  await controle('un bouton inerte s’estompe vraiment', async () => {
+    await demarrerPartie(client)
+
+    /*
+     * `getComputedStyle` est le seul juge possible ici : jsdom ne calcule pas
+     * d'opacité, et ce dépôt interdit les sélecteurs de classe dans les tests
+     * Vitest — `aria-disabled:opacity-50` n'est vérifiable que par son effet
+     * rendu, jamais par la présence de la classe dans le HTML. « Lancer »,
+     * actif, sert de témoin : sans lui, une `opacity: .5` posée par erreur sur
+     * tous les boutons (ou une classe partagée retirée par erreur d'un seul
+     * composant) passerait quand même au vert.
+     */
+    const boutons = await evaluate(
+      client,
+      `const passer = window.__h.byName('Passer la main')
+       const lancer = window.__h.byName('Lancer')
+       return {
+         passer: passer && { disabled: passer.getAttribute('aria-disabled'), opacite: getComputedStyle(passer).opacity },
+         lancer: lancer && { disabled: lancer.getAttribute('aria-disabled'), opacite: getComputedStyle(lancer).opacity },
+       }`,
+    )
+    exiger(boutons.passer !== null, 'bouton « Passer la main » introuvable', boutons)
+    exiger(boutons.lancer !== null, 'bouton « Lancer » introuvable (mode lancer simple actif ?)', boutons)
+    // À l'arrivée sur l'écran de jeu, aucun tour n'a encore été joué : `isStuck`
+    // (donc `canPass`) vaut faux tant qu'il reste une consonne à tourner, et
+    // `canSpin` vaut vrai. Si ce n'est plus le cas, ce contrôle ne mesure pas
+    // ce qu'il croit mesurer.
+    exiger(
+      boutons.passer.disabled === 'true',
+      '« Passer la main » n’est pas inerte à l’arrivée sur l’écran de jeu',
+      boutons.passer,
+    )
+    exiger(parseFloat(boutons.passer.opacite) < 0.9, '« Passer la main » inerte garde une opacité pleine', boutons.passer)
+    exiger(parseFloat(boutons.lancer.opacite) === 1, '« Lancer », actif, est lui aussi estompé', boutons.lancer)
+
+    // Clavier au repos : la cagnotte part de zéro, donc la voyelle « A » est
+    // verrouillée exactement comme la consonne « H » (`canBuyVowel` refuse tant
+    // que `pot < vowelCost`, 250 €) — même si les raisons diffèrent, les deux
+    // passent par le même état `locked` de `KeyboardKey`.
+    const clavierRepos = await evaluate(
+      client,
+      `const consonne = document.querySelector('button[aria-label^="Lettre H"]')
+       const voyelle = document.querySelector('button[aria-label^="Lettre A"]')
+       return {
+         consonne: consonne && { disabled: consonne.getAttribute('aria-disabled'), opacite: getComputedStyle(consonne).opacity },
+         voyelle: voyelle && { disabled: voyelle.getAttribute('aria-disabled'), opacite: getComputedStyle(voyelle).opacity },
+       }`,
+    )
+    exiger(clavierRepos.consonne !== null, 'touche « Lettre H » introuvable', clavierRepos)
+    exiger(clavierRepos.voyelle !== null, 'touche « Lettre A » introuvable', clavierRepos)
+    exiger(clavierRepos.consonne.disabled === 'true', 'la consonne « H » n’est pas verrouillée au premier rendu', clavierRepos.consonne)
+    exiger(parseFloat(clavierRepos.consonne.opacite) < 0.9, 'une touche verrouillée garde une opacité pleine', clavierRepos.consonne)
+    exiger(
+      clavierRepos.voyelle.disabled === 'true',
+      'la voyelle « A » n’est pas verrouillée alors que la cagnotte est à 0 €',
+      clavierRepos.voyelle,
+    )
+    exiger(parseFloat(clavierRepos.voyelle.opacite) < 0.9, 'une voyelle sous son prix garde une opacité pleine', clavierRepos.voyelle)
+
+    // `KeyboardKey.tsx` compose ses classes hors de `BUTTON_PRIMARY`/`BUTTON_GHOST` :
+    // il mérite son propre témoin, et une seule photo au repos ne suffit pas —
+    // voir la voyelle *se libérer* écarte l'hypothèse d'une case estompée par
+    // accident (touche introuvable, sélecteur trop large…) qui passerait pour
+    // de mauvaises raisons.
+    const cagnotte = await atteindreVoyelleAchetable(client)
+    exiger(cagnotte, 'impossible d’obtenir une voyelle achetable pour comparer le clavier après coup')
+    await sleep(200)
+
+    const clavierApres = await evaluate(
+      client,
+      `const consonne = document.querySelector('button[aria-label^="Lettre H"]')
+       const voyelle = document.querySelector('button[aria-label^="Lettre A"]')
+       const proposee = document.querySelector('button[aria-label$=", déjà proposée"]')
+       return {
+         consonne: consonne && { disabled: consonne.getAttribute('aria-disabled'), opacite: getComputedStyle(consonne).opacity },
+         voyelle: voyelle && { disabled: voyelle.getAttribute('aria-disabled'), opacite: getComputedStyle(voyelle).opacity },
+         proposee: proposee && { disabled: proposee.getAttribute('aria-disabled'), opacite: getComputedStyle(proposee).opacity },
+       }`,
+    )
+    exiger(clavierApres.consonne !== null, 'touche « Lettre H » introuvable après coup', clavierApres)
+    exiger(clavierApres.voyelle !== null, 'touche « Lettre A » introuvable après coup', clavierApres)
+    exiger(clavierApres.consonne.disabled === 'true', 'la consonne témoin « H » a fini par être proposée', clavierApres.consonne)
+    exiger(parseFloat(clavierApres.consonne.opacite) < 0.9, 'la consonne verrouillée « H » a repris une opacité pleine', clavierApres.consonne)
+    exiger(
+      clavierApres.voyelle.disabled === 'false',
+      'la voyelle « A » n’est pas devenue achetable malgré une cagnotte suffisante',
+      clavierApres.voyelle,
+    )
+    exiger(parseFloat(clavierApres.voyelle.opacite) === 1, 'une touche devenue jouable reste estompée', clavierApres.voyelle)
+    // Une lettre a forcément été proposée en grimpant la cagnotte : elle
+    // prouve que l'état « déjà proposée » — visuellement identique à
+    // `locked` dans `classesFor` — porte lui aussi l'estompée, pas seulement
+    // les lettres jamais tentées comme « H ».
+    exiger(clavierApres.proposee !== null, 'aucune lettre déjà proposée à comparer (aucun coup n’a pourtant pu être évité)', clavierApres)
+    exiger(clavierApres.proposee.disabled === 'true', 'une lettre déjà proposée n’est plus signalée aria-disabled', clavierApres.proposee)
+    exiger(parseFloat(clavierApres.proposee.opacite) < 0.9, 'une lettre déjà proposée garde une opacité pleine', clavierApres.proposee)
+
+    return { boutons, clavierRepos, clavierApres }
   })
 
   await controle('aucune violation de CSP sur tout le parcours', async () => {
