@@ -24,7 +24,8 @@ const CODE = /\.(ts|tsx|js|jsx|mjs|cjs)$/
 
 const HINT =
   'Un graphe de code existe (graphify-out/graph.json). Pour une question de structure, ' +
-  'préférer `graphify explain "nom()"`, `graphify path "A" "B"` ou `graphify affected "nom()"` : ' +
+  'préférer `graphify explain "nom()"`, `graphify path "A" "B" --undirected` ou ' +
+  '`graphify affected "nom()"` : ' +
   'quelques centaines de caractères au lieu de plusieurs milliers. ' +
   'Éviter `graphify query`, bruyant et souvent hors sujet. ' +
   'Lire le fichier reste la bonne réponse pour modifier ou déboguer des lignes précises.'
