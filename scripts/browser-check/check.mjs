@@ -54,6 +54,17 @@ const CLE_STOCKAGE_MISTRAL = 'wof:mistral-key:1'
 /** Nom de clé recopié de `STORAGE_KEYS.settings` (`src/storage/keys.ts`), même raison que ci-dessus. */
 const CLE_STOCKAGE_REGLAGES = 'wof:settings:1'
 
+/**
+ * Version recopiée de `SCHEMA_VERSION` (`src/storage/keys.ts`) : l'enveloppe de
+ * réglages écrite par le contrôle ci-dessous doit être **acceptée** par
+ * l'application, pas seulement bien formée. Si ce nombre décroche de
+ * `SCHEMA_VERSION` — ce qui s'est déjà produit deux fois —, `decodeRecord`
+ * (`src/storage/codec.ts`) rejette l'enveloppe entière et l'application retombe
+ * sur `DEFAULT_SETTINGS` : le contrôle échouerait alors en accusant un bug de
+ * thème là où la seule cause est ce nombre resté en retard.
+ */
+const SCHEMA_VERSION_RECOPIEE = 3
+
 const CONSONNES = ['S', 'R', 'T', 'N', 'L', 'M', 'D', 'P', 'C', 'V', 'B', 'F', 'G']
 
 /*
@@ -253,9 +264,16 @@ async function main() {
     for (const theme of ['dark', 'light']) {
       await evaluate(
         client,
-        `localStorage.setItem('wof:settings:1', JSON.stringify({
-           version: 1,
-           value: { roundCount: 3, opponents: 1, botLevel: 'normal', theme: '${theme}', mistralModel: 'mistral-small-latest' },
+        `localStorage.setItem('${CLE_STOCKAGE_REGLAGES}', JSON.stringify({
+           version: ${SCHEMA_VERSION_RECOPIEE},
+           value: {
+             roundCount: 3,
+             opponents: 1,
+             botLevel: 'normal',
+             theme: '${theme}',
+             throwMode: 'gauge',
+             mistralModel: 'mistral-small-latest',
+           },
          }))
          return true`,
       )
@@ -269,12 +287,76 @@ async function main() {
       )
     }
     for (const [theme, vu] of Object.entries(releve)) {
-      // `avantRendu` est null quand `theme-init.js` n'a pas été chargé : c'est
-      // exactement le symptôme d'un `base` mal résolu, et un flash de thème clair.
-      exiger(vu.avantRendu === theme, `thème ${theme} non appliqué avant le rendu`, vu)
-      exiger(vu.apresRendu === theme, `thème ${theme} non appliqué après le rendu`, vu)
+      // `avantRendu === null` signale un `base` mal résolu (theme-init.js jamais
+      // chargé), c'est-à-dire un flash de thème clair garanti. Un `avantRendu`
+      // renseigné mais différent du thème qu'on vient d'écrire ne peut avoir
+      // qu'une cause : `SCHEMA_VERSION_RECOPIEE`, ci-dessus, a décroché de
+      // `SCHEMA_VERSION` et l'application rejette l'enveloppe qu'on vient de poser.
+      exiger(
+        vu.avantRendu === theme,
+        `thème ${theme} non appliqué avant le rendu (SCHEMA_VERSION_RECOPIEE a-t-il décroché de SCHEMA_VERSION ?)`,
+        vu,
+      )
+      exiger(
+        vu.apresRendu === theme,
+        `thème ${theme} non appliqué après le rendu (SCHEMA_VERSION_RECOPIEE a-t-il décroché de SCHEMA_VERSION ?)`,
+        vu,
+      )
     }
-    return releve
+
+    /*
+     * Cas révélé le 2026-08-10 : un enregistrement de version périmée doit être
+     * ignoré par `theme-init.js`, exactement comme `decodeRecord` le fait pour
+     * l'application (`src/storage/codec.ts`) — sinon le fond s'affiche selon le
+     * thème stocké avant de basculer au montage de React, exactement le flash
+     * que ce fichier existe pour supprimer.
+     *
+     * Version 0, et non une valeur proche de la version courante : `SCHEMA_VERSION`
+     * n'a fait que monter depuis sa création (2 → 3, voir `src/storage/keys.ts`) et
+     * aucune version valide n'a jamais été inférieure à 1 — 0 reste donc périmée
+     * quel que soit le prochain bump.
+     *
+     * Le thème stocké est choisi à l'opposé du thème système du Chrome de
+     * contrôle : si `theme-init.js` appliquait malgré tout cet enregistrement
+     * périmé, `avantRendu` porterait ce thème stocké et s'écarterait du thème
+     * réellement rendu par l'application (celui du système, l'enveloppe étant
+     * rejetée) — l'égalité testée plus bas ne peut alors pas passer par accident,
+     * y compris sur un poste dont le système est déjà en sombre.
+     */
+    const systemeSombre = await evaluate(
+      client,
+      `return window.matchMedia('(prefers-color-scheme: dark)').matches`,
+    )
+    const themeStockeAbusif = systemeSombre ? 'light' : 'dark'
+    await evaluate(
+      client,
+      `localStorage.setItem('${CLE_STOCKAGE_REGLAGES}', JSON.stringify({
+         version: 0,
+         value: {
+           roundCount: 3,
+           opponents: 1,
+           botLevel: 'normal',
+           theme: '${themeStockeAbusif}',
+           throwMode: 'gauge',
+           mistralModel: 'mistral-small-latest',
+         },
+       }))
+       return true`,
+    )
+    await goto(client, APP)
+    const perime = await evaluate(
+      client,
+      `return {
+         avantRendu: window.__themeAvantRendu,
+         apresRendu: document.documentElement.getAttribute('data-theme'),
+       }`,
+    )
+    exiger(
+      perime.avantRendu === perime.apresRendu,
+      'un enregistrement de réglages de version périmée est quand même appliqué avant le rendu : `theme-init.js` ne vérifie plus la version de l’enveloppe (ou l’a de nouveau perdue)',
+      perime,
+    )
+    return { ...releve, versionPerimee: perime }
   })
 
   await controle('roue : animation réelle et angle conservé', async () => {
