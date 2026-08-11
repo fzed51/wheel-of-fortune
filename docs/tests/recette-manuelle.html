@@ -352,6 +352,27 @@ const SCENARIOS = [
       { a: 'Jouer une partie jusqu’à tirer cette question en manche finale (clé requise).', e: 'C’est bien la réponse attendue saisie à l’édition qui sert de référence au jugement.' },
       { a: 'Vérifier les entrées du localStorage après tout ça.', e: 'Uniquement wof:settings:1, wof:puzzles:1, wof:save:1 et wof:mistral-key:1. Aucune autre clé préfixée wof:.' }
     ]
+  },
+  {
+    id: 'S12',
+    titre: 'Le lancer à la force, que seul le poignet juge',
+    prio: true,
+    but: 'Établir si le dosage de la jauge de puissance est jouable — ni trop rapide pour être visé, ni assez lent pour être trivial — et que la roue s’arrête bien là où la physique la mène. Aucun automate ne mesure une sensation ni ne juge un geste : Vitest ne voit pas le rythme du balayage, et check:browser ne fait que constater qu’une animation existe.',
+    prereq: [
+      'Faire cette fiche au moins une fois à la souris ou au trackpad, une fois au doigt sur un vrai téléphone : le dosage ne se sent pas pareil.',
+      'Pour l’étape en mouvement réduit : activer prefers-reduced-motion depuis les réglages système d’accessibilité, ou dans Chrome DevTools → onglet Rendering → « Emulate CSS media feature prefers-reduced-motion » réglé sur reduce.'
+    ],
+    etapes: [
+      { a: 'En mode jauge (réglage par défaut), cliquer une première fois sur « Lancer ».', e: 'Une jauge apparaît au-dessus de la barre de boutons — une barre arrondie et bordée, avec un curseur rond de la couleur primaire qui la balaie d’un bord à l’autre en continu, encadrée de « faible » à gauche et « fort » à droite. Le bouton affiche désormais « Stop ».' },
+      { a: 'Jouer plusieurs lancers en visant délibérément une force faible (figer le curseur près du bord gauche), puis plusieurs en visant une force forte (bord droit).', e: 'La rotation est visiblement plus courte, en durée et en distance parcourue, sur les lancers faibles que sur les lancers forts : le dosage se voit dans la course de la roue. Si aucune différence ne se distingue à l’œil, l’écrire dans la note — c’est exactement ce que cette étape doit établir.' },
+      { a: 'Juger le rythme du balayage (un aller de la jauge dure 900 ms) : est-ce qu’il laisse le temps de viser un dosage précis, sans rendre la visée triviale ?', e: 'Noter le verdict dans la note, dans un sens comme dans l’autre — y compris si 900 ms se révèle trop rapide pour viser, ou au contraire assez lent pour arrêter le curseur à volonté.' },
+      { a: 'Viser plusieurs fois de suite le même point du curseur, en essayant d’obtenir la même case.', e: 'La case obtenue varie d’un essai à l’autre malgré un geste identique : l’imprécision volontaire (environ ±15°, une demi-case) empêche de viser une case précise. Le dosage doit sembler déplacer les chances, jamais choisir la case.' },
+      { a: 'Rendre le focus au corps de la page puis appuyer deux fois sur Espace pour lancer la roue ; relancer et, cette fois, maintenir Espace enfoncé.', e: 'Les deux appuis simples reproduisent exactement les deux clics : le premier arme la jauge, le second la fige et lance la roue. La touche maintenue n’arme rien de plus : une pression continue ne charge pas la jauge davantage et ne la fige jamais.' },
+      { a: 'Dans Réglages → « Lancer de la roue », cocher « Lancer simple (sans jauge de puissance) », revenir en jeu et lancer la roue.', e: 'Le bouton affiche « Tourner », un seul clic suffit à lancer la roue, et aucune jauge n’apparaît jamais, quel que soit le nombre de lancers.' },
+      { a: 'Recharger la page.', e: 'La case « Lancer simple » reste cochée et le bouton affiche toujours « Tourner » : le réglage a survécu au rechargement.' },
+      { a: 'Revenir en mode jauge, activer prefers-reduced-motion, puis lancer la roue.', e: 'La roue ne tourne pas : le résultat s’applique d’un coup. Mais la jauge, elle, continue de balayer normalement, seulement ralentie (environ 2,25 s l’aller au lieu de 900 ms) — volontaire, car sans jauge visible il n’y aurait plus de jeu du tout.' },
+      { a: 'Activer un lecteur d’écran, lancer un tour en mode jauge et écouter le passage du libellé du bouton.', e: 'Le passage « Lancer » → « Stop » s’entend clairement à l’activation de la jauge, et rien d’autre ne bavarde pendant toute la charge : la jauge elle-même est aria-hidden et ne porte aucune valeur, volontairement — elle change trop vite pour être annoncée sans noyer le reste.' }
+    ]
   }
 ]
 

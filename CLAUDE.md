@@ -37,7 +37,8 @@ yarn lint && yarn test && yarn build
 | `src/llm/`, `src/components/BonusQuestion/`, l'étape bonus de `src/hooks/useGameEffects.ts`, la partie clé de `src/routes/SettingsRoute.tsx` | S2, S3, S4 |
 | `vite.config.ts`, `pwa-assets.config.ts`, `public/`, `src/components/UpdatePrompt/` | S5, S6, S7 |
 | `src/components/classes.ts`, les couleurs Tailwind, `public/theme-init.js`, `src/components/Wheel/` | S9 |
-| `src/game/wheel.ts`, `src/game/setup.ts` (barème, montants) | S1, S9 |
+| `src/game/wheel.ts`, `src/game/setup.ts` (barème, montants) | S1, S9, S12 |
+| `src/components/PowerGauge/`, `src/components/Wheel/useWheelSpin.ts`, le lancer de `src/routes/GameRoute.tsx` | S12 |
 | `src/storage/`, `SCHEMA_VERSION` | S10, S11 |
 | `src/components/PuzzleEditor/`, `src/data/puzzles/` | S11 |
 | Une route, un écran, un nom accessible | S8 |

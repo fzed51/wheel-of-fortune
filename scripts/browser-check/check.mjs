@@ -51,7 +51,34 @@ const CLE_FACTICE = 'controle-navigateur-aucune-requete'
 /** Nom de clé recopié de `STORAGE_KEYS.mistral` (`src/storage/keys.ts`) : ce script est du JS brut, sans accès au module TypeScript source. */
 const CLE_STOCKAGE_MISTRAL = 'wof:mistral-key:1'
 
+/** Nom de clé recopié de `STORAGE_KEYS.settings` (`src/storage/keys.ts`), même raison que ci-dessus. */
+const CLE_STOCKAGE_REGLAGES = 'wof:settings:1'
+
 const CONSONNES = ['S', 'R', 'T', 'N', 'L', 'M', 'D', 'P', 'C', 'V', 'B', 'F', 'G']
+
+/*
+ * Une charge d'environ 400 ms suffit à sortir du geste « armer » avec une
+ * force exploitable — aucun contrôle ci-dessous ne dépend de sa valeur
+ * exacte, seulement du fait qu'un lancer a bien eu lieu. Sous
+ * `prefers-reduced-motion`, le balayage de la jauge est ralenti ×2,5 (voir
+ * `useForceGauge`) : la charge est allongée d'autant pour rester cohérente,
+ * même si rien n'impose cette proportion pour la validité du contrôle.
+ */
+const CHARGE_JAUGE_MS = 450
+const CHARGE_JAUGE_RALENTIE_MS = Math.round(CHARGE_JAUGE_MS * 2.5)
+
+/**
+ * N'isole que les animations dont la cible est le rotor de la roue : sans ce
+ * filtre, `document.getAnimations()` compte aussi le balayage de la jauge de
+ * puissance pendant sa charge, et un contrôle qui voudrait vérifier que la
+ * roue seule s'anime (ou ne s'anime pas, sous mouvement réduit) passerait
+ * pour de mauvaises raisons.
+ */
+const FILTRE_ANIMATIONS_ROTOR = `
+  const cibleRotor = (a) => a.effect && a.effect.target && a.effect.target.classList.contains('wheel-rotor')
+  const animationsRotor = document.getAnimations().filter(cibleRotor).length
+  const animationsHorsRotor = document.getAnimations().filter((a) => !cibleRotor(a)).length
+`
 
 const resultats = []
 
@@ -160,14 +187,22 @@ async function demarrerPartie(client, { manches = 3, adversaires = 0 } = {}) {
   await sleep(600)
 }
 
-/** Tourne jusqu'à obtenir une phase « consonne attendue », ou rend la main. */
+/**
+ * Tourne jusqu'à obtenir une phase « consonne attendue », ou rend la main.
+ *
+ * Geste en deux temps (armer, puis figer et lancer) : en mode jauge — le
+ * défaut de la configuration servie ici — un seul clic ne ferait que monter
+ * la charge, la roue ne tournerait jamais et la boucle attendrait pour rien.
+ */
 async function tournerJusquAConsonne(client, essais = 6) {
   for (let essai = 0; essai < essais; essai += 1) {
     const vu = await evaluate(client, 'return window.__h.jeu()')
     if (/roue s'arrête sur/.test(vu.evenement ?? '') && vu.jouables.length > 0) return vu
-    if (vu.controls['Tourner'] !== 'false') return null
-    await evaluate(client, `return window.__h.click('Tourner')`)
-    await sleep(4600)
+    if (vu.lancer.gele !== 'false') return null
+    await evaluate(client, 'return window.__h.clickLancer()')
+    await sleep(CHARGE_JAUGE_MS)
+    await evaluate(client, 'return window.__h.clickLancer()')
+    await sleep(4300)
   }
   return null
 }
@@ -244,25 +279,31 @@ async function main() {
 
   await controle('roue : animation réelle et angle conservé', async () => {
     await demarrerPartie(client)
-    await evaluate(client, `return window.__h.click('Tourner')`)
+    // Geste en deux temps : le premier clic n'arme que la jauge (mode par
+    // défaut), le second fige la force et lance la rotation réelle.
+    await evaluate(client, 'return window.__h.clickLancer()')
+    await sleep(CHARGE_JAUGE_MS)
+    await evaluate(client, 'return window.__h.clickLancer()')
     await sleep(500)
     const pendant = await evaluate(
       client,
-      `return {
-         animations: document.getAnimations().length,
-         controls: window.__h.jeu().controls,
-       }`,
+      `${FILTRE_ANIMATIONS_ROTOR}
+       return { animationsRotor, lancer: window.__h.jeu().lancer }`,
     )
-    exiger(pendant.animations > 0, 'la roue ne s’anime pas', pendant)
-    exiger(pendant.controls['Tourner'] === 'true', 'commandes non gelées pendant la rotation', pendant)
+    // Ne compter que les animations dont la cible est le rotor : un compte
+    // global inclurait aussi le balayage de la jauge, et ce contrôle passerait
+    // même si la roue elle-même ne bougeait jamais.
+    exiger(pendant.animationsRotor > 0, 'la roue ne s’anime pas', pendant)
+    exiger(pendant.lancer.gele === 'true', 'commandes non gelées pendant la rotation', pendant)
 
     await sleep(4200)
     const apres = await evaluate(
       client,
       `const rotor = document.querySelector('.wheel-rotor')
+       ${FILTRE_ANIMATIONS_ROTOR}
        return {
          transformInline: rotor ? rotor.style.transform : null,
-         animations: document.getAnimations().length,
+         animationsRotor,
          evenement: window.__h.jeu().evenement,
        }`,
     )
@@ -278,12 +319,112 @@ async function main() {
     return apres
   })
 
+  await controle('jauge de puissance : armée puis relâchée', async () => {
+    await demarrerPartie(client)
+    const repos = await evaluate(client, 'return window.__h.jeu().lancer')
+    exiger(repos.nom === 'Lancer', 'le bouton de lancer ne s’appelle pas « Lancer » au repos', repos)
+
+    await evaluate(client, 'return window.__h.clickLancer()')
+    await sleep(300)
+    const charge = await evaluate(
+      client,
+      `${FILTRE_ANIMATIONS_ROTOR}
+       return { lancer: window.__h.jeu().lancer, animationsHorsRotor }`,
+    )
+    exiger(charge.lancer.nom === 'Stop', 'le bouton ne devient pas « Stop » pendant la charge', charge)
+    // Le lancer n'a pu démarrer que sur une action légale : l'arrêter doit
+    // toujours être possible, la charge ne gèle donc jamais ce bouton.
+    exiger(charge.lancer.gele === 'false', 'le bouton « Stop » est gelé pendant sa propre charge', charge)
+    // C'est le seul instant de ce contrôle où l'on *veut* voir une animation
+    // hors rotor : c'est la jauge, rien d'autre ne peut l'expliquer ici.
+    exiger(charge.animationsHorsRotor > 0, 'aucune animation de jauge pendant la charge', charge)
+
+    await evaluate(client, 'return window.__h.clickLancer()')
+    await sleep(500)
+    const rotation = await evaluate(
+      client,
+      `${FILTRE_ANIMATIONS_ROTOR}
+       return { animationsRotor, animationsHorsRotor }`,
+    )
+    exiger(rotation.animationsRotor > 0, 'la roue ne tourne pas après le second clic', rotation)
+    exiger(rotation.animationsHorsRotor === 0, 'la jauge est encore présente pendant la rotation', rotation)
+
+    await sleep(4200)
+    const evenement = await evaluate(client, 'return window.__h.jeu().evenement')
+    exiger(evenement !== null, 'aucune annonce après une rotation lancée à la jauge', evenement)
+    return { repos, charge, rotation, evenement }
+  })
+
+  await controle('lancer simple : un seul clic suffit, sans jauge', async () => {
+    await goto(client, `${APP}reglages`)
+    const coche = await evaluate(
+      client,
+      `return window.__h.setChecked('Lancer simple (sans jauge de puissance)', true)`,
+    )
+    exiger(coche === true, 'la case « lancer simple » ne se coche pas')
+
+    await demarrerPartie(client)
+    const repos = await evaluate(client, 'return window.__h.jeu().lancer')
+    exiger(repos.nom === 'Tourner', 'le bouton ne s’appelle pas « Tourner » en mode lancer simple', repos)
+
+    await evaluate(client, 'return window.__h.clickLancer()')
+    await sleep(500)
+    const pendant = await evaluate(
+      client,
+      `${FILTRE_ANIMATIONS_ROTOR}
+       return { animationsRotor, animationsHorsRotor }`,
+    )
+    exiger(pendant.animationsRotor > 0, 'un seul clic ne fait pas tourner la roue en mode lancer simple', pendant)
+    exiger(pendant.animationsHorsRotor === 0, 'une jauge est apparue en mode lancer simple', pendant)
+
+    await sleep(4200)
+    const apres = await evaluate(
+      client,
+      `${FILTRE_ANIMATIONS_ROTOR}
+       return { evenement: window.__h.jeu().evenement, animationsHorsRotor }`,
+    )
+    exiger(apres.evenement !== null, 'aucune annonce après le lancer simple', apres)
+    exiger(apres.animationsHorsRotor === 0, 'une jauge est apparue après coup en mode lancer simple', apres)
+    return { repos, pendant, apres }
+  })
+
+  /*
+   * Remise à « gauge » hors du `controle()` ci-dessus, sur le même principe
+   * que l'effacement de la clé factice après l'export un peu plus bas : le
+   * réglage est persisté en localStorage, et un échec en cours de contrôle ne
+   * doit pas laisser tous les contrôles suivants (jauge ralentie, clavier
+   * physique, hors ligne…) tourner dans un mode qu'ils n'attendent pas.
+   *
+   * Le rechargement qui suit n'est pas une précaution : `SettingsProvider` lit
+   * les réglages **une seule fois au montage** (`useState(() => loadSettings())`).
+   * Réécrire localStorage laisse donc l'application en cours toujours en mode
+   * simple, et les contrôles suivants cliqueraient un bouton « Tourner » en
+   * croyant jouer la jauge — certains passeraient même, pour la mauvaise raison.
+   */
+  await evaluate(
+    client,
+    `const brut = localStorage.getItem('${CLE_STOCKAGE_REGLAGES}')
+     if (brut === null) return false
+     const enveloppe = JSON.parse(brut)
+     enveloppe.value.throwMode = 'gauge'
+     localStorage.setItem('${CLE_STOCKAGE_REGLAGES}', JSON.stringify(enveloppe))
+     return true`,
+  )
+  await reload(client)
+
   await controle('prefers-reduced-motion : pas d’animation, tour identique', async () => {
     await setReducedMotion(client, true)
     await demarrerPartie(client)
-    await evaluate(client, `return window.__h.click('Tourner')`)
+    await evaluate(client, 'return window.__h.clickLancer()')
+    // Balayage ralenti ×2,5 sous mouvement réduit : charge allongée d'autant.
+    await sleep(CHARGE_JAUGE_RALENTIE_MS)
+    await evaluate(client, 'return window.__h.clickLancer()')
     await sleep(200)
-    const animations = await evaluate(client, 'return document.getAnimations().length')
+    const animations = await evaluate(
+      client,
+      `${FILTRE_ANIMATIONS_ROTOR}
+       return animationsRotor`,
+    )
 
     let ecoule = null
     for (let attente = 0; attente < 20 && ecoule === null; attente += 1) {
@@ -328,10 +469,15 @@ async function main() {
     await demarrerPartie(client)
 
     await evaluate(client, 'document.activeElement.blur(); return true')
+    // Deux `Espace`, comme deux clics : en mode jauge, le premier n'arme que
+    // la charge. La touche déclenche exactement la même action que le
+    // bouton, il faut donc le même geste en deux temps pour lancer la roue.
+    await pressKey(client, ' ')
+    await sleep(CHARGE_JAUGE_MS)
     await pressKey(client, ' ')
     await sleep(600)
     const pendant = await evaluate(client, 'return window.__h.jeu()')
-    exiger(pendant.controls['Tourner'] === 'true', 'Espace ne fait pas tourner la roue', pendant.controls)
+    exiger(pendant.lancer.gele === 'true', 'Espace ne fait pas tourner la roue', pendant.lancer)
     await sleep(4200)
 
     const attente = await tournerJusquAConsonne(client)
@@ -513,12 +659,12 @@ async function main() {
          entete: window.__h.txt(document.querySelector('header a')),
          url: window.__h.url(),
          jouables: window.__h.lettresJouables().length,
-         controls: window.__h.jeu().controls,
+         lancer: window.__h.jeu().lancer,
        }`,
     )
     await setOffline(client, false)
     exiger(horsLigne.entete === 'La Roue de la Fortune', 'l’application ne se charge pas hors ligne', horsLigne)
-    exiger(horsLigne.controls['Tourner'] !== 'absent', 'l’écran de jeu n’est pas rendu hors ligne', horsLigne)
+    exiger(horsLigne.lancer.nom !== null, 'l’écran de jeu n’est pas rendu hors ligne', horsLigne)
     return horsLigne
   })
 
