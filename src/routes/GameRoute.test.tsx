@@ -8,6 +8,7 @@ import { clearAllData, saveGame, saveMistralKey } from '../storage/persist'
 import {
   avecLettres,
   avecPhase,
+  avecPot,
   bot,
   cash,
   courant,
@@ -100,7 +101,7 @@ describe('GameRoute', () => {
     expect(screen.getByText('Alice')).toBeInTheDocument()
     expect(screen.getByText('Bob')).toBeInTheDocument()
     // Actif : c'est le pendant du test du tour de bot, où ce même bouton est inerte.
-    expect(screen.getByRole('button', { name: 'Tourner' })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: 'Lancer' })).toHaveAttribute(
       'aria-disabled',
       'false',
     )
@@ -163,7 +164,7 @@ describe('GameRoute', () => {
     expect(await screen.findAllByText('Pas de Z.')).toHaveLength(2)
   })
 
-  it('« Tourner » fait sortir la phase de spinning et ne fige pas la partie', async () => {
+  it('« Lancer » puis « Stop » font entrer puis sortir de la phase de spinning, sans figer la partie', async () => {
     // jsdom n'implémente pas `Element.prototype.animate` : `useWheelSpin`
     // dégrade alors vers un règlement différé d'environ 300 ms (bien avant le
     // chien de garde de `useGameEffects`, qui n'intervient qu'à `SPIN_MAX_MS + 500`).
@@ -175,7 +176,13 @@ describe('GameRoute', () => {
       const user = userEvent.setup({ delay: null })
       monterApp('/jeu')
 
-      await user.click(screen.getByRole('button', { name: 'Tourner' }))
+      // Premier clic : arme la jauge, ne lance encore rien.
+      await user.click(screen.getByRole('button', { name: 'Lancer' }))
+      expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument()
+      expect(screen.getByRole('status')).not.toHaveTextContent('La roue tourne')
+
+      // Second clic : lit la force accumulée et lance réellement.
+      await user.click(screen.getByRole('button', { name: 'Stop' }))
       // Le préfixe seul, pas la phrase entière : l'annonce se termine désormais
       // par l'étiquette de force du lancer, tirée au hasard faute de jauge ici.
       expect(screen.getByRole('status')).toHaveTextContent('La roue tourne')
@@ -195,6 +202,105 @@ describe('GameRoute', () => {
     }
   })
 
+  it('un seul clic sur « Lancer » arme la jauge sans lancer la roue', async () => {
+    saveGame(jeu(demarrer({ players: [joueur('Alice')] })))
+    const user = userEvent.setup()
+    monterApp('/jeu')
+
+    await user.click(screen.getByRole('button', { name: 'Lancer' }))
+
+    // Le bouton s'appelle désormais « Stop », et rien n'indique que la roue
+    // tourne : `spin` n'a pas encore été appelé, seule la charge a démarré.
+    expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument()
+    expect(screen.getByRole('status')).not.toHaveTextContent('La roue tourne')
+  })
+
+  it('deux « Espace » arment puis lancent la roue, comme deux clics', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true })
+    try {
+      saveGame(jeu(demarrer({ players: [joueur('Alice')] })))
+      monterApp('/jeu')
+
+      fireEvent.keyDown(document.body, { key: ' ' })
+      expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument()
+      expect(screen.getByRole('status')).not.toHaveTextContent('La roue tourne')
+
+      fireEvent.keyDown(document.body, { key: ' ' })
+      expect(screen.getByRole('status')).toHaveTextContent('La roue tourne')
+
+      act(() => {
+        vi.advanceTimersByTime(500)
+      })
+      expect(screen.getByRole('status')).not.toHaveTextContent('La roue tourne')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('n’expose aucun rôle de valeur dans l’arbre accessible pendant la charge', async () => {
+    saveGame(jeu(demarrer({ players: [joueur('Alice')] })))
+    const user = userEvent.setup()
+    monterApp('/jeu')
+
+    await user.click(screen.getByRole('button', { name: 'Lancer' }))
+
+    // La force change une soixantaine de fois par seconde : aucun rôle
+    // `progressbar`, `meter` ni `slider` ne doit apparaître, sous peine de
+    // noyer un lecteur d'écran sous des annonces inutilisables.
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+    expect(screen.queryByRole('meter')).not.toBeInTheDocument()
+    expect(screen.queryByRole('slider')).not.toBeInTheDocument()
+  })
+
+  it('la charge s’annule à l’ouverture de « Résoudre »', async () => {
+    saveGame(jeu(demarrer({ players: [joueur('Alice')] })))
+    const user = userEvent.setup()
+    monterApp('/jeu')
+
+    await user.click(screen.getByRole('button', { name: 'Lancer' }))
+    expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Résoudre' }))
+    expect(screen.getByLabelText('Votre réponse')).toHaveFocus()
+
+    // Le dialogue modal masque visuellement le plateau, mais le stub de
+    // `showModal` posé en tête de ce fichier ne rend rien `inert` : le bouton
+    // de lancer reste bien dans l'arbre, ce qui permet de vérifier ici même,
+    // sans fermer la boîte, qu'il est retombé sur « Lancer ».
+    expect(screen.getByRole('button', { name: 'Lancer' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument()
+  })
+
+  it('la charge s’annule quand la manche se termine sans passer par « Résoudre » ni « Passer la main »', async () => {
+    // Toutes les consonnes de « LE VENT » proposées (L, V, N, T) et un pot qui
+    // couvre la voyelle manquante (E) : l'achat de la dernière voyelle résout
+    // la manche directement depuis `awaiting-action`, sans ouvrir le dialogue
+    // ni passer la main. C'est le seul chemin qui exerce l'effet de
+    // `GameRoute` (qui annule la charge dès que la phase quitte
+    // `awaiting-action`) sans passer par les annulations déjà explicites
+    // d'`openResolve` et de `handlePass`.
+    let state = avecLettres(demarrer({ players: [joueur('Alice')] }), ['L', 'V', 'N', 'T'])
+    state = avecPot(state, 0, 250)
+    saveGame(jeu(state))
+    const user = userEvent.setup()
+    monterApp('/jeu')
+
+    await user.click(screen.getByRole('button', { name: 'Lancer' }))
+    expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Lettre E' }))
+
+    expect(await screen.findByRole('heading', { name: 'Manche terminée' })).toBeInTheDocument()
+
+    // Sans l'effet qui annule la charge, `charging` resterait vrai au-delà de
+    // cette manche : la manche suivante démarrerait avec un bouton « Stop »
+    // fantôme, alors que rien n'a été armé pour son propre lancer.
+    await user.click(screen.getByRole('button', { name: 'Manche suivante' }))
+
+    expect(screen.getByRole('button', { name: 'Lancer' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument()
+  })
+
   /**
    * Horloges factices sans `shouldAdvanceTime` et sans jamais avancer : le
    * minuteur du bot ne doit pas se déclencher pendant ce test, sous peine de
@@ -211,7 +317,7 @@ describe('GameRoute', () => {
       // « Passer la main » exige d'être bloqué (`isStuck`), ce qui n'est pas le
       // cas ici : le vérifier ferait passer ce test même sans verrou de tour.
       // « Tourner » suffit à prouver le verrou.
-      expect(screen.getByRole('button', { name: 'Tourner' })).toHaveAttribute(
+      expect(screen.getByRole('button', { name: 'Lancer' })).toHaveAttribute(
         'aria-disabled',
         'true',
       )
@@ -397,7 +503,7 @@ describe('GameRoute', () => {
       saveGame(jeu(versEtapeBonus({ bonusAnswer: 'la loire' })))
       monterApp('/jeu')
 
-      expect(screen.queryByRole('button', { name: 'Tourner' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Lancer' })).not.toBeInTheDocument()
       expect(screen.queryByRole('button', { name: 'Passer la main' })).not.toBeInTheDocument()
       expect(screen.queryByRole('group', { name: 'Clavier des lettres' })).not.toBeInTheDocument()
       expect(screen.queryByText('Catégorie : Test')).not.toBeInTheDocument()

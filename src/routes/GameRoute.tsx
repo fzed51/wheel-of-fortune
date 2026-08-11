@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Navigate } from 'react-router'
 import BonusQuestion from '../components/BonusQuestion'
 import Controls from '../components/Controls'
 import EventFeedback from '../components/EventFeedback'
 import Keyboard from '../components/Keyboard'
+import { useForceGauge } from '../components/PowerGauge'
 import PuzzleBoard from '../components/PuzzleBoard'
 import ResolveDialog from '../components/ResolveDialog'
 import Scoreboard from '../components/Scoreboard'
@@ -83,6 +84,32 @@ export default function GameRoute() {
   // à piloter depuis ici) : ce booléen ne fait plus qu'ouvrir la boîte.
   const [resolveOpen, setResolveOpen] = useState(false)
 
+  // Appelé avant les retours conditionnels ci-dessous : un hook ne peut pas
+  // être invoqué après un `return` anticipé.
+  const gauge = useForceGauge()
+
+  // Dernier `cancel` de la jauge, lu par l'effet ci-dessous. `gauge.cancel`
+  // change d'identité à chaque rendu (nouvelle closure de `useForceGauge`) ;
+  // le mettre en dépendance déclencherait l'effet à chaque rendu pour rien.
+  const cancelGaugeRef = useRef(gauge.cancel)
+  cancelGaugeRef.current = gauge.cancel
+
+  // Calculées ici, avant les retours conditionnels : un hook ne peut pas être
+  // invoqué après un `return` anticipé, et ces deux valeurs alimentent l'effet
+  // qui suit.
+  const phaseKind = round !== null ? round.phase.kind : null
+  const awaitingBotTurn = game !== null && isBotTurn(game)
+
+  // La charge n'a de sens que pendant `awaiting-action`, tour d'un humain :
+  // elle s'annule dès que la phase change (lancer résolu, manche bloquée…)
+  // ou que le tour passe à un bot, plutôt que de continuer à balayer pour
+  // rien derrière un plateau qui a changé de sens.
+  useEffect(() => {
+    if (phaseKind !== 'awaiting-action' || awaitingBotTurn) {
+      cancelGaugeRef.current()
+    }
+  }, [phaseKind, awaitingBotTurn])
+
   // Refusée en silence si l'action est illégale : partie non nulle,
   // `canResolve(game)`, et pas le tour d'un bot. Nécessaire ici et pas
   // seulement dans `Controls`, parce que le clavier physique appelle cette
@@ -90,7 +117,28 @@ export default function GameRoute() {
   // côté clavier physique.
   function openResolve(): void {
     if (game === null || isBotTurn(game) || !canResolve(game)) return
+    // Le dialogue masque le plateau : la jauge continuerait de balayer
+    // derrière lui pour rien si elle était en charge.
+    gauge.cancel()
     setResolveOpen(true)
+  }
+
+  function handlePass(): void {
+    gauge.cancel()
+    pass()
+  }
+
+  // Premier appel : arme la jauge sans encore lancer. Second appel : lit la
+  // force accumulée et déclenche le vrai lancer. C'est ce qui fait d'un
+  // second « Espace » l'équivalent d'un second clic, sans que le hook clavier
+  // n'ait besoin de connaître la jauge.
+  function handleSpin(): void {
+    if (!gauge.charging) {
+      gauge.start()
+      return
+    }
+    const force = gauge.fire()
+    if (force !== null) spin(force)
   }
 
   // Clavier physique et clavier virtuel appellent les mêmes commandes : c'est
@@ -98,7 +146,7 @@ export default function GameRoute() {
   // le joueur vient de taper, quel que soit le chemin emprunté.
   const pressed = usePhysicalKeyboard({
     onLetter: playLetter,
-    onSpin: spin,
+    onSpin: handleSpin,
     onResolve: openResolve,
   })
 
@@ -177,9 +225,11 @@ export default function GameRoute() {
           canPass={isStuck(game) && !botTurn}
           vowelCost={game.config.vowelCost}
           spinning={round.phase.kind === 'spinning'}
-          onSpin={spin}
+          charging={gauge.charging}
+          markerRef={gauge.markerRef}
+          onSpin={handleSpin}
           onResolve={openResolve}
-          onPass={pass}
+          onPass={handlePass}
         />
       )}
 
