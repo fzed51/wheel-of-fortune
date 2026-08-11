@@ -68,20 +68,24 @@ const SCHEMA_VERSION_RECOPIEE = 3
 const CONSONNES = ['S', 'R', 'T', 'N', 'L', 'M', 'D', 'P', 'C', 'V', 'B', 'F', 'G']
 
 /*
- * Une charge d'environ 400 ms suffit à sortir du geste « armer » avec une
- * force exploitable — aucun contrôle ci-dessous ne dépend de sa valeur
- * exacte, seulement du fait qu'un lancer a bien eu lieu. Sous
- * `prefers-reduced-motion`, le balayage de la jauge est ralenti ×2,5 (voir
- * `useForceGauge`) : la charge est allongée d'autant pour rester cohérente,
- * même si rien n'impose cette proportion pour la validité du contrôle.
+ * Un aller (ou un retour) de l'arc dure désormais 1 800 ms (`AIM_SWEEP_MS`,
+ * `useAimSweep`) — le double de l'ancienne jauge de puissance, dont la course
+ * ne couvrait qu'une barre. Attendre 450 ms avant de figer l'arc, c'est donc
+ * s'arrêter à un quart de cette course : largement avant que l'arc n'ait fini
+ * son aller et ne fasse demi-tour. Aucun contrôle ci-dessous ne dépend de la
+ * valeur exacte de l'angle visé, seulement du fait qu'un lancer a bien eu
+ * lieu. Sous `prefers-reduced-motion`, le balayage est ralenti ×2,5 (voir
+ * `useAimSweep`) : l'attente est allongée d'autant pour rester à la même
+ * proportion de la course, même si rien n'impose cette proportion pour la
+ * validité du contrôle.
  */
-const CHARGE_JAUGE_MS = 450
-const CHARGE_JAUGE_RALENTIE_MS = Math.round(CHARGE_JAUGE_MS * 2.5)
+const CHARGE_ARC_MS = 450
+const CHARGE_ARC_RALENTIE_MS = Math.round(CHARGE_ARC_MS * 2.5)
 
 /**
  * N'isole que les animations dont la cible est le rotor de la roue : sans ce
- * filtre, `document.getAnimations()` compte aussi le balayage de la jauge de
- * puissance pendant sa charge, et un contrôle qui voudrait vérifier que la
+ * filtre, `document.getAnimations()` compte aussi le balayage de l'arc de
+ * visée avant qu'il ne soit figé, et un contrôle qui voudrait vérifier que la
  * roue seule s'anime (ou ne s'anime pas, sous mouvement réduit) passerait
  * pour de mauvaises raisons.
  */
@@ -202,8 +206,8 @@ async function demarrerPartie(client, { manches = 3, adversaires = 0 } = {}) {
  * Tourne jusqu'à obtenir une phase « consonne attendue », ou rend la main.
  *
  * Geste en deux temps (armer, puis figer et lancer) : en mode jauge — le
- * défaut de la configuration servie ici — un seul clic ne ferait que monter
- * la charge, la roue ne tournerait jamais et la boucle attendrait pour rien.
+ * défaut de la configuration servie ici — un seul clic ne ferait qu'armer
+ * l'arc, la roue ne tournerait jamais et la boucle attendrait pour rien.
  */
 async function tournerJusquAConsonne(client, essais = 6) {
   for (let essai = 0; essai < essais; essai += 1) {
@@ -211,7 +215,7 @@ async function tournerJusquAConsonne(client, essais = 6) {
     if (/roue s'arrête sur/.test(vu.evenement ?? '') && vu.jouables.length > 0) return vu
     if (vu.lancer.gele !== 'false') return null
     await evaluate(client, 'return window.__h.clickLancer()')
-    await sleep(CHARGE_JAUGE_MS)
+    await sleep(CHARGE_ARC_MS)
     await evaluate(client, 'return window.__h.clickLancer()')
     await sleep(4300)
   }
@@ -361,10 +365,10 @@ async function main() {
 
   await controle('roue : animation réelle et angle conservé', async () => {
     await demarrerPartie(client)
-    // Geste en deux temps : le premier clic n'arme que la jauge (mode par
-    // défaut), le second fige la force et lance la rotation réelle.
+    // Geste en deux temps : le premier clic n'arme que l'arc de visée (mode
+    // par défaut), le second le fige et lance la rotation réelle.
     await evaluate(client, 'return window.__h.clickLancer()')
-    await sleep(CHARGE_JAUGE_MS)
+    await sleep(CHARGE_ARC_MS)
     await evaluate(client, 'return window.__h.clickLancer()')
     await sleep(500)
     const pendant = await evaluate(
@@ -373,8 +377,8 @@ async function main() {
        return { animationsRotor, lancer: window.__h.jeu().lancer }`,
     )
     // Ne compter que les animations dont la cible est le rotor : un compte
-    // global inclurait aussi le balayage de la jauge, et ce contrôle passerait
-    // même si la roue elle-même ne bougeait jamais.
+    // global inclurait aussi le balayage de l'arc de visée, et ce contrôle
+    // passerait même si la roue elle-même ne bougeait jamais.
     exiger(pendant.animationsRotor > 0, 'la roue ne s’anime pas', pendant)
     exiger(pendant.lancer.gele === 'true', 'commandes non gelées pendant la rotation', pendant)
 
@@ -401,25 +405,25 @@ async function main() {
     return apres
   })
 
-  await controle('jauge de puissance : armée puis relâchée', async () => {
+  await controle('arc de visée : armé puis figé', async () => {
     await demarrerPartie(client)
     const repos = await evaluate(client, 'return window.__h.jeu().lancer')
     exiger(repos.nom === 'Lancer', 'le bouton de lancer ne s’appelle pas « Lancer » au repos', repos)
 
     await evaluate(client, 'return window.__h.clickLancer()')
     await sleep(300)
-    const charge = await evaluate(
+    const visee = await evaluate(
       client,
       `${FILTRE_ANIMATIONS_ROTOR}
        return { lancer: window.__h.jeu().lancer, animationsHorsRotor }`,
     )
-    exiger(charge.lancer.nom === 'Stop', 'le bouton ne devient pas « Stop » pendant la charge', charge)
+    exiger(visee.lancer.nom === 'Stop', 'le bouton ne devient pas « Stop » pendant la visée', visee)
     // Le lancer n'a pu démarrer que sur une action légale : l'arrêter doit
-    // toujours être possible, la charge ne gèle donc jamais ce bouton.
-    exiger(charge.lancer.gele === 'false', 'le bouton « Stop » est gelé pendant sa propre charge', charge)
+    // toujours être possible, la visée ne gèle donc jamais ce bouton.
+    exiger(visee.lancer.gele === 'false', 'le bouton « Stop » est gelé pendant sa propre visée', visee)
     // C'est le seul instant de ce contrôle où l'on *veut* voir une animation
-    // hors rotor : c'est la jauge, rien d'autre ne peut l'expliquer ici.
-    exiger(charge.animationsHorsRotor > 0, 'aucune animation de jauge pendant la charge', charge)
+    // hors rotor : c'est l'arc de visée, rien d'autre ne peut l'expliquer ici.
+    exiger(visee.animationsHorsRotor > 0, 'aucune animation d’arc pendant la visée', visee)
 
     await evaluate(client, 'return window.__h.clickLancer()')
     await sleep(500)
@@ -429,19 +433,19 @@ async function main() {
        return { animationsRotor, animationsHorsRotor }`,
     )
     exiger(rotation.animationsRotor > 0, 'la roue ne tourne pas après le second clic', rotation)
-    exiger(rotation.animationsHorsRotor === 0, 'la jauge est encore présente pendant la rotation', rotation)
+    exiger(rotation.animationsHorsRotor === 0, 'l’arc est encore présent pendant la rotation', rotation)
 
     await sleep(4200)
     const evenement = await evaluate(client, 'return window.__h.jeu().evenement')
-    exiger(evenement !== null, 'aucune annonce après une rotation lancée à la jauge', evenement)
-    return { repos, charge, rotation, evenement }
+    exiger(evenement !== null, 'aucune annonce après une rotation lancée à l’arc', evenement)
+    return { repos, visee, rotation, evenement }
   })
 
-  await controle('lancer simple : un seul clic suffit, sans jauge', async () => {
+  await controle('lancer simple : un seul clic suffit, sans arc', async () => {
     await goto(client, `${APP}reglages`)
     const coche = await evaluate(
       client,
-      `return window.__h.setChecked('Lancer simple (sans jauge de puissance)', true)`,
+      `return window.__h.setChecked('Lancer simple (sans arc de visée)', true)`,
     )
     exiger(coche === true, 'la case « lancer simple » ne se coche pas')
 
@@ -457,7 +461,7 @@ async function main() {
        return { animationsRotor, animationsHorsRotor }`,
     )
     exiger(pendant.animationsRotor > 0, 'un seul clic ne fait pas tourner la roue en mode lancer simple', pendant)
-    exiger(pendant.animationsHorsRotor === 0, 'une jauge est apparue en mode lancer simple', pendant)
+    exiger(pendant.animationsHorsRotor === 0, 'un arc est apparu en mode lancer simple', pendant)
 
     await sleep(4200)
     const apres = await evaluate(
@@ -466,7 +470,7 @@ async function main() {
        return { evenement: window.__h.jeu().evenement, animationsHorsRotor }`,
     )
     exiger(apres.evenement !== null, 'aucune annonce après le lancer simple', apres)
-    exiger(apres.animationsHorsRotor === 0, 'une jauge est apparue après coup en mode lancer simple', apres)
+    exiger(apres.animationsHorsRotor === 0, 'un arc est apparu après coup en mode lancer simple', apres)
     return { repos, pendant, apres }
   })
 
@@ -474,14 +478,14 @@ async function main() {
    * Remise à « gauge » hors du `controle()` ci-dessus, sur le même principe
    * que l'effacement de la clé factice après l'export un peu plus bas : le
    * réglage est persisté en localStorage, et un échec en cours de contrôle ne
-   * doit pas laisser tous les contrôles suivants (jauge ralentie, clavier
+   * doit pas laisser tous les contrôles suivants (arc ralenti, clavier
    * physique, hors ligne…) tourner dans un mode qu'ils n'attendent pas.
    *
    * Le rechargement qui suit n'est pas une précaution : `SettingsProvider` lit
    * les réglages **une seule fois au montage** (`useState(() => loadSettings())`).
    * Réécrire localStorage laisse donc l'application en cours toujours en mode
    * simple, et les contrôles suivants cliqueraient un bouton « Tourner » en
-   * croyant jouer la jauge — certains passeraient même, pour la mauvaise raison.
+   * croyant lancer l'arc — certains passeraient même, pour la mauvaise raison.
    */
   await evaluate(
     client,
@@ -498,8 +502,8 @@ async function main() {
     await setReducedMotion(client, true)
     await demarrerPartie(client)
     await evaluate(client, 'return window.__h.clickLancer()')
-    // Balayage ralenti ×2,5 sous mouvement réduit : charge allongée d'autant.
-    await sleep(CHARGE_JAUGE_RALENTIE_MS)
+    // Balayage ralenti ×2,5 sous mouvement réduit : attente allongée d'autant.
+    await sleep(CHARGE_ARC_RALENTIE_MS)
     await evaluate(client, 'return window.__h.clickLancer()')
     await sleep(200)
     const animations = await evaluate(
@@ -552,10 +556,10 @@ async function main() {
 
     await evaluate(client, 'document.activeElement.blur(); return true')
     // Deux `Espace`, comme deux clics : en mode jauge, le premier n'arme que
-    // la charge. La touche déclenche exactement la même action que le
-    // bouton, il faut donc le même geste en deux temps pour lancer la roue.
+    // l'arc. La touche déclenche exactement la même action que le bouton, il
+    // faut donc le même geste en deux temps pour lancer la roue.
     await pressKey(client, ' ')
-    await sleep(CHARGE_JAUGE_MS)
+    await sleep(CHARGE_ARC_MS)
     await pressKey(client, ' ')
     await sleep(600)
     const pendant = await evaluate(client, 'return window.__h.jeu()')

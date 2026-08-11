@@ -168,6 +168,15 @@ function Sonde() {
         {partie === null ? '' : partie.playedPuzzleIds.join(' ')}
       </div>
       {/*
+       * Distance parcourue du lancer en cours d'animation, `''` hors phase
+       * `spinning` : seul champ qui permette de distinguer un angle visé
+       * explicite (`spin(0)`) d'un angle omis (tiré au hasard), qu'aucun autre
+       * champ de cette sonde n'expose.
+       */}
+      <div role="group" aria-label="Distance parcourue">
+        {manche !== null && manche.phase.kind === 'spinning' ? String(manche.phase.spin.travel) : ''}
+      </div>
+      {/*
        * `Object.hasOwn`, jamais `!== undefined` : seul lui distingue « pas de
        * `bonusAnswer` » de « `bonusAnswer` présent mais vide », distinction que
        * le dépôt tient à préserver (voir `isQuestion`, qui s'appuie sur la même
@@ -259,6 +268,17 @@ function Sonde() {
         }}
       >
         Tourner
+      </button>
+      {/* Angle visé explicite, `0` : distinct de « Tourner » ci-dessus, qui
+          omet l'argument. Voir la description du piège dans `spin` (`??`
+          plutôt que `||`) côté `GameProvider.tsx`. */}
+      <button
+        type="button"
+        onClick={() => {
+          spin(0)
+        }}
+      >
+        Tourner avec un angle de 0°
       </button>
     </div>
   )
@@ -565,6 +585,51 @@ describe('GameProvider', () => {
       expect(champ('Nombre de manches')).toBe('2')
       expect(champ('Type de progression')).toBe('round')
       expect(champ('Énigme de type question')).toBe('oui')
+    })
+  })
+
+  describe('spin', () => {
+    /**
+     * Le piège de conception de cette étape : `spin(0)` est un angle visé
+     * explicite (midi, pile sous l'aiguille), pas un angle omis. `??` doit le
+     * respecter, `||` le remplacerait en silence par un tirage au hasard —
+     * `randomAim` consommerait alors un tirage supplémentaire, décalant tout
+     * le reste de la séquence déterministe.
+     *
+     * `Date.now` est figée pour que les deux montages (deux instances de
+     * `GameProvider`, donc deux `rngRef` indépendants) partagent la même
+     * graine : sans ce figeage, une différence de `travel` ne prouverait rien
+     * de plus qu'un aléa différent d'un montage à l'autre.
+     */
+    it('spin(0) donne un travel différent de spin() sans argument, à graine égale', async () => {
+      const maintenant = vi.spyOn(Date, 'now').mockReturnValue(1_723_000_000_000)
+      try {
+        const user = userEvent.setup()
+
+        saveGame(jeu(demarrer({ players: [fixtureJoueur('Alice')] })))
+        const premier = monter(<Sonde />)
+        await user.click(screen.getByRole('button', { name: 'Tourner avec un angle de 0°' }))
+        const travelAngleZero = champ('Distance parcourue')
+        premier.unmount()
+
+        clearAllData()
+        localStorage.clear()
+        saveGame(jeu(demarrer({ players: [fixtureJoueur('Alice')] })))
+        const second = monter(<Sonde />)
+        await user.click(screen.getByRole('button', { name: 'Tourner' }))
+        const travelAngleOmis = champ('Distance parcourue')
+        second.unmount()
+
+        expect(travelAngleZero).not.toBe('')
+        expect(travelAngleOmis).not.toBe('')
+        // `spin(0)` ne consomme qu'un tirage (le jitter) ; `spin()` en
+        // consomme deux (l'angle aléatoire, puis le jitter) — même graine,
+        // même générateur déterministe, mais pas le même point de la
+        // séquence : les deux `travel` divergent nécessairement.
+        expect(travelAngleZero).not.toBe(travelAngleOmis)
+      } finally {
+        maintenant.mockRestore()
+      }
     })
   })
 

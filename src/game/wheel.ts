@@ -47,11 +47,27 @@ export function segmentAt(index: number): Segment {
 /** En dessous, un lancer serait trop mou pour paraître réel : deux tours pleins sont le plancher. */
 export const MIN_TRAVEL_DEGREES = 720
 
-/** Amplitude ajoutée au plancher par la force du lancer : jusqu'à quatre tours de plus. */
-export const TRAVEL_SPAN_DEGREES = 1440
-
 /** Imprécision humaine du lancer : au plus une case en trop ou en moins autour de la cible. */
 export const JITTER_DEGREES = SEGMENT_ANGLE
+
+/**
+ * Course balayée par l'arc de visée, un tour complet : ça rend les 24 cases
+ * atteignables depuis n'importe quel angle de repos. L'interface la lit
+ * plutôt que d'écrire 360 en dur, pour que l'animation de l'arc et le calcul
+ * de l'angle visé restent d'accord sur la même amplitude.
+ */
+export const AIM_SPAN_DEGREES = 360
+
+/**
+ * Largeur angulaire de l'arc dessiné autour de la roue, soit deux cases :
+ * l'erreur du lancer vaut au plus `JITTER_DEGREES` de part et d'autre de la
+ * visée (voir `throwFromAim`), donc `2 * JITTER_DEGREES` couvre exactement
+ * l'ensemble des atterrissages possibles. Dérivée plutôt qu'écrite en dur :
+ * l'arc doit dire la vérité sur ce que le joueur peut espérer, et deux copies
+ * dériveraient au prochain réglage de `JITTER_DEGREES` — l'arc mentirait
+ * alors au joueur sans qu'aucun test ne rougisse. Lue par `src/components/`.
+ */
+export const AIM_ARC_DEGREES = 2 * JITTER_DEGREES
 
 /**
  * Bornes de durée de l'animation de rotation, lues à deux endroits qui ne se
@@ -79,18 +95,43 @@ export function angleForLanding(index: number, offset: number): number {
   return normalizeDegrees(-(index * SEGMENT_ANGLE + SEGMENT_ANGLE / 2 + offset))
 }
 
-export function randomForce(rng: () => number): number {
-  return rng()
+/** Angle visé quand personne ne vise : un bot, ou le mode « lancer simple ». */
+export function randomAim(rng: () => number): number {
+  return rng() * AIM_SPAN_DEGREES
 }
 
-export function throwFromForce(force: number, rng: () => number, spinId: number): WheelThrow {
-  const clamped = Math.min(1, Math.max(0, force))
+/**
+ * Distance à parcourir pour amener le point visé (dans le repère de l'écran,
+ * voir le docblock de `AIM_ARC_DEGREES`) sous l'aiguille, à l'imprécision
+ * humaine près.
+ *
+ * Démonstration reprise du calcul de `resolveThrow`
+ * (`under = normalizeDegrees(-normalizeDegrees(fromAngle + travel))`) :
+ * pour que le point de coordonnée roue `w = normalizeDegrees(aim - fromAngle)`
+ * arrive sous l'aiguille, il faut `-(fromAngle + travel) ≡ aim - fromAngle`
+ * (mod 360), donc `travel ≡ -aim` (mod 360). L'angle de repos s'annule des
+ * deux côtés : c'est ce qui permet à cette fonction de ne prendre que l'angle
+ * visé, sans jamais recevoir `fromAngle`.
+ */
+export function throwFromAim(aim: number, rng: () => number, spinId: number): WheelThrow {
+  const target = normalizeDegrees(aim)
+  // Un seul tirage, au même moment qu'avant le lancer à la force : décaler ce
+  // point décalerait toutes les suites à graine fixée du dépôt.
   const jitter = (rng() * 2 - 1) * JITTER_DEGREES
-  return {
-    spinId,
-    travel: MIN_TRAVEL_DEGREES + clamped * TRAVEL_SPAN_DEGREES + jitter,
-    durationMs: Math.round(SPIN_MIN_MS + clamped * (SPIN_MAX_MS - SPIN_MIN_MS)),
-  }
+  const reach = normalizeDegrees(-target)
+  const travel = MIN_TRAVEL_DEGREES + reach + jitter
+
+  const span = AIM_SPAN_DEGREES + 2 * JITTER_DEGREES
+  const beyond = travel - (MIN_TRAVEL_DEGREES - JITTER_DEGREES) // ∈ [0, span]
+  // Le clamp n'est pas décoratif : il protège le contrat de durée
+  // (`SPIN_MIN_MS`–`SPIN_MAX_MS`, lu par le chien de garde de
+  // `hooks/useGameEffects.ts`) si `JITTER_DEGREES` était un jour relevé
+  // au-delà d'une demi-case.
+  const durationMs = Math.round(
+    SPIN_MIN_MS + Math.min(1, Math.max(0, beyond / span)) * (SPIN_MAX_MS - SPIN_MIN_MS),
+  )
+
+  return { spinId, travel, durationMs }
 }
 
 /**
@@ -115,12 +156,4 @@ export function resolveThrow(fromAngle: number, thrown: WheelThrow): SpinLanding
     offset,
     angle: normalizeDegrees(fromAngle + travel),
   }
-}
-
-/** Étiquette de force, pour l'annonce vocale. */
-export function forceLabel(travel: number): 'faible' | 'moyen' | 'fort' {
-  const over = travel - MIN_TRAVEL_DEGREES
-  if (over < TRAVEL_SPAN_DEGREES / 3) return 'faible'
-  if (over < (TRAVEL_SPAN_DEGREES * 2) / 3) return 'moyen'
-  return 'fort'
 }

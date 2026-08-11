@@ -15,7 +15,7 @@ import {
 } from './rules'
 import type { Game, GameState, Puzzle } from './types'
 import { asPlayerId } from './types'
-import { throwFromForce } from './wheel'
+import { randomAim, throwFromAim } from './wheel'
 import {
   BANQUEROUTE,
   CASH_ZERO,
@@ -1054,7 +1054,7 @@ function actionPour(
     case 'wheel/spin':
       // Deux tirages consommés (force puis imprécision), comme l'ancien
       // `pickSpinOutcome` : les graines du fuzz restent valables telles quelles.
-      return { type, by, thrown: throwFromForce(rng(), rng, tick) }
+      return { type, by, thrown: throwFromAim(randomAim(rng), rng, tick) }
     case 'wheel/settled': {
       if (round.phase.kind !== 'spinning') throw new Error('Règlement hors rotation')
       return { type, by, spinId: round.phase.spin.spinId }

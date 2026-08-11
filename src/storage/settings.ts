@@ -21,8 +21,8 @@ export const MAX_OPPONENTS = 3
 export const MAX_ROUND_COUNT = 10
 
 /**
- * `'gauge'` : lancer à la jauge de puissance, deux appuis (armer, puis relâcher).
- * `'simple'` : un seul clic, la force du lancer est tirée au hasard.
+ * `'gauge'` : lancer à l'arc de visée, deux appuis (armer, puis figer).
+ * `'simple'` : un seul clic, l'angle visé est tiré au hasard.
  */
 export const THROW_MODES = ['gauge', 'simple'] as const
 export type ThrowMode = (typeof THROW_MODES)[number]

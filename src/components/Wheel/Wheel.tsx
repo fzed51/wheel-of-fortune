@@ -1,3 +1,5 @@
+import type { RefObject } from 'react'
+import AimArc from '../AimArc'
 import WheelPointer from './WheelPointer'
 import WheelSegment from './WheelSegment'
 import { useWheelSpin } from './useWheelSpin'
@@ -13,13 +15,16 @@ export interface WheelProps {
   readonly highlighted: number | null
   /** Appelé quand l'animation atteint le secteur : le tour peut se poursuivre. */
   readonly onSettled: () => void
+  /** L'arc de visée balaie le pourtour : `false` hors visée, et en mode « lancer simple ». */
+  readonly aiming: boolean
+  readonly aimRef: RefObject<HTMLDivElement | null>
 }
 
 /**
  * Roue graphique. Aucune règle de jeu ici : `spin` et `highlighted` viennent
  * déjà décidés du reducer, ce composant ne fait que les dessiner et animer.
  */
-export default function Wheel({ angle, spin, highlighted, onSettled }: WheelProps) {
+export default function Wheel({ angle, spin, highlighted, onSettled, aiming, aimRef }: WheelProps) {
   const rotorRef = useWheelSpin(angle, spin, onSettled)
 
   return (
@@ -33,6 +38,13 @@ export default function Wheel({ angle, spin, highlighted, onSettled }: WheelProp
       <div className="absolute inset-x-0 -top-2 z-10 mx-auto h-6 w-6">
         <WheelPointer />
       </div>
+      {/*
+       * Même raison que l'aiguille ci-dessus, et pour une raison encore plus
+       * forte : frère du rotor, jamais un enfant. Un arc qui tournerait avec
+       * la roue ne désignerait plus rien du tout — il balaierait le pourtour
+       * en même temps que la cible qu'il est censé viser.
+       */}
+      {aiming && <AimArc arcRef={aimRef} />}
       {/*
        * C'est ce `<div>` qui tourne, jamais un `<g>` interne du SVG : un
        * `transform` sur un `<g>` n'est pas fiablement promu en couche

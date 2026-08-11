@@ -20,8 +20,8 @@ Seize contrôles, dans cet ordre :
 | 2 | CSP injectée et complète | la balise `<meta>` absente du build, ou une directive perdue |
 | 3 | thème posé avant le premier rendu | `theme-init.js` mal résolu → clignotement clair au chargement |
 | 4 | roue : animation réelle et angle conservé | `commitStyles()` bloqué faute de `style-src-attr` |
-| 5 | jauge de puissance : armée puis relâchée | le lancer en deux temps réduit à un clic, ou la jauge qui survit à la rotation |
-| 6 | lancer simple : un seul clic suffit, sans jauge | le réglage sans effet, ou une jauge qui apparaît quand même |
+| 5 | arc de visée : armé puis figé | le lancer en deux temps réduit à un clic, ou l'arc qui survit à la rotation |
+| 6 | lancer simple : un seul clic suffit, sans arc | le réglage sans effet, ou un arc qui apparaît quand même |
 | 7 | `prefers-reduced-motion` | la roue s'anime quand même, ou le tour n'aboutit plus |
 | 8 | arbre d'accessibilité : aucun graphique sans nom | un `<svg>` exposé sans nom au lecteur d'écran |
 | 9 | deux live regions, et deux seulement | une troisième région, et les annonces se marchent dessus |
@@ -34,8 +34,8 @@ Seize contrôles, dans cet ordre :
 | 16 | aucune violation de CSP sur tout le parcours | une violation apparue en cours de partie, pas au chargement |
 
 Les contrôles 4 à 7 comptent les animations **du rotor seul**, jamais celles de la
-page entière : la jauge de puissance est elle aussi animée, et un compte global
-laisserait passer une roue qui ne tourne plus.
+page entière : l'arc de visée est lui aussi animé, et un compte global laisserait
+passer une roue qui ne tourne plus.
 
 Le contrôle 6 écrit un réglage persisté, puis le remet à sa valeur par défaut et
 recharge la page — `SettingsProvider` ne relit pas le stockage de lui-même.

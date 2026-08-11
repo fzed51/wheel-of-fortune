@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { Navigate } from 'react-router'
+import { useAimSweep } from '../components/AimArc'
 import BonusQuestion from '../components/BonusQuestion'
 import Controls from '../components/Controls'
 import EventFeedback from '../components/EventFeedback'
 import Keyboard from '../components/Keyboard'
-import { useForceGauge } from '../components/PowerGauge'
 import PuzzleBoard from '../components/PuzzleBoard'
 import ResolveDialog from '../components/ResolveDialog'
 import Scoreboard from '../components/Scoreboard'
@@ -79,7 +79,7 @@ export default function GameRoute() {
   const lastEvent = useLastEvent()
   const judgeFailure = useJudgeFailure()
   const { settings } = useSettings()
-  // Réglage persisté : un seul clic lance la roue, la force est tirée au
+  // Réglage persisté : un seul clic lance la roue, l'angle visé est tiré au
   // hasard par le provider (`spin()` sans argument). Rien d'autre ne change.
   const simpleThrow = settings.throwMode === 'simple'
 
@@ -91,13 +91,13 @@ export default function GameRoute() {
 
   // Appelé avant les retours conditionnels ci-dessous : un hook ne peut pas
   // être invoqué après un `return` anticipé.
-  const gauge = useForceGauge()
+  const sweep = useAimSweep()
 
-  // Dernier `cancel` de la jauge, lu par l'effet ci-dessous. `gauge.cancel`
-  // change d'identité à chaque rendu (nouvelle closure de `useForceGauge`) ;
+  // Dernier `cancel` de l'arc, lu par l'effet ci-dessous. `sweep.cancel`
+  // change d'identité à chaque rendu (nouvelle closure de `useAimSweep`) ;
   // le mettre en dépendance déclencherait l'effet à chaque rendu pour rien.
-  const cancelGaugeRef = useRef(gauge.cancel)
-  cancelGaugeRef.current = gauge.cancel
+  const cancelSweepRef = useRef(sweep.cancel)
+  cancelSweepRef.current = sweep.cancel
 
   // Calculées ici, avant les retours conditionnels : un hook ne peut pas être
   // invoqué après un `return` anticipé, et ces deux valeurs alimentent l'effet
@@ -105,13 +105,13 @@ export default function GameRoute() {
   const phaseKind = round !== null ? round.phase.kind : null
   const awaitingBotTurn = game !== null && isBotTurn(game)
 
-  // La charge n'a de sens que pendant `awaiting-action`, tour d'un humain :
+  // La visée n'a de sens que pendant `awaiting-action`, tour d'un humain :
   // elle s'annule dès que la phase change (lancer résolu, manche bloquée…)
   // ou que le tour passe à un bot, plutôt que de continuer à balayer pour
   // rien derrière un plateau qui a changé de sens.
   useEffect(() => {
     if (phaseKind !== 'awaiting-action' || awaitingBotTurn) {
-      cancelGaugeRef.current()
+      cancelSweepRef.current()
     }
   }, [phaseKind, awaitingBotTurn])
 
@@ -122,35 +122,38 @@ export default function GameRoute() {
   // côté clavier physique.
   function openResolve(): void {
     if (game === null || isBotTurn(game) || !canResolve(game)) return
-    // Le dialogue masque le plateau : la jauge continuerait de balayer
-    // derrière lui pour rien si elle était en charge.
-    gauge.cancel()
+    // Le dialogue masque le plateau : l'arc continuerait de balayer derrière
+    // lui pour rien s'il était en visée.
+    sweep.cancel()
     setResolveOpen(true)
   }
 
   function handlePass(): void {
-    gauge.cancel()
+    sweep.cancel()
     pass()
   }
 
-  // Premier appel : arme la jauge sans encore lancer. Second appel : lit la
-  // force accumulée et déclenche le vrai lancer. C'est ce qui fait d'un
-  // second « Espace » l'équivalent d'un second clic, sans que le hook clavier
-  // n'ait besoin de connaître la jauge. En mode simple, un seul appel suffit :
-  // `spin()` sans argument tire la force au hasard côté provider. C'est aussi
-  // ce qui vaut pour la touche « Espace » — le hook clavier physique appelle
-  // cette même fonction, il ne sait rien du mode de lancer.
+  // Premier appel : arme le balayage sans encore lancer. Second appel : lit
+  // l'angle visé et déclenche le vrai lancer. C'est ce qui fait d'un second
+  // « Espace » l'équivalent d'un second clic, sans que le hook clavier n'ait
+  // besoin de connaître l'arc. En mode simple, un seul appel suffit : `spin()`
+  // sans argument tire l'angle au hasard côté provider. C'est aussi ce qui
+  // vaut pour la touche « Espace » — le hook clavier physique appelle cette
+  // même fonction, il ne sait rien du mode de lancer.
   function handleSpin(): void {
     if (simpleThrow) {
       spin()
       return
     }
-    if (!gauge.charging) {
-      gauge.start()
+    if (!sweep.aiming) {
+      sweep.start()
       return
     }
-    const force = gauge.fire()
-    if (force !== null) spin(force)
+    // `!== null`, pas un test de vérité : `0` est un angle visé légitime (voir
+    // le commentaire de `spin` dans `GameProvider.tsx`), et `if (aim)` le
+    // traiterait comme un lancer manqué.
+    const aim = sweep.fire()
+    if (aim !== null) spin(aim)
   }
 
   // Clavier physique et clavier virtuel appellent les mêmes commandes : c'est
@@ -174,7 +177,7 @@ export default function GameRoute() {
    */
   const botTurn = isBotTurn(game)
 
-  const spinLabel = simpleThrow ? 'Tourner' : gauge.charging ? 'Stop' : 'Lancer'
+  const spinLabel = simpleThrow ? 'Tourner' : sweep.aiming ? 'Stop' : 'Lancer'
 
   return (
     <div className="flex flex-col gap-4">
@@ -216,6 +219,12 @@ export default function GameRoute() {
           spin={round.phase.kind === 'spinning' ? round.phase.spin : null}
           highlighted={round.phase.kind === 'awaiting-consonant' ? round.phase.segment.index : null}
           onSettled={settleSpin}
+          // Double garde : en mode simple `sweep.start()` n'est jamais appelé,
+          // donc `sweep.aiming` ne peut pas valoir vrai — mais l'écrire ainsi
+          // rend le mode simple insensible à ce que fait l'arc, ce qui est le
+          // sens même du réglage.
+          aiming={!simpleThrow && sweep.aiming}
+          aimRef={sweep.arcRef}
         />
       )}
 
@@ -239,13 +248,9 @@ export default function GameRoute() {
           canPass={isStuck(game) && !botTurn}
           vowelCost={game.config.vowelCost}
           spinning={round.phase.kind === 'spinning'}
-          // Double garde : en mode simple `gauge.start()` n'est jamais appelé,
-          // donc `gauge.charging` ne peut pas valoir vrai — mais l'écrire ainsi
-          // rend le mode simple insensible à ce que fait la jauge, ce qui est
-          // le sens même du réglage.
-          charging={!simpleThrow && gauge.charging}
+          // Même double garde que celle passée à `Wheel` ci-dessus.
+          aiming={!simpleThrow && sweep.aiming}
           spinLabel={spinLabel}
-          markerRef={gauge.markerRef}
           onSpin={handleSpin}
           onResolve={openResolve}
           onPass={handlePass}

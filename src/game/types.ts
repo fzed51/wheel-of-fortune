@@ -40,10 +40,11 @@ export type Segment =
   | { readonly kind: 'pass'; readonly index: number }
 
 /**
- * Ce que la roue a désigné — jamais un tirage. Depuis le lancer à la force,
- * personne ne choisit plus de case : `index` et `offset` sont **déduits** de
- * l'angle où l'aiguille s'est arrêtée (voir `resolveThrow` dans `wheel.ts`),
- * à partir d'un `WheelThrow` qui ne décide qu'une distance à parcourir.
+ * Ce que la roue a désigné — jamais un tirage. Depuis que le lancer ne pointe
+ * plus qu'une distance à parcourir, personne ne choisit plus de case : `index`
+ * et `offset` sont **déduits** de l'angle où l'aiguille s'est arrêtée (voir
+ * `resolveThrow` dans `wheel.ts`), à partir d'un `WheelThrow` qui ne décide
+ * qu'une distance à parcourir.
  */
 export interface SpinOutcome {
   /** Index du segment dans WHEEL. */

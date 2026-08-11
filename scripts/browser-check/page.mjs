@@ -44,11 +44,12 @@ window.__h = {
     return true
   },
   /*
-   * Le bouton de lancer change de nom selon le mode et l'état de charge —
-   * « Lancer » au repos et « Stop » pendant la charge en mode jauge, « Tourner »
-   * en mode lancer simple — mais c'est toujours le même bouton. Un contrôle qui
-   * cherche l'un de ces trois libellés en dur casse dès qu'il tombe sur un autre
-   * état ; celui-ci essaie les trois et clique le premier trouvé.
+   * Le bouton de lancer change de nom selon le mode et l'état de visée —
+   * « Lancer » au repos et « Stop » pendant que l'arc de visée balaie en mode
+   * par défaut, « Tourner » en mode lancer simple — mais c'est toujours le même
+   * bouton. Un contrôle qui cherche l'un de ces trois libellés en dur casse dès
+   * qu'il tombe sur un autre état ; celui-ci essaie les trois et clique le
+   * premier trouvé.
    */
   clickLancer() {
     for (const nom of ['Lancer', 'Stop', 'Tourner']) {
@@ -117,7 +118,7 @@ window.__h = {
       controls[nom] = el ? el.getAttribute('aria-disabled') : 'absent'
     }
     // Bouton de lancer à part : son libellé même change (« Lancer », « Stop »,
-    // « Tourner » selon le mode et l'état de charge), un seul de ces trois est
+    // « Tourner » selon le mode et l'état de visée), un seul de ces trois est
     // présent à la fois — c'est \`controls\` ci-dessus qui garde les libellés fixes.
     const lancerEl = window.__h.byName('Lancer') || window.__h.byName('Stop') || window.__h.byName('Tourner')
     const lancer = {

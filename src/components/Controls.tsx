@@ -1,6 +1,4 @@
-import type { RefObject } from 'react'
 import { formatEuros } from '../game/announce'
-import PowerGauge from './PowerGauge'
 import { BUTTON_GHOST, BUTTON_PRIMARY } from './classes'
 
 export interface ControlsProps {
@@ -11,11 +9,10 @@ export interface ControlsProps {
   readonly vowelCost: number
   /** La roue tourne : les commandes sont gelées le temps de l'animation. */
   readonly spinning: boolean
-  /** La jauge de puissance est en charge : le bouton de lancer devient le bouton d'arrêt. */
-  readonly charging: boolean
-  /** Libellé du bouton de lancer : dépend du mode de lancer et de l'état de charge, que ce composant n'a pas à connaître. */
+  /** L'arc de visée balaie le pourtour : le bouton de lancer devient le bouton d'arrêt. */
+  readonly aiming: boolean
+  /** Libellé du bouton de lancer : dépend du mode de lancer et de l'état de visée, que ce composant n'a pas à connaître. */
   readonly spinLabel: string
-  readonly markerRef: RefObject<HTMLDivElement | null>
   readonly onSpin: () => void
   readonly onResolve: () => void
   readonly onPass: () => void
@@ -34,23 +31,21 @@ export default function Controls({
   canPass,
   vowelCost,
   spinning,
-  charging,
+  aiming,
   spinLabel,
-  markerRef,
   onSpin,
   onResolve,
   onPass,
 }: ControlsProps) {
-  // En charge, le bouton devient « Stop » et reste toujours actif : la charge
+  // En visée, le bouton devient « Stop » et reste toujours actif : la visée
   // n'a pu démarrer que sur un lancer légal, et l'arrêter doit toujours être
   // possible, quoi qu'il arrive par ailleurs à `canSpin`.
-  const spinDisabled = charging ? false : spinning || !canSpin
+  const spinDisabled = aiming ? false : spinning || !canSpin
   const resolveDisabled = spinning || !canResolve
   const passDisabled = spinning || !canPass
 
   return (
     <div className="flex flex-col gap-2">
-      {charging && <PowerGauge markerRef={markerRef} />}
       <div className="flex flex-wrap gap-2">
         <button
           type="button"

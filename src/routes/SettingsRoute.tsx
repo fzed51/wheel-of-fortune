@@ -178,7 +178,7 @@ export default function SettingsRoute() {
         <h2 className="font-semibold text-fg">Lancer de la roue</h2>
         <div className={FIELD}>
           <label htmlFor={throwModeId} className="text-fg">
-            Lancer simple (sans jauge de puissance)
+            Lancer simple (sans arc de visée)
           </label>
           <input
             id={throwModeId}
@@ -191,7 +191,7 @@ export default function SettingsRoute() {
           />
         </div>
         <p className="mt-1 text-sm text-fg-muted">
-          Un seul clic lance la roue, la force est tirée au hasard.
+          Un seul clic lance la roue, l’angle visé est tiré au hasard.
         </p>
       </section>
 

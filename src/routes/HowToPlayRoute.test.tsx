@@ -163,6 +163,6 @@ describe('HowToPlayRoute', () => {
       throw new Error('La section « Lancer la roue » est introuvable.')
     }
     expect(section.textContent).toContain('Stop')
-    expect(section.textContent).toContain('Lancer simple (sans jauge de puissance)')
+    expect(section.textContent).toContain('Lancer simple (sans arc de visée)')
   })
 })

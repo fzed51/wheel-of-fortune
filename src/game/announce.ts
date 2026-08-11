@@ -3,7 +3,6 @@ import type { Cell } from './puzzle'
 import { cellsOf, countOccurrences, revealedLetters } from './puzzle'
 import { activeRound, bonusPlayerOf, currentPlayerOf, multiplierFor } from './rules'
 import type { Consonant, Game, GameState, Letter, Player, PlayerId, RoundState, Vowel } from './types'
-import { forceLabel } from './wheel'
 
 /**
  * Chaînes lues par le lecteur d'écran. Module pur : aucun JSX, aucun DOM,
@@ -286,15 +285,14 @@ function roundNextAnnouncement(nextGame: Game): string {
 
 /**
  * `wheel/spin` porte une distance, pas un résultat : rien à annoncer de la
- * case tombée avant `wheel/settled`. Seule la force du lancer est déjà connue
- * — c'est justement l'information que la jauge de puissance ne rend pas à un
- * lecteur d'écran. Repli défensif si la manche courante n'est pas (ou plus)
- * `spinning` : le reducer a refusé le lancer, ou une forme future de l'état.
+ * case tombée avant `wheel/settled`. La case visée n'est, elle non plus,
+ * volontairement pas annoncée : l'utilisateur veut laisser le joueur dans le
+ * doute jusqu'à `wheel/settled`, même si l'arc de visée dessiné à l'écran l'a
+ * laissé viser une zone. Le chemin d'accès égal pour qui ne voit pas cet arc
+ * est le réglage « lancer simple », qui vise à sa place.
  */
-function spinAnnouncement(nextGame: Game): string {
-  const round = activeRound(nextGame)
-  if (round === null || round.phase.kind !== 'spinning') return 'La roue tourne…'
-  return `La roue tourne — lancer ${forceLabel(round.phase.spin.travel)}.`
+function spinAnnouncement(): string {
+  return 'La roue tourne…'
 }
 
 function settledAnnouncement(prevGame: Game, nextGame: Game): string {
@@ -408,7 +406,7 @@ function heardAnnouncement(prev: GameState, next: GameState, action: GameAction)
 
   switch (action.type) {
     case 'wheel/spin':
-      return { status: spinAnnouncement(nextGame), alert: '' }
+      return { status: spinAnnouncement(), alert: '' }
     case 'wheel/settled':
       return { status: settledAnnouncement(prevGame, nextGame), alert: '' }
     case 'letter/consonant':

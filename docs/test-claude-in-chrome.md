@@ -6,7 +6,7 @@ agent qui pilote un vrai navigateur : il n'a pas accès au code, seulement à la
 
 > **Une partie est automatisée.** `yarn build && yarn check:browser` rejoue sans
 > intervention la CSP, le service worker, le hors-ligne, le manifest, le lancer de la
-> roue à la jauge de puissance et son animation, le clavier physique, le `<dialog>`
+> roue à l'arc de visée et son animation, le clavier physique, le `<dialog>`
 > natif et l'arbre d'accessibilité de Chrome — soit l'essentiel des scénarios 4, 5 et
 > 9, et tout le scénario 10 sauf
 > Lighthouse. Voir [`scripts/browser-check/README.md`](../scripts/browser-check/README.md).
@@ -64,7 +64,8 @@ code source et tu n'as pas à le demander.
   (`localStorage.getItem('wof:mistral-key:1') !== null`), rien de plus.
 - **Ne quitte pas `localhost`.** Aucun site externe, aucune recherche web.
 - Avant de conclure « ça ne marche pas », **retente une fois** : certaines actions
-  attendent une animation (en mode jauge, charge ≈ 0,5 s puis rotation de roue
+  attendent une animation (en mode par défaut, l'arc de visée balaie ≈ 1,8 s par
+  aller ou par retour, en continu jusqu'au clic sur « Stop », puis rotation de roue
   ≈ 2,6 à 4,2 s ; en mode « lancer simple », rotation directe) ou un tour de bot
   (≈ 0,8 s).
 - Note ce que tu **vois**, pas ce que tu supposes. Cite les libellés exacts.
@@ -77,8 +78,8 @@ Mes énigmes `/enigmes`, Réglages `/reglages` (tous préfixés par `/wheel-of-f
 Noms accessibles que tu utiliseras (respecte-les au caractère près) :
 
 - boutons de jeu : le bouton de lancer porte trois libellés possibles — `Lancer`
-  au repos en mode jauge de puissance (le réglage par défaut), `Stop` pendant que
-  la jauge charge, `Tourner` si le mode « lancer simple » est actif dans les
+  au repos en mode par défaut (l'arc de visée), `Stop` pendant que l'arc balaie,
+  `Tourner` si le mode « lancer simple » est actif dans les
   Réglages — puis `Résoudre`, `Passer la main`, `Manche suivante` ;
 - clavier virtuel : groupe `Clavier des lettres`, touches libellées `Lettre A`,
   ou `Lettre A, déjà proposée`, ou `Lettre A, indisponible` ;
@@ -137,11 +138,11 @@ ou **écart**, avec ce que tu as observé.
 
 1. L'en-tête doit afficher `Manche 1 sur 2 — gains ×1` et
    `Au tour de Vous — cagnotte 0 euro`.
-2. Clique `Lancer`. Une jauge de puissance apparaît au-dessus des boutons et balaie
-   d'un bord à l'autre ; le bouton devient `Stop`. Laisse-la charger environ une
-   demi-seconde, puis clique `Stop` : la roue s'anime alors (≈ 2,6 à 4,2 s selon la
-   force figée). Pendant la charge puis l'animation, le bouton de lancer, `Résoudre`
-   et `Passer la main` doivent porter `aria-disabled="true"`.
+2. Clique `Lancer`. Un arc apparaît sur le pourtour de la roue et tourne en continu,
+   aller puis retour (≈ 1,8 s par trajet) ; le bouton devient `Stop`. Vise une case,
+   puis clique `Stop` pour figer l'arc : la roue s'anime alors (≈ 2,6 à 4,2 s).
+   Pendant la visée puis l'animation, le bouton de lancer, `Résoudre` et
+   `Passer la main` doivent porter `aria-disabled="true"`.
 3. À l'arrêt, un encadré de retour doit afficher une phrase du type
    `La roue s'arrête sur 500 euros.`, `Banqueroute…` ou `Passe…`.
    Après un arrêt sur un montant, les trois boutons **restent** inertes : le jeu
@@ -169,7 +170,7 @@ Sur l'écran de jeu, sans focus dans un champ :
 1. Tape une lettre au clavier : elle doit s'allumer brièvement sur le clavier virtuel
    et jouer exactement comme un clic.
 2. Appuie sur `Espace` (avec le focus sur le corps de page, pas sur un bouton) :
-   en mode jauge de puissance, un premier appui arme la jauge et un second la
+   en mode par défaut, un premier appui arme l'arc de visée et un second le
    fige, ce qui lance la roue ; en mode « lancer simple », un seul appui suffit.
 3. Appuie sur `Entrée` : la boîte `Proposer une réponse` doit s'ouvrir — **sauf** si
    aucune clé d'API n'est enregistrée, auquel cas rien ne doit se passer.
@@ -197,10 +198,11 @@ Sur l'écran de jeu, sans focus dans un champ :
 6. Zoom : la balise `viewport` ne doit contenir ni `maximum-scale` ni `user-scalable=no`.
 7. Active `prefers-reduced-motion: reduce` (DevTools → Rendering → Emulate CSS media
    feature). Clique `Lancer` puis `Stop` : la roue ne doit **pas** s'animer, mais le
-   tour doit se dérouler normalement (résultat annoncé, consonne demandée). La jauge
-   de puissance, elle, continue de balayer pendant la charge — simplement ralentie
-   (≈ ×2,5) — donc un contrôle qui compterait toute animation de la page n'en verrait
-   pas zéro : seule la roue doit rester immobile. Remets le réglage après.
+   tour doit se dérouler normalement (résultat annoncé, consonne demandée). L'arc
+   de visée, lui, continue de balayer normalement — simplement ralenti (≈ ×2,5,
+   soit ≈ 4,5 s par trajet) — donc un contrôle qui compterait toute animation de la
+   page n'en verrait pas zéro : seule la roue doit rester immobile. Remets le
+   réglage après.
 
 ### 6. Résoudre — sans clé, puis avec clé
 

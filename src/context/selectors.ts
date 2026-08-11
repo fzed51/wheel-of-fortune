@@ -31,10 +31,12 @@ export interface GameCommands {
   /** Enchaîne la manche suivante, avec une énigme jamais jouée dans cette partie. */
   readonly nextRound: () => void
   /**
-   * Lance la roue avec une force entre 0 et 1 ; la case sera celle où la roue s'arrête.
-   * Force omise : tirée au hasard.
+   * Lance la roue vers un angle visé, en degrés, dans `[0, 360)` (0 = midi,
+   * sous l'aiguille, sens horaire) ; la case sera celle où la roue s'arrête,
+   * à l'erreur du hasard près (`AIM_ARC_DEGREES`, voir `game/wheel.ts`).
+   * Angle omis : tiré au hasard (bot, ou mode « lancer simple »).
    */
-  readonly spin: (force?: number) => void
+  readonly spin: (aim?: number) => void
   /** Clôt la rotation en cours : appelée par l'animation de la roue quand elle atteint le segment. */
   readonly settleSpin: () => void
   /** Joue une lettre : consonne devinée ou voyelle achetée, selon la lettre et la phase. */
