@@ -26,7 +26,7 @@ describe('SettingsRoute', () => {
     monterApp('/reglages')
 
     expect(
-      screen.getByRole('checkbox', { name: 'Lancer simple (sans jauge de puissance)' }),
+      screen.getByRole('checkbox', { name: 'Lancer simple (sans arc de visée)' }),
     ).not.toBeChecked()
   })
 
@@ -35,7 +35,7 @@ describe('SettingsRoute', () => {
     const premier = monterApp('/reglages')
 
     await user.click(
-      screen.getByRole('checkbox', { name: 'Lancer simple (sans jauge de puissance)' }),
+      screen.getByRole('checkbox', { name: 'Lancer simple (sans arc de visée)' }),
     )
     // Démonté avant de remonter : sans ça, les deux instances coexisteraient
     // dans le même `document.body` et fausseraient les requêtes suivantes.
@@ -45,7 +45,7 @@ describe('SettingsRoute', () => {
     // remonter l'application doit relire le réglage persisté.
     monterApp('/reglages')
     expect(
-      screen.getByRole('checkbox', { name: 'Lancer simple (sans jauge de puissance)' }),
+      screen.getByRole('checkbox', { name: 'Lancer simple (sans arc de visée)' }),
     ).toBeChecked()
   })
 

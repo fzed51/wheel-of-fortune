@@ -12,7 +12,7 @@ le script va au bout de ses contrôles avant de rendre son code de sortie.
 
 ## Ce que ça vérifie
 
-Seize contrôles, dans cet ordre :
+Dix-sept contrôles, dans cet ordre :
 
 | # | Contrôle | Ce qui casserait sans lui |
 | --- | --- | --- |
@@ -20,8 +20,8 @@ Seize contrôles, dans cet ordre :
 | 2 | CSP injectée et complète | la balise `<meta>` absente du build, ou une directive perdue |
 | 3 | thème posé avant le premier rendu | `theme-init.js` mal résolu → clignotement clair au chargement |
 | 4 | roue : animation réelle et angle conservé | `commitStyles()` bloqué faute de `style-src-attr` |
-| 5 | jauge de puissance : armée puis relâchée | le lancer en deux temps réduit à un clic, ou la jauge qui survit à la rotation |
-| 6 | lancer simple : un seul clic suffit, sans jauge | le réglage sans effet, ou une jauge qui apparaît quand même |
+| 5 | arc de visée : armé puis figé | le lancer en deux temps réduit à un clic, ou l'arc qui survit à la rotation |
+| 6 | lancer simple : un seul clic suffit, sans arc | le réglage sans effet, ou un arc qui apparaît quand même |
 | 7 | `prefers-reduced-motion` | la roue s'anime quand même, ou le tour n'aboutit plus |
 | 8 | arbre d'accessibilité : aucun graphique sans nom | un `<svg>` exposé sans nom au lecteur d'écran |
 | 9 | deux live regions, et deux seulement | une troisième région, et les annonces se marchent dessus |
@@ -31,17 +31,30 @@ Seize contrôles, dans cet ordre :
 | 13 | manifest et icônes | application non installable, sans le moindre message d'erreur |
 | 14 | service worker actif, rien de Mistral en cache | precache vide, ou un verdict du juge mis en cache |
 | 15 | hors ligne | l'application ne repart pas sans réseau |
-| 16 | aucune violation de CSP sur tout le parcours | une violation apparue en cours de partie, pas au chargement |
+| 16 | un bouton inerte s'estompe vraiment | un bouton ou une touche rendus inertes qui gardent l'apparence d'un élément actif |
+| 17 | aucune violation de CSP sur tout le parcours | une violation apparue en cours de partie, pas au chargement |
 
 Les contrôles 4 à 7 comptent les animations **du rotor seul**, jamais celles de la
-page entière : la jauge de puissance est elle aussi animée, et un compte global
-laisserait passer une roue qui ne tourne plus.
+page entière : l'arc de visée est lui aussi animé, et un compte global laisserait
+passer une roue qui ne tourne plus.
 
 Le contrôle 6 écrit un réglage persisté, puis le remet à sa valeur par défaut et
 recharge la page — `SettingsProvider` ne relit pas le stockage de lui-même.
 
 Le contrôle 12 crée une énigme perso et exporte le fichier : c'est le seul qui écrit
 un fichier, et il écrit dans un profil Chrome jetable.
+
+Le contrôle 16 compare, par `getComputedStyle`, l'opacité d'un bouton inerte
+(« Passer la main », inerte dès l'arrivée sur l'écran de jeu) à celle d'un bouton
+actif (« Lancer »), puis fait la même comparaison sur le clavier de lettres — une
+consonne jamais proposée (« H », témoin verrouillé tout du long) contre la voyelle
+« A », verrouillée tant que la cagnotte reste sous son prix (250 €) puis relevée de
+nouveau une fois la cagnotte suffisante, et contre une lettre quelconque déjà
+proposée en cours de route. jsdom ne calcule pas d'opacité et ce dépôt interdit les
+sélecteurs de classe dans les tests Vitest : aucun test automatisé ne peut atteindre
+`aria-disabled:opacity-50`, seul un vrai navigateur le peut. Aucune voyelle n'étant
+achetable dès `demarrerPartie` (la cagnotte du joueur part de zéro), ce contrôle
+joue vraiment quelques tours pour en obtenir une.
 
 ## Ce que ça ne vérifie pas, exprès
 
@@ -85,7 +98,7 @@ sur son port, et compare le document servi à `dist/index.html` avant de commenc
 | --- | --- |
 | `cdp.mjs` | pilote Chrome par le DevTools Protocol : lancement, navigation, `evaluate`, clavier, souris, hors ligne, `prefers-reduced-motion` |
 | `page.mjs` | boîte à outils injectée dans la page avant son premier script : requêtes par nom accessible, mouchards du thème et des violations CSP |
-| `check.mjs` | les seize contrôles, et le serveur d’aperçu qu’ils utilisent |
+| `check.mjs` | les dix-sept contrôles, et le serveur d’aperçu qu’ils utilisent |
 
 Aucune dépendance : Node fournit `fetch` et `WebSocket`, Chrome fournit le reste.
 Playwright coûterait un navigateur à télécharger pour un contrôle passé à la main de

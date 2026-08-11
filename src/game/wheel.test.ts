@@ -1,21 +1,23 @@
 import { describe, expect, it } from 'vitest'
 import {
+  AIM_ARC_DEGREES,
+  AIM_SPAN_DEGREES,
   BANKRUPT_COUNT,
+  JITTER_DEGREES,
   MIN_TRAVEL_DEGREES,
   PASS_COUNT,
   SEGMENT_ANGLE,
   SEGMENT_COUNT,
   SPIN_MAX_MS,
   SPIN_MIN_MS,
-  TRAVEL_SPAN_DEGREES,
   WHEEL,
   ZERO_COUNT,
   angleForLanding,
-  forceLabel,
   normalizeDegrees,
+  randomAim,
   resolveThrow,
   segmentAt,
-  throwFromForce,
+  throwFromAim,
 } from './wheel'
 
 describe('WHEEL', () => {
@@ -105,8 +107,7 @@ describe('resolveThrow', () => {
     // un offset à ±7,5°, une aiguille que rien ne permettrait de trancher à l'œil.
     for (let i = 0; i < 2000; i += 1) {
       const fromAngle = (i * 137) % 360
-      const force = (i % 101) / 100
-      const travel = MIN_TRAVEL_DEGREES + force * TRAVEL_SPAN_DEGREES + ((i % 17) - 8)
+      const travel = MIN_TRAVEL_DEGREES + ((i * 293) % 2000) + ((i % 17) - 8)
       const landing = resolveThrow(fromAngle, { spinId: i, travel, durationMs: 3000 })
       expect(Math.abs(landing.offset)).toBeLessThanOrEqual(OFFSET_BOUND + 1e-9)
     }
@@ -115,7 +116,7 @@ describe('resolveThrow', () => {
   it('ne corrige la course que de la marge autorisée, jamais plus', () => {
     for (let i = 0; i < 500; i += 1) {
       const fromAngle = (i * 53) % 360
-      const travel = MIN_TRAVEL_DEGREES + ((i * 31) % TRAVEL_SPAN_DEGREES)
+      const travel = MIN_TRAVEL_DEGREES + ((i * 31) % 1440)
       const thrown = { spinId: i, travel, durationMs: 3000 }
       const landing = resolveThrow(fromAngle, thrown)
       expect(Math.abs(landing.travel - thrown.travel)).toBeLessThanOrEqual(2)
@@ -123,67 +124,122 @@ describe('resolveThrow', () => {
   })
 })
 
-describe('throwFromForce', () => {
-  it('reste dans les bornes de course et de durée, en recopiant le spinId', () => {
-    for (const force of [0, 0.25, 0.5, 0.75, 1]) {
-      const thrown = throwFromForce(force, () => 0.5, 7)
-      expect(thrown.travel).toBeGreaterThanOrEqual(705)
-      expect(thrown.travel).toBeLessThanOrEqual(2175)
-      expect(thrown.durationMs).toBeGreaterThanOrEqual(SPIN_MIN_MS)
-      expect(thrown.durationMs).toBeLessThanOrEqual(SPIN_MAX_MS)
-      expect(thrown.spinId).toBe(7)
+describe('randomAim', () => {
+  it('reste dans [0, 360) aux deux extrêmes de rng', () => {
+    expect(randomAim(() => 0)).toBe(0)
+    // Un générateur réel rend des valeurs dans [0, 1), jamais 1 pile : on
+    // s'approche de la borne haute sans jamais l'atteindre.
+    const proche = randomAim(() => 1 - 1e-9)
+    expect(proche).toBeGreaterThanOrEqual(0)
+    expect(proche).toBeLessThan(AIM_SPAN_DEGREES)
+  })
+})
+
+describe('throwFromAim', () => {
+  it('amène sous l’aiguille le segment qui se trouvait à l’angle visé, quel que soit l’angle de repos', () => {
+    // rng constant à 0,5 ⇒ jitter nul (voir la formule de throwFromAim) : le
+    // lancer doit alors être exact, sans l'imprécision humaine. L'attendu est
+    // calculé ici à partir de la géométrie de l'énoncé, sans jamais rappeler
+    // throwFromAim — sinon le test ne prouverait rien.
+    const rng = () => 0.5
+    const aims = [0, 7, 44.9, 90, 179.9, 268, 340]
+    for (const fromAngle of START_ANGLES) {
+      for (const aim of aims) {
+        const expectedIndex = Math.floor(normalizeDegrees(aim - fromAngle) / SEGMENT_ANGLE)
+        const thrown = throwFromAim(aim, rng, 1)
+        const landing = resolveThrow(fromAngle, thrown)
+        expect(landing.index).toBe(expectedIndex)
+      }
     }
   })
 
-  it('allonge la course et la durée avec la force, à générateur constant', () => {
-    const weak = throwFromForce(0, () => 0.5, 1)
-    const strong = throwFromForce(1, () => 0.5, 1)
-    expect(strong.travel).toBeGreaterThan(weak.travel)
-    expect(strong.durationMs).toBeGreaterThan(weak.durationMs)
+  it('borne l’erreur du lancer à une case, aux deux extrêmes de l’imprécision humaine', () => {
+    for (let aim = 0; aim < 360; aim += 11) {
+      for (const rng of [() => 0, () => 1]) {
+        const thrown = throwFromAim(aim, rng, 1)
+        // Repère fixe (fromAngle = 0) : la démonstration du module montre que
+        // l'angle de repos n'entre pas dans le résultat, inutile de le varier ici.
+        const achieved = normalizeDegrees(-normalizeDegrees(thrown.travel))
+        const target = normalizeDegrees(aim)
+        const ecart = normalizeDegrees(achieved - target)
+        const repli = ecart > 180 ? ecart - 360 : ecart
+        expect(Math.abs(repli)).toBeLessThanOrEqual(JITTER_DEGREES + 1e-9)
+      }
+    }
   })
 
-  it('ne consomme le générateur qu’une seule fois', () => {
+  it('AIM_ARC_DEGREES vaut deux fois l’erreur maximale, et couvre donc tout l’éventail des atterrissages', () => {
+    expect(AIM_ARC_DEGREES).toBe(2 * JITTER_DEGREES)
+    // Les deux bornes de rng doivent produire l'erreur maximale de part et
+    // d'autre de la cible : si l'arc dessiné était plus étroit que ça, il
+    // mentirait sur ce que le joueur peut espérer.
+    const aim = 123
+    const target = normalizeDegrees(aim)
+    const bas = throwFromAim(aim, () => 0, 1)
+    const haut = throwFromAim(aim, () => 1, 1)
+    const achieveBas = normalizeDegrees(-normalizeDegrees(bas.travel))
+    const achieveHaut = normalizeDegrees(-normalizeDegrees(haut.travel))
+    const replier = (v: number): number => {
+      const ecart = normalizeDegrees(v - target)
+      return ecart > 180 ? ecart - 360 : ecart
+    }
+    const total = Math.abs(replier(achieveBas)) + Math.abs(replier(achieveHaut))
+    expect(total).toBeCloseTo(AIM_ARC_DEGREES, 6)
+  })
+
+  it('respecte les bornes de durée pour tout angle visé et tout tirage', () => {
+    for (let aim = 0; aim < 360; aim += 7) {
+      for (const rng of [() => 0, () => 0.5, () => 1]) {
+        const thrown = throwFromAim(aim, rng, 1)
+        expect(thrown.durationMs).toBeGreaterThanOrEqual(SPIN_MIN_MS)
+        expect(thrown.durationMs).toBeLessThanOrEqual(SPIN_MAX_MS)
+      }
+    }
+  })
+
+  it('ne descend jamais sous le plancher moins l’erreur, quel que soit l’angle visé', () => {
+    for (let aim = 0; aim < 360; aim += 7) {
+      for (const rng of [() => 0, () => 0.5, () => 1]) {
+        const thrown = throwFromAim(aim, rng, 1)
+        expect(thrown.travel).toBeGreaterThanOrEqual(MIN_TRAVEL_DEGREES - JITTER_DEGREES - 1e-9)
+      }
+    }
+  })
+
+  it('normalise son entrée : -90, 270 et 630 rendent le même lancer', () => {
+    const rng = () => 0.5
+    const a = throwFromAim(-90, rng, 1)
+    const b = throwFromAim(270, rng, 1)
+    const c = throwFromAim(630, rng, 1)
+    expect(b.travel).toBeCloseTo(a.travel, 9)
+    expect(c.travel).toBeCloseTo(a.travel, 9)
+    expect(b.durationMs).toBe(a.durationMs)
+    expect(c.durationMs).toBe(a.durationMs)
+  })
+
+  it('recopie le spinId reçu, et ne consomme le générateur qu’une seule fois', () => {
     let calls = 0
     const rng = () => {
       calls += 1
       return 0.5
     }
-    throwFromForce(0.4, rng, 1)
+    const thrown = throwFromAim(42, rng, 9)
+    expect(thrown.spinId).toBe(9)
     expect(calls).toBe(1)
-  })
-
-  it('ignore une force hors de [0, 1] en la ramenant aux bornes', () => {
-    const under = throwFromForce(-1, () => 0.5, 1)
-    const over = throwFromForce(2, () => 0.5, 1)
-    const zero = throwFromForce(0, () => 0.5, 1)
-    const one = throwFromForce(1, () => 0.5, 1)
-    expect(under.travel).toBe(zero.travel)
-    expect(over.travel).toBe(one.travel)
   })
 })
 
 describe('couverture des lancers', () => {
-  it('atteint les 24 cases depuis chaque angle de départ, sur un éventail de forces', () => {
+  it('atteint les 24 cases depuis chaque angle de départ, en balayant les angles visés', () => {
     for (const fromAngle of START_ANGLES) {
       const seen = new Set<number>()
       for (let i = 0; i < 500; i += 1) {
-        const force = i / 499
-        const thrown = throwFromForce(force, () => (i % 7) / 7, i)
+        const aim = (i / 500) * 360
+        const thrown = throwFromAim(aim, () => (i % 7) / 7, i)
         seen.add(resolveThrow(fromAngle, thrown).index)
       }
       expect(seen.size).toBe(SEGMENT_COUNT)
     }
-  })
-})
-
-describe('forceLabel', () => {
-  it('rend faible, moyen puis fort selon la course parcourue, bornes comprises', () => {
-    expect(forceLabel(MIN_TRAVEL_DEGREES)).toBe('faible')
-    expect(forceLabel(MIN_TRAVEL_DEGREES + TRAVEL_SPAN_DEGREES / 3 - 1)).toBe('faible')
-    expect(forceLabel(MIN_TRAVEL_DEGREES + TRAVEL_SPAN_DEGREES / 3)).toBe('moyen')
-    expect(forceLabel(MIN_TRAVEL_DEGREES + (TRAVEL_SPAN_DEGREES * 2) / 3 - 1)).toBe('moyen')
-    expect(forceLabel(MIN_TRAVEL_DEGREES + (TRAVEL_SPAN_DEGREES * 2) / 3)).toBe('fort')
-    expect(forceLabel(MIN_TRAVEL_DEGREES + TRAVEL_SPAN_DEGREES)).toBe('fort')
   })
 })
 

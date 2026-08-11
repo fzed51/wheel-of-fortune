@@ -68,20 +68,24 @@ const SCHEMA_VERSION_RECOPIEE = 3
 const CONSONNES = ['S', 'R', 'T', 'N', 'L', 'M', 'D', 'P', 'C', 'V', 'B', 'F', 'G']
 
 /*
- * Une charge d'environ 400 ms suffit à sortir du geste « armer » avec une
- * force exploitable — aucun contrôle ci-dessous ne dépend de sa valeur
- * exacte, seulement du fait qu'un lancer a bien eu lieu. Sous
- * `prefers-reduced-motion`, le balayage de la jauge est ralenti ×2,5 (voir
- * `useForceGauge`) : la charge est allongée d'autant pour rester cohérente,
- * même si rien n'impose cette proportion pour la validité du contrôle.
+ * Un aller (ou un retour) de l'arc dure désormais 1 800 ms (`AIM_SWEEP_MS`,
+ * `useAimSweep`) — le double de l'ancienne jauge de puissance, dont la course
+ * ne couvrait qu'une barre. Attendre 450 ms avant de figer l'arc, c'est donc
+ * s'arrêter à un quart de cette course : largement avant que l'arc n'ait fini
+ * son aller et ne fasse demi-tour. Aucun contrôle ci-dessous ne dépend de la
+ * valeur exacte de l'angle visé, seulement du fait qu'un lancer a bien eu
+ * lieu. Sous `prefers-reduced-motion`, le balayage est ralenti ×2,5 (voir
+ * `useAimSweep`) : l'attente est allongée d'autant pour rester à la même
+ * proportion de la course, même si rien n'impose cette proportion pour la
+ * validité du contrôle.
  */
-const CHARGE_JAUGE_MS = 450
-const CHARGE_JAUGE_RALENTIE_MS = Math.round(CHARGE_JAUGE_MS * 2.5)
+const CHARGE_ARC_MS = 450
+const CHARGE_ARC_RALENTIE_MS = Math.round(CHARGE_ARC_MS * 2.5)
 
 /**
  * N'isole que les animations dont la cible est le rotor de la roue : sans ce
- * filtre, `document.getAnimations()` compte aussi le balayage de la jauge de
- * puissance pendant sa charge, et un contrôle qui voudrait vérifier que la
+ * filtre, `document.getAnimations()` compte aussi le balayage de l'arc de
+ * visée avant qu'il ne soit figé, et un contrôle qui voudrait vérifier que la
  * roue seule s'anime (ou ne s'anime pas, sous mouvement réduit) passerait
  * pour de mauvaises raisons.
  */
@@ -202,8 +206,8 @@ async function demarrerPartie(client, { manches = 3, adversaires = 0 } = {}) {
  * Tourne jusqu'à obtenir une phase « consonne attendue », ou rend la main.
  *
  * Geste en deux temps (armer, puis figer et lancer) : en mode jauge — le
- * défaut de la configuration servie ici — un seul clic ne ferait que monter
- * la charge, la roue ne tournerait jamais et la boucle attendrait pour rien.
+ * défaut de la configuration servie ici — un seul clic ne ferait qu'armer
+ * l'arc, la roue ne tournerait jamais et la boucle attendrait pour rien.
  */
 async function tournerJusquAConsonne(client, essais = 6) {
   for (let essai = 0; essai < essais; essai += 1) {
@@ -211,11 +215,57 @@ async function tournerJusquAConsonne(client, essais = 6) {
     if (/roue s'arrête sur/.test(vu.evenement ?? '') && vu.jouables.length > 0) return vu
     if (vu.lancer.gele !== 'false') return null
     await evaluate(client, 'return window.__h.clickLancer()')
-    await sleep(CHARGE_JAUGE_MS)
+    await sleep(CHARGE_ARC_MS)
     await evaluate(client, 'return window.__h.clickLancer()')
     await sleep(4300)
   }
   return null
+}
+
+/**
+ * Grimpe la cagnotte du joueur jusqu'à ce que la voyelle « A » devienne
+ * achetable (`VOWEL_COST` de `src/game/setup.ts`, 250 €). Rien ne le garantit
+ * dès `demarrerPartie` : la cagnotte part de zéro, donc les cinq voyelles sont
+ * aussi verrouillées que les consonnes au tout premier rendu.
+ *
+ * `window.__h.jeu().jouables` ne liste que les lettres réellement cliquables
+ * (`lettresJouables()` filtre sur le libellé nu « Lettre X », que seul l'état
+ * « available » de `KeyboardKey` produit) : sa présence dit donc à elle seule
+ * si on attend un lancer (`lancer.gele === 'false'`) ou une consonne
+ * (`jouables` rempli de consonnes pendant que le lancer reste gelé), sans
+ * qu'il faille suivre la phase du moteur depuis ce script.
+ *
+ * `H` n'est jamais tentée : c'est le témoin verrouillé que le contrôle appelant
+ * relève ensuite, il doit rester intact — jamais proposé, donc jamais « déjà
+ * proposée » à sa place.
+ */
+async function atteindreVoyelleAchetable(client, essais = 14) {
+  for (let essai = 0; essai < essais; essai += 1) {
+    const vu = await evaluate(client, 'return window.__h.jeu()')
+    if (vu.jouables.includes('A')) return true
+
+    if (vu.lancer.gele === 'false') {
+      // Geste en deux temps, comme partout ailleurs dans ce fichier : hors
+      // « lancer simple » (le défaut de la configuration servie ici), un
+      // premier clic n'arme que l'arc de visée, le second fige l'angle.
+      await evaluate(client, 'return window.__h.clickLancer()')
+      await sleep(CHARGE_ARC_MS)
+      await evaluate(client, 'return window.__h.clickLancer()')
+      await sleep(4300)
+      continue
+    }
+
+    // Le bouton de lancer est gelé : une consonne est attendue. Priorité aux
+    // lettres les plus fréquentes en français, sans elle le budget d'essais
+    // s'épuiserait vite sur des lettres rares (`B`, `F`, `G`…) — et jamais `H`.
+    const lettre =
+      CONSONNES.find((candidate) => vu.jouables.includes(candidate)) ??
+      vu.jouables.find((candidate) => candidate !== 'H')
+    if (lettre === undefined) return false
+    await evaluate(client, `return window.__h.clickLettre('${lettre}')`)
+    await sleep(400)
+  }
+  return false
 }
 
 async function main() {
@@ -361,10 +411,10 @@ async function main() {
 
   await controle('roue : animation réelle et angle conservé', async () => {
     await demarrerPartie(client)
-    // Geste en deux temps : le premier clic n'arme que la jauge (mode par
-    // défaut), le second fige la force et lance la rotation réelle.
+    // Geste en deux temps : le premier clic n'arme que l'arc de visée (mode
+    // par défaut), le second le fige et lance la rotation réelle.
     await evaluate(client, 'return window.__h.clickLancer()')
-    await sleep(CHARGE_JAUGE_MS)
+    await sleep(CHARGE_ARC_MS)
     await evaluate(client, 'return window.__h.clickLancer()')
     await sleep(500)
     const pendant = await evaluate(
@@ -373,8 +423,8 @@ async function main() {
        return { animationsRotor, lancer: window.__h.jeu().lancer }`,
     )
     // Ne compter que les animations dont la cible est le rotor : un compte
-    // global inclurait aussi le balayage de la jauge, et ce contrôle passerait
-    // même si la roue elle-même ne bougeait jamais.
+    // global inclurait aussi le balayage de l'arc de visée, et ce contrôle
+    // passerait même si la roue elle-même ne bougeait jamais.
     exiger(pendant.animationsRotor > 0, 'la roue ne s’anime pas', pendant)
     exiger(pendant.lancer.gele === 'true', 'commandes non gelées pendant la rotation', pendant)
 
@@ -401,25 +451,25 @@ async function main() {
     return apres
   })
 
-  await controle('jauge de puissance : armée puis relâchée', async () => {
+  await controle('arc de visée : armé puis figé', async () => {
     await demarrerPartie(client)
     const repos = await evaluate(client, 'return window.__h.jeu().lancer')
     exiger(repos.nom === 'Lancer', 'le bouton de lancer ne s’appelle pas « Lancer » au repos', repos)
 
     await evaluate(client, 'return window.__h.clickLancer()')
     await sleep(300)
-    const charge = await evaluate(
+    const visee = await evaluate(
       client,
       `${FILTRE_ANIMATIONS_ROTOR}
        return { lancer: window.__h.jeu().lancer, animationsHorsRotor }`,
     )
-    exiger(charge.lancer.nom === 'Stop', 'le bouton ne devient pas « Stop » pendant la charge', charge)
+    exiger(visee.lancer.nom === 'Stop', 'le bouton ne devient pas « Stop » pendant la visée', visee)
     // Le lancer n'a pu démarrer que sur une action légale : l'arrêter doit
-    // toujours être possible, la charge ne gèle donc jamais ce bouton.
-    exiger(charge.lancer.gele === 'false', 'le bouton « Stop » est gelé pendant sa propre charge', charge)
+    // toujours être possible, la visée ne gèle donc jamais ce bouton.
+    exiger(visee.lancer.gele === 'false', 'le bouton « Stop » est gelé pendant sa propre visée', visee)
     // C'est le seul instant de ce contrôle où l'on *veut* voir une animation
-    // hors rotor : c'est la jauge, rien d'autre ne peut l'expliquer ici.
-    exiger(charge.animationsHorsRotor > 0, 'aucune animation de jauge pendant la charge', charge)
+    // hors rotor : c'est l'arc de visée, rien d'autre ne peut l'expliquer ici.
+    exiger(visee.animationsHorsRotor > 0, 'aucune animation d’arc pendant la visée', visee)
 
     await evaluate(client, 'return window.__h.clickLancer()')
     await sleep(500)
@@ -429,19 +479,19 @@ async function main() {
        return { animationsRotor, animationsHorsRotor }`,
     )
     exiger(rotation.animationsRotor > 0, 'la roue ne tourne pas après le second clic', rotation)
-    exiger(rotation.animationsHorsRotor === 0, 'la jauge est encore présente pendant la rotation', rotation)
+    exiger(rotation.animationsHorsRotor === 0, 'l’arc est encore présent pendant la rotation', rotation)
 
     await sleep(4200)
     const evenement = await evaluate(client, 'return window.__h.jeu().evenement')
-    exiger(evenement !== null, 'aucune annonce après une rotation lancée à la jauge', evenement)
-    return { repos, charge, rotation, evenement }
+    exiger(evenement !== null, 'aucune annonce après une rotation lancée à l’arc', evenement)
+    return { repos, visee, rotation, evenement }
   })
 
-  await controle('lancer simple : un seul clic suffit, sans jauge', async () => {
+  await controle('lancer simple : un seul clic suffit, sans arc', async () => {
     await goto(client, `${APP}reglages`)
     const coche = await evaluate(
       client,
-      `return window.__h.setChecked('Lancer simple (sans jauge de puissance)', true)`,
+      `return window.__h.setChecked('Lancer simple (sans arc de visée)', true)`,
     )
     exiger(coche === true, 'la case « lancer simple » ne se coche pas')
 
@@ -457,7 +507,7 @@ async function main() {
        return { animationsRotor, animationsHorsRotor }`,
     )
     exiger(pendant.animationsRotor > 0, 'un seul clic ne fait pas tourner la roue en mode lancer simple', pendant)
-    exiger(pendant.animationsHorsRotor === 0, 'une jauge est apparue en mode lancer simple', pendant)
+    exiger(pendant.animationsHorsRotor === 0, 'un arc est apparu en mode lancer simple', pendant)
 
     await sleep(4200)
     const apres = await evaluate(
@@ -466,7 +516,7 @@ async function main() {
        return { evenement: window.__h.jeu().evenement, animationsHorsRotor }`,
     )
     exiger(apres.evenement !== null, 'aucune annonce après le lancer simple', apres)
-    exiger(apres.animationsHorsRotor === 0, 'une jauge est apparue après coup en mode lancer simple', apres)
+    exiger(apres.animationsHorsRotor === 0, 'un arc est apparu après coup en mode lancer simple', apres)
     return { repos, pendant, apres }
   })
 
@@ -474,14 +524,14 @@ async function main() {
    * Remise à « gauge » hors du `controle()` ci-dessus, sur le même principe
    * que l'effacement de la clé factice après l'export un peu plus bas : le
    * réglage est persisté en localStorage, et un échec en cours de contrôle ne
-   * doit pas laisser tous les contrôles suivants (jauge ralentie, clavier
+   * doit pas laisser tous les contrôles suivants (arc ralenti, clavier
    * physique, hors ligne…) tourner dans un mode qu'ils n'attendent pas.
    *
    * Le rechargement qui suit n'est pas une précaution : `SettingsProvider` lit
    * les réglages **une seule fois au montage** (`useState(() => loadSettings())`).
    * Réécrire localStorage laisse donc l'application en cours toujours en mode
    * simple, et les contrôles suivants cliqueraient un bouton « Tourner » en
-   * croyant jouer la jauge — certains passeraient même, pour la mauvaise raison.
+   * croyant lancer l'arc — certains passeraient même, pour la mauvaise raison.
    */
   await evaluate(
     client,
@@ -498,8 +548,8 @@ async function main() {
     await setReducedMotion(client, true)
     await demarrerPartie(client)
     await evaluate(client, 'return window.__h.clickLancer()')
-    // Balayage ralenti ×2,5 sous mouvement réduit : charge allongée d'autant.
-    await sleep(CHARGE_JAUGE_RALENTIE_MS)
+    // Balayage ralenti ×2,5 sous mouvement réduit : attente allongée d'autant.
+    await sleep(CHARGE_ARC_RALENTIE_MS)
     await evaluate(client, 'return window.__h.clickLancer()')
     await sleep(200)
     const animations = await evaluate(
@@ -552,10 +602,10 @@ async function main() {
 
     await evaluate(client, 'document.activeElement.blur(); return true')
     // Deux `Espace`, comme deux clics : en mode jauge, le premier n'arme que
-    // la charge. La touche déclenche exactement la même action que le
-    // bouton, il faut donc le même geste en deux temps pour lancer la roue.
+    // l'arc. La touche déclenche exactement la même action que le bouton, il
+    // faut donc le même geste en deux temps pour lancer la roue.
     await pressKey(client, ' ')
-    await sleep(CHARGE_JAUGE_MS)
+    await sleep(CHARGE_ARC_MS)
     await pressKey(client, ' ')
     await sleep(600)
     const pendant = await evaluate(client, 'return window.__h.jeu()')
@@ -748,6 +798,106 @@ async function main() {
     exiger(horsLigne.entete === 'La Roue de la Fortune', 'l’application ne se charge pas hors ligne', horsLigne)
     exiger(horsLigne.lancer.nom !== null, 'l’écran de jeu n’est pas rendu hors ligne', horsLigne)
     return horsLigne
+  })
+
+  await controle('un bouton inerte s’estompe vraiment', async () => {
+    await demarrerPartie(client)
+
+    /*
+     * `getComputedStyle` est le seul juge possible ici : jsdom ne calcule pas
+     * d'opacité, et ce dépôt interdit les sélecteurs de classe dans les tests
+     * Vitest — `aria-disabled:opacity-50` n'est vérifiable que par son effet
+     * rendu, jamais par la présence de la classe dans le HTML. « Lancer »,
+     * actif, sert de témoin : sans lui, une `opacity: .5` posée par erreur sur
+     * tous les boutons (ou une classe partagée retirée par erreur d'un seul
+     * composant) passerait quand même au vert.
+     */
+    const boutons = await evaluate(
+      client,
+      `const passer = window.__h.byName('Passer la main')
+       const lancer = window.__h.byName('Lancer')
+       return {
+         passer: passer && { disabled: passer.getAttribute('aria-disabled'), opacite: getComputedStyle(passer).opacity },
+         lancer: lancer && { disabled: lancer.getAttribute('aria-disabled'), opacite: getComputedStyle(lancer).opacity },
+       }`,
+    )
+    exiger(boutons.passer !== null, 'bouton « Passer la main » introuvable', boutons)
+    exiger(boutons.lancer !== null, 'bouton « Lancer » introuvable (mode lancer simple actif ?)', boutons)
+    // À l'arrivée sur l'écran de jeu, aucun tour n'a encore été joué : `isStuck`
+    // (donc `canPass`) vaut faux tant qu'il reste une consonne à tourner, et
+    // `canSpin` vaut vrai. Si ce n'est plus le cas, ce contrôle ne mesure pas
+    // ce qu'il croit mesurer.
+    exiger(
+      boutons.passer.disabled === 'true',
+      '« Passer la main » n’est pas inerte à l’arrivée sur l’écran de jeu',
+      boutons.passer,
+    )
+    exiger(parseFloat(boutons.passer.opacite) < 0.9, '« Passer la main » inerte garde une opacité pleine', boutons.passer)
+    exiger(parseFloat(boutons.lancer.opacite) === 1, '« Lancer », actif, est lui aussi estompé', boutons.lancer)
+
+    // Clavier au repos : la cagnotte part de zéro, donc la voyelle « A » est
+    // verrouillée exactement comme la consonne « H » (`canBuyVowel` refuse tant
+    // que `pot < vowelCost`, 250 €) — même si les raisons diffèrent, les deux
+    // passent par le même état `locked` de `KeyboardKey`.
+    const clavierRepos = await evaluate(
+      client,
+      `const consonne = document.querySelector('button[aria-label^="Lettre H"]')
+       const voyelle = document.querySelector('button[aria-label^="Lettre A"]')
+       return {
+         consonne: consonne && { disabled: consonne.getAttribute('aria-disabled'), opacite: getComputedStyle(consonne).opacity },
+         voyelle: voyelle && { disabled: voyelle.getAttribute('aria-disabled'), opacite: getComputedStyle(voyelle).opacity },
+       }`,
+    )
+    exiger(clavierRepos.consonne !== null, 'touche « Lettre H » introuvable', clavierRepos)
+    exiger(clavierRepos.voyelle !== null, 'touche « Lettre A » introuvable', clavierRepos)
+    exiger(clavierRepos.consonne.disabled === 'true', 'la consonne « H » n’est pas verrouillée au premier rendu', clavierRepos.consonne)
+    exiger(parseFloat(clavierRepos.consonne.opacite) < 0.9, 'une touche verrouillée garde une opacité pleine', clavierRepos.consonne)
+    exiger(
+      clavierRepos.voyelle.disabled === 'true',
+      'la voyelle « A » n’est pas verrouillée alors que la cagnotte est à 0 €',
+      clavierRepos.voyelle,
+    )
+    exiger(parseFloat(clavierRepos.voyelle.opacite) < 0.9, 'une voyelle sous son prix garde une opacité pleine', clavierRepos.voyelle)
+
+    // `KeyboardKey.tsx` compose ses classes hors de `BUTTON_PRIMARY`/`BUTTON_GHOST` :
+    // il mérite son propre témoin, et une seule photo au repos ne suffit pas —
+    // voir la voyelle *se libérer* écarte l'hypothèse d'une case estompée par
+    // accident (touche introuvable, sélecteur trop large…) qui passerait pour
+    // de mauvaises raisons.
+    const cagnotte = await atteindreVoyelleAchetable(client)
+    exiger(cagnotte, 'impossible d’obtenir une voyelle achetable pour comparer le clavier après coup')
+    await sleep(200)
+
+    const clavierApres = await evaluate(
+      client,
+      `const consonne = document.querySelector('button[aria-label^="Lettre H"]')
+       const voyelle = document.querySelector('button[aria-label^="Lettre A"]')
+       const proposee = document.querySelector('button[aria-label$=", déjà proposée"]')
+       return {
+         consonne: consonne && { disabled: consonne.getAttribute('aria-disabled'), opacite: getComputedStyle(consonne).opacity },
+         voyelle: voyelle && { disabled: voyelle.getAttribute('aria-disabled'), opacite: getComputedStyle(voyelle).opacity },
+         proposee: proposee && { disabled: proposee.getAttribute('aria-disabled'), opacite: getComputedStyle(proposee).opacity },
+       }`,
+    )
+    exiger(clavierApres.consonne !== null, 'touche « Lettre H » introuvable après coup', clavierApres)
+    exiger(clavierApres.voyelle !== null, 'touche « Lettre A » introuvable après coup', clavierApres)
+    exiger(clavierApres.consonne.disabled === 'true', 'la consonne témoin « H » a fini par être proposée', clavierApres.consonne)
+    exiger(parseFloat(clavierApres.consonne.opacite) < 0.9, 'la consonne verrouillée « H » a repris une opacité pleine', clavierApres.consonne)
+    exiger(
+      clavierApres.voyelle.disabled === 'false',
+      'la voyelle « A » n’est pas devenue achetable malgré une cagnotte suffisante',
+      clavierApres.voyelle,
+    )
+    exiger(parseFloat(clavierApres.voyelle.opacite) === 1, 'une touche devenue jouable reste estompée', clavierApres.voyelle)
+    // Une lettre a forcément été proposée en grimpant la cagnotte : elle
+    // prouve que l'état « déjà proposée » — visuellement identique à
+    // `locked` dans `classesFor` — porte lui aussi l'estompée, pas seulement
+    // les lettres jamais tentées comme « H ».
+    exiger(clavierApres.proposee !== null, 'aucune lettre déjà proposée à comparer (aucun coup n’a pourtant pu être évité)', clavierApres)
+    exiger(clavierApres.proposee.disabled === 'true', 'une lettre déjà proposée n’est plus signalée aria-disabled', clavierApres.proposee)
+    exiger(parseFloat(clavierApres.proposee.opacite) < 0.9, 'une lettre déjà proposée garde une opacité pleine', clavierApres.proposee)
+
+    return { boutons, clavierRepos, clavierApres }
   })
 
   await controle('aucune violation de CSP sur tout le parcours', async () => {

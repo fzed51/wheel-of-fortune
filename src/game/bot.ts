@@ -12,7 +12,7 @@ import {
   remainingVowels,
 } from './rules'
 import type { Consonant, Game, GameState, RoundState, Vowel } from './types'
-import { randomForce, throwFromForce } from './wheel'
+import { randomAim, throwFromAim } from './wheel'
 
 /**
  * Consonnes par fréquence décroissante en français. Un bot « normal » descend
@@ -188,7 +188,7 @@ export function decideBotAction(game: Game, rng: Rng, ticket: BotTicket): GameAc
   }
 
   if (canSpin(game)) {
-    return { type: 'wheel/spin', by, thrown: throwFromForce(randomForce(rng), rng, ticket.spinId) }
+    return { type: 'wheel/spin', by, thrown: throwFromAim(randomAim(rng), rng, ticket.spinId) }
   }
 
   // À partir d'ici, tourner est impossible : la voyelle reste une option

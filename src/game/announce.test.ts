@@ -178,51 +178,23 @@ describe('announceTransition — démarrage et enchaînement de manche', () => {
 })
 
 describe('announceTransition — roue', () => {
-  it('annonce un lancer faible', () => {
+  it('annonce le lancer sans jamais révéler la distance ni la case visée', () => {
+    // Décision produit : la case visée doit rester incertaine pour le joueur
+    // jusqu'à `wheel/settled`, quelle que soit la distance du lancer.
     const prev = demarrer()
     const by = courant(prev).id
-    // `over` = 900 − 720 = 180, sous 480 (un tiers de TRAVEL_SPAN_DEGREES) : faible.
     const action = { type: 'wheel/spin' as const, by, thrown: { spinId: 1, travel: 900, durationMs: 3000 } }
     const next = jouer(prev, action)
-    expect(announceTransition(prev, next, action)).toEqual({
-      status: 'La roue tourne — lancer faible.',
-      alert: '',
-    })
+    expect(announceTransition(prev, next, action)).toEqual({ status: 'La roue tourne…', alert: '' })
   })
 
-  it('annonce un lancer moyen', () => {
+  it('annonce la même phrase quelle que soit la distance parcourue', () => {
     const prev = demarrer()
     const by = courant(prev).id
-    // `over` = 1500 − 720 = 780, entre 480 et 960 : moyen.
-    const action = { type: 'wheel/spin' as const, by, thrown: { spinId: 1, travel: 1500, durationMs: 3000 } }
-    const next = jouer(prev, action)
-    expect(announceTransition(prev, next, action)).toEqual({
-      status: 'La roue tourne — lancer moyen.',
-      alert: '',
-    })
-  })
-
-  it('annonce un lancer fort', () => {
-    const prev = demarrer()
-    const by = courant(prev).id
-    // `over` = 2000 − 720 = 1280, au-dessus de 960 : fort.
-    const action = { type: 'wheel/spin' as const, by, thrown: { spinId: 1, travel: 2000, durationMs: 3000 } }
-    const next = jouer(prev, action)
-    expect(announceTransition(prev, next, action)).toEqual({
-      status: 'La roue tourne — lancer fort.',
-      alert: '',
-    })
-  })
-
-  it('replie sur « La roue tourne… » si la phase résultante n’est pas spinning', () => {
-    // Cas défensif : le reducer aurait refusé l'action, ou une forme future de
-    // l'état. On force une phase `awaiting-action` sans passer par le reducer,
-    // pour isoler ce repli sans dépendre d'un vrai rejet d'action.
-    const prev = demarrer()
-    const by = courant(prev).id
-    const forced = avecPhase(prev, { kind: 'awaiting-action' })
-    const action = { type: 'wheel/spin' as const, by, thrown: { spinId: 1, travel: 900, durationMs: 3000 } }
-    expect(announceTransition(prev, forced, action)).toEqual({ status: 'La roue tourne…', alert: '' })
+    const court = { type: 'wheel/spin' as const, by, thrown: { spinId: 1, travel: 730, durationMs: 3000 } }
+    const long = { type: 'wheel/spin' as const, by, thrown: { spinId: 1, travel: 2200, durationMs: 3000 } }
+    expect(announceTransition(prev, jouer(prev, court), court).status).toBe('La roue tourne…')
+    expect(announceTransition(prev, jouer(prev, long), long).status).toBe('La roue tourne…')
   })
 
   it('annonce le montant sur un segment payant, sans changer de joueur', () => {

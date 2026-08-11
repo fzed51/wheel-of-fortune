@@ -41,7 +41,7 @@ constaté la fois précédente.
 - avant une mise en ligne qui touche la PWA, le service worker, le manifest ou la CSP ;
 - après un changement du côté de `src/llm/` ou de l'étape bonus ;
 - après un rééquilibrage de la roue ou un changement de barème ;
-- après un changement du geste de lancer (jauge de puissance, mode simple, imprécision) ;
+- après un changement du geste de lancer (arc de visée, mode simple, imprécision) ;
 - après un changement de thème, de couleurs ou de classes partagées ;
 - au moins une fois par version installée réellement sur un appareil.
 
@@ -52,10 +52,11 @@ rendu les listera comme tels, sans les faire passer pour conformes.
 
 Les règles du jeu, la validation de l'éditeur, la navigation et les bornes des
 réglages sont couvertes en jsdom, plus vite et plus solidement. La CSP, le thème avant
-premier rendu, l'animation de la roue, le lancer à la jauge de puissance et le mode
-« lancer simple », `prefers-reduced-motion`, l'arbre d'accessibilité, les live regions,
-le clavier physique, le `<dialog>` natif, l'export sous CSP, le manifest, le service
-worker et le hors-ligne sont couverts par les seize contrôles de
+premier rendu, l'animation de la roue, le lancer à l'arc de visée et le mode
+« lancer simple », `prefers-reduced-motion`, l'estompage des boutons inertes, l'arbre
+d'accessibilité, les live regions, le clavier physique, le `<dialog>` natif, l'export
+sous CSP, le manifest, le service worker et le hors-ligne sont couverts par les
+dix-sept contrôles de
 [`scripts/browser-check/README.md`](../../scripts/browser-check/README.md).
 
 Ne restent ici que les contrôles hors de portée de l'outillage : une vraie clé d'API,

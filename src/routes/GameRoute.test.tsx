@@ -177,15 +177,13 @@ describe('GameRoute', () => {
       const user = userEvent.setup({ delay: null })
       monterApp('/jeu')
 
-      // Premier clic : arme la jauge, ne lance encore rien.
+      // Premier clic : arme la visée, ne lance encore rien.
       await user.click(screen.getByRole('button', { name: 'Lancer' }))
       expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument()
       expect(screen.getByRole('status')).not.toHaveTextContent('La roue tourne')
 
-      // Second clic : lit la force accumulée et lance réellement.
+      // Second clic : lit l'angle visé et lance réellement.
       await user.click(screen.getByRole('button', { name: 'Stop' }))
-      // Le préfixe seul, pas la phrase entière : l'annonce se termine désormais
-      // par l'étiquette de force du lancer, tirée au hasard faute de jauge ici.
       expect(screen.getByRole('status')).toHaveTextContent('La roue tourne')
 
       // Confortablement au-delà du règlement dégradé de la roue, et très en
@@ -203,7 +201,7 @@ describe('GameRoute', () => {
     }
   })
 
-  it('un seul clic sur « Lancer » arme la jauge sans lancer la roue', async () => {
+  it('un seul clic sur « Lancer » arme la visée sans lancer la roue', async () => {
     saveGame(jeu(demarrer({ players: [joueur('Alice')] })))
     const user = userEvent.setup()
     monterApp('/jeu')
@@ -211,9 +209,34 @@ describe('GameRoute', () => {
     await user.click(screen.getByRole('button', { name: 'Lancer' }))
 
     // Le bouton s'appelle désormais « Stop », et rien n'indique que la roue
-    // tourne : `spin` n'a pas encore été appelé, seule la charge a démarré.
+    // tourne : `spin` n'a pas encore été appelé, seule la visée a démarré.
     expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument()
     expect(screen.getByRole('status')).not.toHaveTextContent('La roue tourne')
+  })
+
+  /**
+   * L'arc de visée est `aria-hidden`, sans rôle ni nom accessible : aucune
+   * requête par rôle ne peut le désigner. Seuls `Wheel.tsx`, `WheelPointer.tsx`
+   * et `AimArc.tsx` dessinent un `<svg>` dans tout le dépôt (vérifié par
+   * `grep`) : tant que round !== null, le compte de `<svg>` est de deux
+   * (disque + aiguille) hors visée, et de trois pendant — c'est ce compte, pas
+   * un sélecteur de classe, qui prouve le montage et le démontage de l'arc.
+   */
+  it('l’arc de visée n’est monté que pendant la visée : il apparaît puis disparaît immédiatement', async () => {
+    saveGame(jeu(demarrer({ players: [joueur('Alice')] })))
+    const user = userEvent.setup()
+    const { container } = monterApp('/jeu')
+
+    expect(container.querySelectorAll('svg')).toHaveLength(2)
+
+    await user.click(screen.getByRole('button', { name: 'Lancer' }))
+    expect(container.querySelectorAll('svg')).toHaveLength(3)
+
+    await user.click(screen.getByRole('button', { name: 'Stop' }))
+    // L'utilisateur veut laisser le joueur dans le doute pendant la rotation :
+    // l'arc doit disparaître au moment même où le lancer part, pas seulement
+    // à son terme.
+    expect(container.querySelectorAll('svg')).toHaveLength(2)
   })
 
   it('en mode « lancer simple », un seul clic sur « Tourner » lance la roue', async () => {
@@ -232,19 +255,23 @@ describe('GameRoute', () => {
     )
   })
 
-  it('en mode « lancer simple », ni « Lancer », ni « Stop », ni jauge n’apparaissent', async () => {
+  it('en mode « lancer simple », ni « Lancer », ni « Stop », ni arc n’apparaissent', async () => {
     saveSettings({ ...DEFAULT_SETTINGS, throwMode: 'simple' })
     saveGame(jeu(demarrer({ players: [joueur('Alice')] })))
     const user = userEvent.setup()
-    monterApp('/jeu')
+    const { container } = monterApp('/jeu')
 
     expect(screen.queryByRole('button', { name: 'Lancer' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument()
+    // Deux `<svg>` (disque + aiguille), jamais trois : l'arc n'est jamais monté
+    // en mode simple, voir le commentaire du test homologue en mode visée.
+    expect(container.querySelectorAll('svg')).toHaveLength(2)
 
     await user.click(screen.getByRole('button', { name: 'Tourner' }))
 
     expect(screen.queryByRole('button', { name: 'Lancer' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument()
+    expect(container.querySelectorAll('svg')).toHaveLength(2)
   })
 
   it('deux « Espace » arment puis lancent la roue, comme deux clics', () => {
@@ -269,14 +296,14 @@ describe('GameRoute', () => {
     }
   })
 
-  it('n’expose aucun rôle de valeur dans l’arbre accessible pendant la charge', async () => {
+  it('n’expose aucun rôle de valeur dans l’arbre accessible pendant la visée', async () => {
     saveGame(jeu(demarrer({ players: [joueur('Alice')] })))
     const user = userEvent.setup()
     monterApp('/jeu')
 
     await user.click(screen.getByRole('button', { name: 'Lancer' }))
 
-    // La force change une soixantaine de fois par seconde : aucun rôle
+    // L'angle visé change une soixantaine de fois par seconde : aucun rôle
     // `progressbar`, `meter` ni `slider` ne doit apparaître, sous peine de
     // noyer un lecteur d'écran sous des annonces inutilisables.
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
@@ -284,7 +311,35 @@ describe('GameRoute', () => {
     expect(screen.queryByRole('slider')).not.toBeInTheDocument()
   })
 
-  it('la charge s’annule à l’ouverture de « Résoudre »', async () => {
+  /**
+   * Chemin réel, pas fabriqué : acheter une voyelle absente fait tourner la
+   * main sans quitter `awaiting-action` (`engine.ts`, cas `letter/buy-vowel`,
+   * `rotation(turn.seat + 1, count)`) — c'est le seul geste légal, atteignable
+   * depuis le clavier sans passer par « Résoudre » ni « Passer la main »
+   * (qui annulent déjà explicitement la visée), qui fait passer la main à un
+   * bot tout en restant dans la même phase. Il exerce donc la branche
+   * `awaitingBotTurn` de l'effet d'annulation, jamais la branche `phaseKind`.
+   */
+  it('la visée s’annule quand la main passe à un bot, sans changement de phase', async () => {
+    saveGame(jeu(avecPot(demarrer({ players: [joueur('Alice'), bot('Bot 1')] }), 0, 300)))
+    const user = userEvent.setup()
+    const { container } = monterApp('/jeu')
+
+    await user.click(screen.getByRole('button', { name: 'Lancer' }))
+    expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument()
+    expect(container.querySelectorAll('svg')).toHaveLength(3)
+
+    // « LE VENT » ne contient pas de A : la main tourne vers Bot 1, la manche
+    // reste en `awaiting-action`.
+    await user.click(screen.getByRole('button', { name: 'Lettre A' }))
+
+    expect(await screen.findByText(/^Au tour de Bot 1/u)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Lancer' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument()
+    expect(container.querySelectorAll('svg')).toHaveLength(2)
+  })
+
+  it('la visée s’annule à l’ouverture de « Résoudre »', async () => {
     saveGame(jeu(demarrer({ players: [joueur('Alice')] })))
     const user = userEvent.setup()
     monterApp('/jeu')
@@ -303,12 +358,12 @@ describe('GameRoute', () => {
     expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument()
   })
 
-  it('la charge s’annule quand la manche se termine sans passer par « Résoudre » ni « Passer la main »', async () => {
+  it('la visée s’annule quand la manche se termine sans passer par « Résoudre » ni « Passer la main »', async () => {
     // Toutes les consonnes de « LE VENT » proposées (L, V, N, T) et un pot qui
     // couvre la voyelle manquante (E) : l'achat de la dernière voyelle résout
     // la manche directement depuis `awaiting-action`, sans ouvrir le dialogue
     // ni passer la main. C'est le seul chemin qui exerce l'effet de
-    // `GameRoute` (qui annule la charge dès que la phase quitte
+    // `GameRoute` (qui annule la visée dès que la phase quitte
     // `awaiting-action`) sans passer par les annulations déjà explicites
     // d'`openResolve` et de `handlePass`.
     let state = avecLettres(demarrer({ players: [joueur('Alice')] }), ['L', 'V', 'N', 'T'])
@@ -324,7 +379,7 @@ describe('GameRoute', () => {
 
     expect(await screen.findByRole('heading', { name: 'Manche terminée' })).toBeInTheDocument()
 
-    // Sans l'effet qui annule la charge, `charging` resterait vrai au-delà de
+    // Sans l'effet qui annule la visée, `aiming` resterait vrai au-delà de
     // cette manche : la manche suivante démarrerait avec un bouton « Stop »
     // fantôme, alors que rien n'a été armé pour son propre lancer.
     await user.click(screen.getByRole('button', { name: 'Manche suivante' }))

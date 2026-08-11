@@ -1,13 +1,12 @@
 // @vitest-environment jsdom
-import { createRef } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import Controls from './Controls'
 
 /**
- * Props par défaut : tout légal, hors charge. Chaque test ne change que ce
- * qui l'intéresse — ça évite de recopier huit props à chaque fois et fait
+ * Props par défaut : tout légal, hors visée. Chaque test ne change que ce
+ * qui l'intéresse — ça évite de recopier sept props à chaque fois et fait
  * ressortir la prop réellement testée.
  */
 function props(overrides: Partial<Parameters<typeof Controls>[0]> = {}) {
@@ -17,9 +16,8 @@ function props(overrides: Partial<Parameters<typeof Controls>[0]> = {}) {
     canPass: true,
     vowelCost: 250,
     spinning: false,
-    charging: false,
+    aiming: false,
     spinLabel: 'Lancer',
-    markerRef: createRef<HTMLDivElement | null>(),
     onSpin: vi.fn(),
     onResolve: vi.fn(),
     onPass: vi.fn(),
@@ -30,7 +28,7 @@ function props(overrides: Partial<Parameters<typeof Controls>[0]> = {}) {
 describe('Controls', () => {
   it('affiche le libellé de lancer reçu en prop, tel quel', () => {
     // Le composant ne calcule plus ce libellé (mode de lancer, état de
-    // charge) : il se contente de l'afficher, la route en décide.
+    // visée) : il se contente de l'afficher, la route en décide.
     const { rerender } = render(<Controls {...props({ spinLabel: 'Tourner' })} />)
     expect(screen.getByRole('button', { name: 'Tourner' })).toBeInTheDocument()
 
@@ -39,23 +37,23 @@ describe('Controls', () => {
     expect(screen.queryByRole('button', { name: 'Tourner' })).not.toBeInTheDocument()
   })
 
-  it('en charge, le bouton de lancer reste actif même quand canSpin est faux', () => {
-    // Preuve que l'arrêt de la jauge n'est jamais bloqué : la charge n'a pu
+  it('en visée, le bouton de lancer reste actif même quand canSpin est faux', () => {
+    // Preuve que l'arrêt de l'arc n'est jamais bloqué : la visée n'a pu
     // démarrer que sur un lancer légal, et `canSpin` peut changer sous elle
     // (par exemple si le tour venait à changer) sans que « Stop » ne se fige.
-    render(<Controls {...props({ charging: true, canSpin: false, spinning: false, spinLabel: 'Stop' })} />)
+    render(<Controls {...props({ aiming: true, canSpin: false, spinning: false, spinLabel: 'Stop' })} />)
 
     expect(screen.getByRole('button', { name: 'Stop' })).toHaveAttribute('aria-disabled', 'false')
   })
 
   it('au repos, le bouton de lancer est estompé quand spinning ou canSpin est faux', () => {
-    render(<Controls {...props({ charging: false, spinning: true })} />)
+    render(<Controls {...props({ aiming: false, spinning: true })} />)
 
     expect(screen.getByRole('button', { name: 'Lancer' })).toHaveAttribute('aria-disabled', 'true')
   })
 
   it('aucun bouton ne porte l’attribut natif disabled', () => {
-    render(<Controls {...props({ charging: false, canSpin: false, canResolve: false, canPass: false })} />)
+    render(<Controls {...props({ aiming: false, canSpin: false, canResolve: false, canPass: false })} />)
 
     for (const button of screen.getAllByRole('button')) {
       expect(button).not.toHaveAttribute('disabled')
@@ -65,7 +63,7 @@ describe('Controls', () => {
   it('n’appelle pas onSpin quand le bouton de lancer est estompé', async () => {
     const onSpin = vi.fn()
     const user = userEvent.setup()
-    render(<Controls {...props({ charging: false, canSpin: false, onSpin })} />)
+    render(<Controls {...props({ aiming: false, canSpin: false, onSpin })} />)
 
     await user.click(screen.getByRole('button', { name: 'Lancer' }))
 

@@ -12,7 +12,7 @@ import { canBuyVowel, canGuess, canResolve, currentPlayerOf, isBotTurn } from '.
 import { configFrom, playersFrom } from '../game/setup'
 import type { Setup } from '../game/setup'
 import type { GameProgress, GameState, Letter, Puzzle, PuzzleId } from '../game/types'
-import { randomForce, throwFromForce } from '../game/wheel'
+import { randomAim, throwFromAim } from '../game/wheel'
 import { useAnnouncer } from '../hooks/useAnnouncer'
 import { useGameEffects } from '../hooks/useGameEffects'
 import { usePuzzles } from '../hooks/usePuzzles'
@@ -286,7 +286,7 @@ export function GameProvider({ children }: { readonly children: ReactNode }) {
   }, [dispatch, rng])
 
   const spin = useCallback(
-    (force?: number) => {
+    (aim?: number) => {
       const current = stateRef.current
       if (current.kind !== 'playing' || current.game.progress.kind !== 'round') return
       // Garde structurelle : l'interface grise ses boutons pendant le tour d'un
@@ -297,10 +297,13 @@ export function GameProvider({ children }: { readonly children: ReactNode }) {
       if (isBotTurn(current.game)) return
       const player = current.game.players[current.game.progress.currentPlayer]
       if (player === undefined) return
-      // `force` omise : un humain qui tourne sans jauge (clavier physique, par
-      // exemple) obtient quand même un lancer, tiré au hasard.
-      const applied = force ?? randomForce(rng)
-      dispatch({ type: 'wheel/spin', by: player.id, thrown: throwFromForce(applied, rng, nextSpinId()) })
+      // `??` et jamais `||` : un angle visé de `0` est parfaitement légitime —
+      // c'est midi, pile sous l'aiguille — et `||` le remplacerait en silence
+      // par un tirage au hasard. `aim` omis : mode « lancer simple » (l'appelant
+      // n'arme jamais l'arc) ou bot, qui obtiennent quand même un lancer, tiré
+      // au hasard.
+      const applied = aim ?? randomAim(rng)
+      dispatch({ type: 'wheel/spin', by: player.id, thrown: throwFromAim(applied, rng, nextSpinId()) })
     },
     [dispatch, rng, nextSpinId],
   )
