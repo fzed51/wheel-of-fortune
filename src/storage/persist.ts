@@ -6,7 +6,8 @@ import {
   encodeRecord,
   type Decoded,
 } from './codec'
-import { ALL_KEYS, STORAGE_KEYS } from './keys'
+import { ALL_KEYS, LEGACY_KEYS, STORAGE_KEYS } from './keys'
+import { demasquer, masquer } from './mask'
 import type { Settings } from './settings'
 import { fromPersisted, toPersisted } from './snapshot'
 
@@ -118,15 +119,30 @@ export function clearGame(): void {
 }
 
 /**
- * Clé Mistral : stockée seule, en clair, sans enveloppe ni objet porteur.
- * Volontairement : il n'existe alors aucune structure susceptible de finir dans
- * un export, un instantané d'état ou un message d'erreur.
+ * Clé Mistral : stockée seule, sans enveloppe ni objet porteur, sous une
+ * entrée au nom anodin et masquée par `mask.ts` — pas en clair. Le masque
+ * n'est pas un chiffrement, il évite seulement une clé lisible à l'œil nu
+ * dans l'inspecteur. Volontairement à part des réglages : il n'existe alors
+ * aucune structure susceptible de finir dans un export, un instantané d'état
+ * ou un message d'erreur.
  */
 export function loadMistralKey(): string | null {
   const raw = readRaw(STORAGE_KEYS.mistral)
-  if (!raw.ok) return null
-  const key = raw.value.trim()
-  return key === '' ? null : key
+  if (raw.ok) {
+    const clair = demasquer(raw.value)
+    if (clair === null) return null
+    const key = clair.trim()
+    return key === '' ? null : key
+  }
+  // Entrée absente : peut-être une clé d'avant le masquage, restée en clair
+  // sous l'ancien nom. On la migre silencieusement vers la forme masquée.
+  const legacy = readRaw(LEGACY_KEYS[0])
+  if (!legacy.ok) return null
+  const key = legacy.value.trim()
+  if (key === '') return null
+  saveMistralKey(key)
+  removeRaw(LEGACY_KEYS[0])
+  return key
 }
 
 export function saveMistralKey(key: string): void {
@@ -135,11 +151,14 @@ export function saveMistralKey(key: string): void {
     removeRaw(STORAGE_KEYS.mistral)
     return
   }
-  writeRaw(STORAGE_KEYS.mistral, trimmed)
+  writeRaw(STORAGE_KEYS.mistral, masquer(trimmed))
 }
 
 export function clearMistralKey(): void {
   removeRaw(STORAGE_KEYS.mistral)
+  // Sinon une clé en clair laissée sous l'ancien nom ressusciterait par la
+  // migration au prochain chargement.
+  removeRaw(LEGACY_KEYS[0])
 }
 
 /** Sortie de secours des Réglages : tout est effacé, clé comprise. */

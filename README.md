@@ -57,7 +57,8 @@ C'est le **seul** moment où `src/llm/` est encore appelé (hors « Tester la cl
 Le modèle est [Mistral](https://mistral.ai) (`mistral-small-latest` par défaut, réglable). Quant à la clé elle-même :
 
 - saisie par l'utilisateur dans les Réglages, jamais dans un fichier du dépôt, jamais dans une variable d'environnement de build ;
-- stockée sous une clé de localStorage **qui lui est propre** (`wof:mistral-key:1`), séparée des réglages : aucun objet exportable, journalisable ou affichable ne peut la contenir par accident ;
+- stockée sous une clé de localStorage **qui lui est propre** (`wof:aux:2`, un nom volontairement anodin — l'ancien `wof:mistral-key:1` attirait l'œil), séparée des réglages : aucun objet exportable, journalisable ou affichable ne peut la contenir par accident ;
+- **masquée avant écriture** : XOR octet à octet avec un sel constant, puis base64 (`src/storage/mask.ts`). Ce n'est **pas** un chiffrement — le sel vit dans le bundle, donc dans le code livré au navigateur, et l'opération se défait avec les mêmes quelques lignes ; ça ne protège de rien face à quiconque lit les sources. Le seul effet recherché : qu'un curieux qui ouvre l'inspecteur ne voie pas la clé en clair au premier coup d'œil. Une vraie protection demanderait un secret que l'application n'a pas — un code saisi par l'utilisateur, ou `sessionStorage` pour que la clé meure avec l'onglet ;
 - transmise dans un en-tête, jamais dans une URL ;
 - jamais journalisée — le projet ne fait aucun `console.log` d'une `Request`, de `Headers` ou d'un `init` de `fetch` ;
 - absente de l'export des réglages, et masquée partout où elle s'affiche ;
@@ -117,9 +118,11 @@ Quatre entrées de localStorage, **versionnées enregistrement par enregistremen
 | `wof:settings:1` | réglages (manches, adversaires, niveau, thème, modèle, mode de lancer, vitesse de l'arc de visée) |
 | `wof:puzzles:1` | énigmes perso |
 | `wof:save:1` | partie en cours |
-| `wof:mistral-key:1` | clé d'API, isolée exprès |
+| `wof:aux:2` | clé d'API, isolée exprès, masquée et sous un nom anodin |
 
 La charge utile porte **en plus** son propre numéro de version. Les deux ne servent pas à la même chose : la version de la clé signale un changement de forme voulu (l'ancienne entrée est ignorée), celle de la charge utile permet de reconnaître une donnée écrite par une version ultérieure de l'application — cas réel après un retour arrière de déploiement.
+
+L'entrée de la clé d'API est passée de `wof:mistral-key:1` (clair) à `wof:aux:2` (masquée) : le numéro monte parce que les deux formes sont indistinguables par simple examen — une clé Mistral fait 32 caractères alphanumériques, donc `atob` réussit dessus et rend du binaire, ce qui interdit de deviner le format à la forme de la valeur. L'ancienne entrée n'est pas retirée du code : `loadMistralKey()` la migre au premier chargement — relue en clair, réécrite masquée sous la nouvelle entrée, puis effacée — et elle reste dans la liste que « Réinitialiser les données » efface.
 
 **Avertissement iOS.** Une PWA installée depuis Safari a un stockage **distinct de l'onglet Safari** : la clé d'API saisie dans l'un n'existe pas dans l'autre, et les énigmes perso non plus. L'éviction du stockage par le système est un scénario réel, `navigator.storage.persist()` n'existant pas sur Safari. Le localStorage est donc traité comme du best-effort, et **l'export JSON des énigmes perso est le seul filet de sécurité** en l'absence de serveur.
 
