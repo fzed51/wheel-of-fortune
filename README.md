@@ -159,7 +159,7 @@ Une `Content-Security-Policy` est injectée en `<meta http-equiv>` **au build se
 
 ## Tests
 
-719 tests sur 40 fichiers. Le moteur est couvert par des tests unitaires, un scénario de partie scripté et un fuzz d'invariants — c'est la partie du code où une régression est invisible à l'écran.
+832 tests sur 45 fichiers. Le moteur est couvert par des tests unitaires, un scénario de partie scripté et un fuzz d'invariants — c'est la partie du code où une régression est invisible à l'écran.
 
 Doctrine, appliquée sans exception :
 
@@ -173,7 +173,7 @@ Doctrine, appliquée sans exception :
 yarn build && yarn check:browser
 ```
 
-Seize contrôles dans un vrai Chrome, sur le build de production, pour ce que jsdom ne peut pas atteindre : la CSP réelle, le service worker et le hors-ligne, le manifest, le lancer de la roue à l'arc de visée et son animation par la Web Animations API, l'arbre d'accessibilité de Chrome, le `<dialog>` natif et l'écouteur clavier posé sur `document`. Sans aucune dépendance : le pilote parle directement le Chrome DevTools Protocol.
+Dix-sept contrôles dans un vrai Chrome, sur le build de production, pour ce que jsdom ne peut pas atteindre : la CSP réelle, le service worker et le hors-ligne, le manifest, le lancer de la roue à l'arc de visée — armé puis figé, et le mode « lancer simple » qui s'en passe — et son animation par la Web Animations API, l'arbre d'accessibilité de Chrome, le `<dialog>` natif et l'écouteur clavier posé sur `document`. Sans aucune dépendance : le pilote parle directement le Chrome DevTools Protocol.
 
 Ce n'est **pas** dans la CI ni dans `yarn test` — c'est une porte de déploiement passée à la main, qui lance Chrome et dure une minute. Aucune requête ne part vers Mistral : la seule clé écrite dans le profil jetable est factice, et sert uniquement à vérifier qu'elle ne se retrouve pas dans l'export des énigmes.
 
