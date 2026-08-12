@@ -1,6 +1,6 @@
 import { Link, Outlet } from 'react-router'
+import BrandMark from './components/BrandMark'
 import LiveRegions from './components/LiveRegions'
-import ThemeToggle from './components/ThemeToggle'
 import UpdatePrompt from './components/UpdatePrompt'
 import { useApplyTheme } from './hooks/useTheme'
 
@@ -24,11 +24,21 @@ export default function App() {
         Aller au contenu
       </a>
 
-      <header className="mx-auto flex max-w-3xl items-center justify-between gap-4 px-6 py-4">
-        <Link to="/" className="text-lg font-bold text-fg">
-          La Roue de la Fortune
-        </Link>
-        <ThemeToggle />
+      {/*
+        Le filet du bas donne son assise à l'en-tête. Sans lui, le titre flottait
+        au-dessus du contenu sans rien qui l'en sépare — d'autant plus depuis que
+        la bascule de thème est partie et qu'il n'y a plus qu'un seul élément.
+      */}
+      <header className="border-b border-border">
+        <div className="mx-auto flex max-w-3xl items-center px-6 py-3">
+          <Link
+            to="/"
+            className="-mx-2 flex items-center gap-2.5 rounded-lg px-2 py-1 text-lg font-bold tracking-tight text-fg hover:bg-bg-soft"
+          >
+            <BrandMark className="size-8 shrink-0" />
+            La Roue de la Fortune
+          </Link>
+        </div>
       </header>
 
       <UpdatePrompt />

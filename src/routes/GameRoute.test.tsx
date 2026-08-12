@@ -24,6 +24,18 @@ import {
 import { monterApp } from '../test/app'
 
 /**
+ * Compte les `<svg>` de l'**écran de jeu**, et non du conteneur entier : depuis
+ * que l'en-tête du layout porte la marque du site (`BrandMark`), le conteneur en
+ * contient un de plus, qui n'a rien à voir avec la roue. `<main>` est l'ancre
+ * stable — c'est là que le layout monte l'`Outlet`.
+ */
+function svgDuJeu(container: HTMLElement): NodeListOf<SVGElement> {
+  const contenu = container.querySelector('main')
+  if (contenu === null) throw new Error('`<main>` introuvable : le layout racine a changé de forme')
+  return contenu.querySelectorAll('svg')
+}
+
+/**
  * Amène la partie jusqu'à l'étape bonus (`progress.kind === 'bonus'`, phase
  * `awaiting-answer`) : une manche finale résolue, dont l'énigme porte une
  * réponse bonus, enchaînée sur `round/next`. `roundCount: 1` fait de cette
@@ -217,7 +229,7 @@ describe('GameRoute', () => {
   /**
    * L'arc de visée est `aria-hidden`, sans rôle ni nom accessible : aucune
    * requête par rôle ne peut le désigner. Seuls `Wheel.tsx`, `WheelPointer.tsx`
-   * et `AimArc.tsx` dessinent un `<svg>` dans tout le dépôt (vérifié par
+   * et `AimArc.tsx` dessinent un `<svg>` **sous `<main>`** (vérifié par
    * `grep`) : tant que round !== null, le compte de `<svg>` est de deux
    * (disque + aiguille) hors visée, et de trois pendant — c'est ce compte, pas
    * un sélecteur de classe, qui prouve le montage et le démontage de l'arc.
@@ -227,16 +239,16 @@ describe('GameRoute', () => {
     const user = userEvent.setup()
     const { container } = monterApp('/jeu')
 
-    expect(container.querySelectorAll('svg')).toHaveLength(2)
+    expect(svgDuJeu(container)).toHaveLength(2)
 
     await user.click(screen.getByRole('button', { name: 'Lancer' }))
-    expect(container.querySelectorAll('svg')).toHaveLength(3)
+    expect(svgDuJeu(container)).toHaveLength(3)
 
     await user.click(screen.getByRole('button', { name: 'Stop' }))
     // L'utilisateur veut laisser le joueur dans le doute pendant la rotation :
     // l'arc doit disparaître au moment même où le lancer part, pas seulement
     // à son terme.
-    expect(container.querySelectorAll('svg')).toHaveLength(2)
+    expect(svgDuJeu(container)).toHaveLength(2)
   })
 
   it('en mode « lancer simple », un seul clic sur « Tourner » lance la roue', async () => {
@@ -265,13 +277,13 @@ describe('GameRoute', () => {
     expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument()
     // Deux `<svg>` (disque + aiguille), jamais trois : l'arc n'est jamais monté
     // en mode simple, voir le commentaire du test homologue en mode visée.
-    expect(container.querySelectorAll('svg')).toHaveLength(2)
+    expect(svgDuJeu(container)).toHaveLength(2)
 
     await user.click(screen.getByRole('button', { name: 'Tourner' }))
 
     expect(screen.queryByRole('button', { name: 'Lancer' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument()
-    expect(container.querySelectorAll('svg')).toHaveLength(2)
+    expect(svgDuJeu(container)).toHaveLength(2)
   })
 
   it('deux « Espace » arment puis lancent la roue, comme deux clics', () => {
@@ -327,7 +339,7 @@ describe('GameRoute', () => {
 
     await user.click(screen.getByRole('button', { name: 'Lancer' }))
     expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument()
-    expect(container.querySelectorAll('svg')).toHaveLength(3)
+    expect(svgDuJeu(container)).toHaveLength(3)
 
     // « LE VENT » ne contient pas de A : la main tourne vers Bot 1, la manche
     // reste en `awaiting-action`.
@@ -336,7 +348,7 @@ describe('GameRoute', () => {
     expect(await screen.findByText(/^Au tour de Bot 1/u)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Lancer' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument()
-    expect(container.querySelectorAll('svg')).toHaveLength(2)
+    expect(svgDuJeu(container)).toHaveLength(2)
   })
 
   it('la visée s’annule à l’ouverture de « Résoudre »', async () => {
