@@ -14,7 +14,9 @@ import {
   jouer,
   lancer,
   manche,
+  partieTerminee,
   proposer,
+  question,
   repondre,
   resoudre,
   tourner,
@@ -26,6 +28,7 @@ import {
   canResolve,
   canSpin,
   currentPlayerOf,
+  displayedRoundNumber,
   isBotTurn,
   isStuck,
   keyState,
@@ -344,5 +347,71 @@ describe('isBotTurn en étape bonus', () => {
   it('est faux quand le joueur du bonus est humain', () => {
     const state = versBonus()
     expect(isBotTurn(jeu(state))).toBe(false)
+  })
+})
+
+describe('displayedRoundNumber', () => {
+  it('rend 1 sur la première manche d’une partie fraîche', () => {
+    const depart = demarrer({ config: { roundCount: 3 } })
+    expect(jeu(depart).progress.kind).toBe('round')
+    expect(displayedRoundNumber(jeu(depart))).toBe(1)
+  })
+
+  it('rend 2 une fois passé en deuxième manche via round/next', () => {
+    const depart = demarrer({ config: { roundCount: 3 } })
+    const finManche1 = resoudre(depart, manche(depart).puzzle.answer)
+    const manche2 = jouer(finManche1, {
+      type: 'round/next',
+      puzzle: enigme('la mer', 'r2'),
+      firstPlayer: 0,
+    })
+    expect(jeu(manche2).progress.kind).toBe('round')
+    expect(displayedRoundNumber(jeu(manche2))).toBe(2)
+  })
+
+  it('rend encore 1 en round-over juste après la résolution, avant round/next', () => {
+    // Reproduit le bug de l'issue #7 : `history` n'est alimenté qu'au
+    // `round/next` suivant, donc `history.length` vaudrait ici 0. Le numéro
+    // affiché doit rester dérivé de `summary.index`, pas de l'historique.
+    const depart = demarrer({ config: { roundCount: 3 } })
+    const finManche1 = resoudre(depart, manche(depart).puzzle.answer)
+    expect(jeu(finManche1).progress.kind).toBe('round-over')
+    expect(displayedRoundNumber(jeu(finManche1))).toBe(1)
+  })
+
+  it('rend le nombre de manches en étape bonus, la manche finale portant ce numéro', () => {
+    const state = versBonus()
+    expect(jeu(state).progress.kind).toBe('bonus')
+    expect(displayedRoundNumber(jeu(state))).toBe(1)
+  })
+
+  it('rend le nombre de manches en étape bonus même avec plusieurs manches jouées', () => {
+    // Chemin plus long que `versBonus` (roundCount: 1) : trois manches
+    // normales enchaînées, la troisième portant la question bonus.
+    const depart = demarrer({ config: { roundCount: 3 } })
+    const apresManche1 = jouer(
+      resoudre(depart, manche(depart).puzzle.answer),
+      { type: 'round/next', puzzle: enigme('la mer', 'r2'), firstPlayer: 0 },
+    )
+    const apresManche2 = jouer(
+      resoudre(apresManche1, manche(apresManche1).puzzle.answer),
+      {
+        type: 'round/next',
+        puzzle: question('mon chat', 'CANBERRA', 'r3'),
+        firstPlayer: 0,
+      },
+    )
+    const state = jouer(
+      resoudre(apresManche2, manche(apresManche2).puzzle.answer),
+      { type: 'round/next', puzzle: enigme('inutilisée', 'r4'), firstPlayer: 0 },
+    )
+    expect(jeu(state).progress.kind).toBe('bonus')
+    expect(displayedRoundNumber(jeu(state))).toBe(3)
+  })
+
+  it('rend le nombre de manches en fin de partie', () => {
+    const state = partieTerminee(demarrer({ config: { roundCount: 3, bonusEnabled: false } }))
+    expect(jeu(state).progress.kind).toBe('game-over')
+    expect(displayedRoundNumber(jeu(state))).toBe(3)
   })
 })

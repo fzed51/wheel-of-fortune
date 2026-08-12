@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { clearAllData, saveGame } from '../storage/persist'
-import { demarrer, jeu, partieTerminee } from '../test/game'
+import { demarrer, enigme, jeu, jouer, manche, partieTerminee, resoudre } from '../test/game'
 import { monterApp } from '../test/app'
 
 /**
@@ -77,10 +77,43 @@ describe('écrans accessibles sans partie', () => {
 describe('accueil', () => {
   it('ne redirige pas quand une partie est en cours, mais propose de la reprendre', () => {
     // Rediriger interdirait de lancer une autre partie.
-    saveGame(jeu(demarrer()))
+    const state = demarrer()
+    expect(jeu(state).progress.kind).toBe('round')
+    saveGame(jeu(state))
     monterApp('/')
     expect(screen.getByRole('heading', { name: 'Partie en cours' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Reprendre' })).toBeInTheDocument()
+    // Le numéro de manche vient de `displayedRoundNumber`, pas de
+    // `history.length + 1` : sur une partie fraîche, `history` est vide.
+    expect(screen.getByText('Manche 1 sur 3.')).toBeInTheDocument()
+  })
+
+  it('affiche le numéro de la dernière manche pendant l’étape bonus, sans déborder', () => {
+    // `history.length + 1` déborderait ici : une seule manche a été jouée,
+    // `history` contient donc 1 entrée, ce qui donnerait « Manche 2 sur 1 ».
+    const state = demarrer({ config: { roundCount: 1 }, bonusAnswer: 'la loire' })
+    const resolue = resoudre(state, manche(state).puzzle.answer)
+    const versBonus = jouer(resolue, {
+      type: 'round/next',
+      puzzle: enigme('la mer', 'suite-bonus'),
+      firstPlayer: 0,
+    })
+    expect(jeu(versBonus).progress.kind).toBe('bonus')
+    saveGame(jeu(versBonus))
+    monterApp('/')
+    expect(screen.getByRole('heading', { name: 'Partie en cours' })).toBeInTheDocument()
+    expect(screen.getByText('Manche 1 sur 1.')).toBeInTheDocument()
+  })
+
+  it('propose de voir les résultats quand la partie est terminée, sans la carte « Partie en cours »', () => {
+    const state = partieTerminee()
+    expect(jeu(state).progress.kind).toBe('game-over')
+    saveGame(jeu(state))
+    monterApp('/')
+    expect(screen.getByRole('heading', { name: 'Partie terminée' })).toBeInTheDocument()
+    expect(screen.getByText('Les 3 manches sont jouées.')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Voir les résultats' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Partie en cours' })).not.toBeInTheDocument()
   })
 
   it('mène à l’écran de jeu après avoir lancé une partie', async () => {

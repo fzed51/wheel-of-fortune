@@ -1,6 +1,7 @@
 import { Link, useNavigate } from 'react-router'
 import { BUTTON_GHOST, BUTTON_PRIMARY, CARD, FIELD, INPUT } from '../components/classes'
 import { useGame, useGameCommands } from '../context/selectors'
+import { displayedRoundNumber } from '../game/rules'
 import { MAX_OPPONENTS, MAX_ROUNDS, MIN_ROUNDS } from '../game/setup'
 import { useSettings } from '../hooks/useSettings'
 import { BOT_LEVELS } from '../storage/settings'
@@ -14,12 +15,18 @@ const LEVELS: Record<(typeof BOT_LEVELS)[number], string> = {
  * Accueil. Il ne redirige **pas** vers `/jeu` quand une partie est en cours :
  * rediriger interdirait d'en lancer une autre. Il propose les deux, et la reprise
  * est un simple lien.
+ *
+ * Le numéro de manche affiché vient de `displayedRoundNumber`, jamais de
+ * `history.length + 1` : `history` n'est alimenté qu'au démarrage de la manche
+ * suivante, donc ce calcul déborde le nombre de manches dès l'étape bonus et la
+ * fin de partie.
  */
 export default function HomeRoute() {
   const game = useGame()
   const { startGame } = useGameCommands()
   const { settings, update } = useSettings()
   const navigate = useNavigate()
+  const terminee = game !== null && game.progress.kind === 'game-over'
 
   function onNewGame() {
     startGame()
@@ -37,13 +44,27 @@ export default function HomeRoute() {
 
       {game !== null && (
         <section className={CARD}>
-          <h2 className="font-semibold text-fg">Partie en cours</h2>
-          <p className="mt-1 text-sm text-fg-muted">
-            Manche {game.history.length + 1} sur {game.config.roundCount}.
-          </p>
-          <Link to="/jeu" className={`${BUTTON_PRIMARY} mt-3 inline-block`}>
-            Reprendre
-          </Link>
+          {terminee ? (
+            <>
+              <h2 className="font-semibold text-fg">Partie terminée</h2>
+              <p className="mt-1 text-sm text-fg-muted">
+                Les {game.config.roundCount} manches sont jouées.
+              </p>
+              <Link to="/resultats" className={`${BUTTON_PRIMARY} mt-3 inline-block`}>
+                Voir les résultats
+              </Link>
+            </>
+          ) : (
+            <>
+              <h2 className="font-semibold text-fg">Partie en cours</h2>
+              <p className="mt-1 text-sm text-fg-muted">
+                Manche {displayedRoundNumber(game)} sur {game.config.roundCount}.
+              </p>
+              <Link to="/jeu" className={`${BUTTON_PRIMARY} mt-3 inline-block`}>
+                Reprendre
+              </Link>
+            </>
+          )}
         </section>
       )}
 
