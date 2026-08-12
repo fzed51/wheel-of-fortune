@@ -23,7 +23,7 @@ yarn lint && yarn test && yarn build
 ```
 
 - **`yarn build` est le seul vrai typecheck** — `yarn lint` ne compile pas le projet.
-- Cibler un fichier pendant le développement : `yarn test src/game/rules.test.ts`. La suite complète (plus de 700 tests) seulement avant de rendre.
+- Cibler un fichier pendant le développement : `yarn test src/game/rules.test.ts`. La suite complète (plusieurs centaines de tests) seulement avant de rendre.
 - `yarn build && yarn check:browser` est une porte manuelle de déploiement, hors CI. Ne pas la lancer sans demande : elle ouvre un vrai Chrome.
 
 ## La recette manuelle (`docs/tests/`)
@@ -62,11 +62,19 @@ Découper chaque tâche en zones de fichiers bornées et **disjointes**, puis le
 - Un agent peut mourir en vol (erreur d'API, watchdog). Si un rapport manque, **relire le diff de sa zone** avant de la considérer perdue : le travail est souvent déjà là.
 - Le contenu inventé (énigmes, questions) s'écrit dans le fil principal, validé par un fichier de test jetable qui passe les candidats par les vraies fonctions du dépôt.
 
+### La relecture se délègue aussi
+
+`frontend-review` (`.claude/agents/frontend-review.md`, lecture seule, Sonnet) relit le diff à la place du fil principal et rend une ligne par constat.
+
+- **Il ne reçoit jamais le rapport de `frontend-dev`** — seulement le brief d'origine et la liste des fichiers. Un relecteur qui lit le récit de l'auteur se contente de le confirmer.
+- Le déclencher quand les portes ne suffisent pas : diff au-delà de ~150 lignes, zone qu'aucune porte ne couvre (textes affichés, fiches de `docs/tests/`, `docs/`), ou rapport de développeur douteux. Pas à chaque vague.
+- Il ne relance pas les portes : `yarn lint && yarn test && yarn build` restent au fil principal. Il regarde ce qu'elles ne voient pas — tests complaisants, sortie de zone, point du brief abandonné.
+
 ### Économiser le contexte du fil principal
 
 Le contexte du fil principal est la ressource rare du projet : c'est lui qui porte le plan, l'ordonnancement des vagues et les décisions déjà prises. Une fois plein, tout cela se perd dans un résumé. Le contexte d'un sous-agent, lui, est jetable — il meurt avec sa tâche. **Donc tout ce qui peut être lu par un sous-agent doit l'être.**
 
-- **Ne pas relire le diff produit par un sous-agent.** Son rapport, `git status --short` et `git diff --stat` suffisent à contrôler que la zone est respectée. Ne descendre dans le diff que sur un point précis que le rapport laisse douteux.
+- **Le fil principal ne lit jamais un diff produit par un sous-agent.** Par défaut, les portes suffisent. Quand elles ne suffisent pas, le contrôle part à `frontend-review` — pas dans le fil principal.
 - **Lire par extraits, pas par fichiers entiers.** `grep -n` avec du contexte, ou `sed -n 'a,bp'`, quand seules quelques lignes servent à vérifier un fait de brief. Lire un fichier en entier se justifie quand il est court ou qu'il faut vraiment le comprendre.
 - **Ne jamais lire le fichier de sortie JSONL d'un sous-agent** : c'est sa transcription complète, elle noie le contexte à elle seule.
 - **Écrire des briefs auto-suffisants.** Un brief qui contient les faits déjà vérifiés et le code à écrire évite au sous-agent une exploration — et évite au fil principal de la refaire pour la lui expliquer.
@@ -86,39 +94,17 @@ Le contexte du fil principal est la ressource rare du projet : c'est lui qui por
 
 ## Le graphe de code (graphify)
 
-```bash
-graphify update .        # met le graphe à jour, incrémental, sans clé d'API
-```
+Un graphe de tout le dépôt, reconstruit par les hooks git à chaque commit, remplace une exploration à l'aveugle. L'interroger avec **les identifiants du code** — fonctions suffixées de `()`, fichiers avec leur extension :
 
-Un graphe de 1003 nœuds et 2999 arêtes couvre **tout le dépôt** — `src/`, mais aussi `scripts/browser-check/`, les `tsconfig`, `package.json` et `public/theme-init.js`. Il est reconstruit automatiquement par les hooks git après chaque commit et chaque changement de branche ; `graphify update .` n'est à lancer à la main qu'après des modifications non commitées.
-
-**Dans un worktree, les hooks git de graphify ne font rien.** Ils sortent en `exit 0` dès que `git rev-parse --git-dir` diffère de `--git-common-dir`, ce qui est la définition d'un worktree lié — un rebuild depuis là écrirait un graphe partiel dans le dossier partagé. Chaque worktree a donc son propre `graphify-out/`, ignoré par git comme celui de la racine. Il est construit par le hook `CwdChanged` de `.claude/hooks/graphify-worktree.mjs`, déclenché quand la session entre dans le worktree : une reconstruction à froid coûte moins de trois secondes, inutile d'amorcer le cache depuis la racine. Le hook se tait si le graphe est déjà là ; le forcer, c'est `graphify update .` dans le worktree. Son journal vit dans `~/.cache/graphify-worktree.log`.
-
-L'événement `WorktreeCreate`, malgré son nom, ne convient pas : ce n'est pas une notification mais un *fournisseur*, censé créer le worktree lui-même et écrire son chemin sur stdout pour brancher un VCS autre que git. Y mettre `graphify update` ferait lire la sortie de graphify comme un chemin et casserait la création de worktree.
-
-L'outil est le paquet PyPI `graphifyy`, en version 0.9.39, installé dans le venv `~/.venvs/graphify` vers lequel `/opt/homebrew/bin/graphify` est un lien. Le mettre à jour, c'est `~/.venvs/graphify/bin/pip install -U graphifyy` puis `graphify hook install` pour que les hooks git repointent le bon interpréteur.
-
-Le graphe remplace une exploration à l'aveugle, à condition de l'interroger avec **les identifiants du code** — fonctions suffixées de `()`, fichiers avec leur extension. Coûts mesurés :
-
-| Commande | Sortie | Usage |
-| --- | --- | --- |
-| `graphify path "jouer()" "reduce()"` | 70 à 120 caractères | par où deux symboles se rejoignent |
-| `graphify explain "reduce()"` | ~1 600 caractères | source, communauté, voisins directs |
-| `graphify affected "reduce()"` | ~3 000 caractères | ce qui casse si on y touche |
-
-`graphify-out/GRAPH_REPORT.md` (~11 400 caractères) ne vaut d'être lu que pour sa liste des nœuds les plus connectés — `reduce()` à 39 arêtes, `Puzzle` et `jouer()` à 33, `demarrer()` à 28, ce qui nomme les vraies abstractions du projet. Le reste du fichier est une liste de 52 « Community N » sans nom : les communautés ne se nomment qu'avec une clé de LLM, qu'aucun backend supporté ne trouve ici.
-
-Six pièges, tous vérifiés :
-
-- **`graphify path` ne suit que le sens des arêtes.** Deux symboles qu'aucune chaîne d'appels ne relie dans ce sens-là rendent « No directed path found ». Le contournement est `--undirected`, mais **placé après les deux nœuds** (`graphify path "reduce()" "createJudge()" --undirected`) : en tête il est pris pour un nom de nœud. Le flag est absent du `--help` de la commande.
-- **`graphify query` est à éviter.** Il fabrique ses nœuds de départ à partir des mots de la question ; posée en français, elle part sur des nœuds inexistants et rend 6 400 caractères de liste sans rapport. À la rigueur, avec les termes du code et `--budget 500`.
-- **Ne jamais lire `graphify-out/graph.json`.** Plus de 1 300 000 caractères, soit environ 380 000 tokens — il se requête, il ne se lit pas.
-- **Les constantes sont toutes indexées, mais quatre noms sont ambigus.** Les 75 constantes exportées en majuscules de `src/` sont dans le graphe, `SCHEMA_VERSION` et `AIM_SPEEDS` comprises. En revanche `graphify explain` refuse de trancher sur `WHEEL`, `CATEGORIES`, `INPUT` et `MAX_OPPONENTS`, et rend « Ambiguous: … matches 2 nodes in different files ». Les causes diffèrent : `WHEEL` collisionne avec le composant `Wheel.tsx`, les identifiants étant normalisés sans casse ; `CATEGORIES` et `INPUT` ont une homonyme locale dans un fichier de test ; `MAX_OPPONENTS` est vraiment déclarée deux fois, dans `src/game/setup.ts` et `src/storage/settings.ts`. Le message d'erreur liste les ids — relancer avec l'id complet répond (`graphify explain "src_game_wheel_wheel"`) ; le chemin du fichier, lui, ne marche pas malgré ce que dit le message.
-- **`graphify hook install` écrit un `.gitattributes`** déclarant un pilote de fusion pour `graphify-out/graph.json`. Ici il ne sert à rien — `graphify-out/` est ignoré par git, donc jamais en conflit. Le supprimer après coup ; `graphify hook uninstall` le retire aussi.
-- **`graphify extract` à la racine échoue**, faute de clé pour l'extraction sémantique du README, de `docs/` et des images. `graphify update` n'a pas ce défaut : il ne fait que de l'AST — il avertit seulement que `.claude/settings.json` ne produit aucun nœud, ce qui est un défaut de l'outil, sans conséquence ici. Et **ne jamais viser un sous-dossier** (`graphify update src`) : la sortie est écrite dans `src/graphify-out/`, au milieu du code.
+- `graphify path "jouer()" "reduce()"` — par où deux symboles se rejoignent. Ajouter `--undirected` **après les deux nœuds** si aucun chemin dirigé n'existe.
+- `graphify explain "reduce()"` — source, communauté, voisins directs.
+- `graphify affected "reduce()"` — ce qui casse si on y touche.
+- **Ne jamais lire `graphify-out/graph.json`** : plus d'un million de caractères. Il se requête, il ne se lit pas. Éviter aussi `graphify query`, bruyant et souvent hors sujet.
+- **Dans un worktree, les hooks git ne reconstruisent rien** : le graphe y est construit à l'entrée par `.claude/hooks/graphify-worktree.mjs`, et chaque worktree a le sien.
+- Le reste — installation, mise à jour, pièges vérifiés — vit dans `docs/graphify.md`. Le lire avant de déboguer l'outil, pas avant de s'en servir.
 
 ## Git
 
 - Messages de commit **en français**, format Conventional Commits, une étape de plan = un commit.
-- Remote `origin` : `git@github:fzed51/wheel-of-fortune.git`. L'URL sans `.com` est un **alias Host SSH du compte perso `fzed51`** — correcte, ne jamais la « corriger ».
+- Remote `origin` : `git@github:fzed51/wheel-of-fortune.git` — alias Host SSH, détaillé dans les consignes globales.
 - Ne jamais commiter sans demande explicite.

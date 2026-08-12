@@ -9,14 +9,14 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Activer corepack
         # Avant setup-node, pour que la version de yarn du champ packageManager
         # soit celle utilisée par la détection de cache.
         run: corepack enable
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: yarn
