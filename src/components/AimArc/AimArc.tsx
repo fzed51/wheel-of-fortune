@@ -2,15 +2,20 @@ import type { RefObject } from 'react'
 import { AIM_ARC_DEGREES } from '../../game/wheel'
 
 /**
- * Rayon et libellés du disque de la roue, dans le même repère
- * `viewBox="0 0 100 100"` (voir `src/components/Wheel/geometry.ts` : disque à
- * `RADIUS = 48`, libellés à `LABEL_RADIUS = 36`). L'arc de visée se pose entre
- * `44` et `48` : il touche le bord extérieur du disque sans le dépasser, et
- * reste largement au-delà du rayon des libellés, donc ne masque ni les
- * couleurs ni les montants des secteurs.
+ * Rayon et épaisseur de l'arc, dans le repère du carré de la roue
+ * (`viewBox="0 0 100 100"`, centré en (50, 50), partagé avec le rotor de
+ * `Wheel.tsx`). Le rotor se rentre de `ROTOR_INSET_PERCENT` de chaque côté
+ * (`src/components/Wheel/geometry.ts`), ce qui libère une couronne libre
+ * entre le disque rendu — `DISC_RADIUS_ON_BOARD` ≈ 40,32 — et le bord du
+ * carré, à 50. L'arc vit entièrement dans cette couronne : peint de
+ * `45 − 5/2 = 42,5` à `45 + 5/2 = 47,5`, il ne recouvre plus rien du disque
+ * (42,5 > 40,32) et reste sous le bord du carré (47,5 ≤ 50), donc jamais
+ * rogné. Le trait est épaissi par rapport à l'ancienne pose (4 → 5) : peint
+ * hors du disque, il se lit désormais sur le fond de la page et non sur les
+ * couleurs changeantes des secteurs, où un trait plus fin suffisait.
  */
-const RADIUS = 46
-const STROKE_WIDTH = 4
+const RADIUS = 45
+const STROKE_WIDTH = 5
 
 /** Arrondit à 3 décimales pour une chaîne de chemin stable et lisible. */
 function round3(value: number): number {
@@ -71,11 +76,11 @@ export default function AimArc({ arcRef }: AimArcProps) {
           fill="none"
           strokeWidth={STROKE_WIDTH}
           // `butt`, jamais `round` : une extrémité arrondie dépasse le tracé de
-          // la moitié de l'épaisseur, soit ici 2 unités de chaque côté — à un
-          // rayon de 46, `2 / 46` radian ≈ 2,5° par bout, donc un arc peint de
-          // ~35° au lieu de 30°. L'arc surestimerait alors l'erreur du lancer de
-          // 17 %, et aucun test ne le verrait : ils vérifient les extrémités du
-          // chemin, pas la peinture.
+          // la moitié de l'épaisseur, soit ici 2,5 unités de chaque côté — à un
+          // rayon de 45, `2,5 / 45` radian ≈ 3,2° par bout, donc un arc peint de
+          // ~36° au lieu de 30°. L'arc surestimerait alors l'erreur du lancer, et
+          // aucun test ne le verrait : ils vérifient les extrémités du chemin,
+          // pas la peinture.
           strokeLinecap="butt"
           className="stroke-primary forced-colors:stroke-[CanvasText]"
         />

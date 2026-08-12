@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { SEGMENT_COUNT } from '../../game/wheel'
-import { arcPath, labelAnchor } from './geometry'
+import { arcPath, DISC_RADIUS_ON_BOARD, labelAnchor, RADIUS } from './geometry'
 
 describe('arcPath', () => {
   it('fait démarrer le segment 0 exactement à (50, 2)', () => {
@@ -10,6 +10,13 @@ describe('arcPath', () => {
   it('produit 24 chemins deux à deux distincts', () => {
     const paths = Array.from({ length: SEGMENT_COUNT }, (_, index) => arcPath(index))
     expect(new Set(paths).size).toBe(SEGMENT_COUNT)
+  })
+})
+
+describe('DISC_RADIUS_ON_BOARD', () => {
+  it('vaut exactement RADIUS × 0,84, strictement plus petit que RADIUS', () => {
+    expect(DISC_RADIUS_ON_BOARD).toBeCloseTo(RADIUS * 0.84, 10)
+    expect(DISC_RADIUS_ON_BOARD).toBeLessThan(RADIUS)
   })
 })
 

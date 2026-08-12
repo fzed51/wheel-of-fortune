@@ -347,6 +347,28 @@ describe('decodeSettings', () => {
     const decoded = decodeSettings(enveloppe({ ...DEFAULT_SETTINGS, throwMode: 'zigzag' }))
     expect(decoded).toEqual({ ok: true, value: DEFAULT_SETTINGS })
   })
+
+  it('conserve `aimSpeed: slow` à l’aller-retour', () => {
+    const settings = { ...DEFAULT_SETTINGS, aimSpeed: 'slow' as const }
+    expect(decodeSettings(encodeRecord(settings))).toEqual({ ok: true, value: settings })
+  })
+
+  it('retombe sur le défaut quand `aimSpeed` porte une valeur inconnue', () => {
+    const decoded = decodeSettings(enveloppe({ ...DEFAULT_SETTINGS, aimSpeed: 'ludicrous' }))
+    expect(decoded).toEqual({ ok: true, value: DEFAULT_SETTINGS })
+  })
+
+  it('relit une sauvegarde écrite avant ce réglage, sans `aimSpeed`, sans perdre le reste', () => {
+    // Cas réel d'une mise à jour de l'application : `SCHEMA_VERSION` ne bouge
+    // pas pour ce champ, une entrée qui en manque doit retomber sur 'fast'.
+    const sansAimSpeed: Record<string, unknown> = { ...DEFAULT_SETTINGS, theme: 'dark' }
+    delete sansAimSpeed.aimSpeed
+    const decoded = decodeSettings(enveloppe(sansAimSpeed))
+    expect(decoded).toEqual({
+      ok: true,
+      value: { ...DEFAULT_SETTINGS, theme: 'dark', aimSpeed: 'fast' },
+    })
+  })
 })
 
 describe('decodePuzzles', () => {

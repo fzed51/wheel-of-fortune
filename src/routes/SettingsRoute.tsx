@@ -7,6 +7,15 @@ import { useSettings } from '../hooks/useSettings'
 import { testMistralKey } from '../llm'
 import type { KeyTestResult } from '../llm'
 import { clearAllData, loadMistralKey } from '../storage/persist'
+import { AIM_SPEEDS } from '../storage/settings'
+
+/** Libellés affichés du réglage de vitesse de l'arc de visée, dans l'ordre de `AIM_SPEEDS`. */
+const AIM_SPEED_LABELS: Record<(typeof AIM_SPEEDS)[number], string> = {
+  slow: 'Lente',
+  normal: 'Normale',
+  fast: 'Rapide',
+  extreme: 'Très rapide',
+}
 
 /** Millisecondes de repos imposées entre deux essais de clé. */
 const TEST_COOLDOWN_MS = 2_000
@@ -50,6 +59,7 @@ export default function SettingsRoute() {
   const apiKeyId = useId()
   const modelId = useId()
   const throwModeId = useId()
+  const aimSpeedId = useId()
 
   // Indice de la clé enregistrée : relu depuis le stockage au moment voulu,
   // jamais gardé plus que ces 4 caractères — la clé complète ne doit exister
@@ -192,6 +202,30 @@ export default function SettingsRoute() {
         </div>
         <p className="mt-1 text-sm text-fg-muted">
           Un seul clic lance la roue, l’angle visé est tiré au hasard.
+        </p>
+
+        <div className={FIELD}>
+          <label htmlFor={aimSpeedId} className="text-fg">
+            Vitesse de l’arc de visée
+          </label>
+          <select
+            id={aimSpeedId}
+            value={settings.aimSpeed}
+            onChange={(event) => {
+              const speed = AIM_SPEEDS.find((candidate) => candidate === event.target.value)
+              if (speed !== undefined) update({ aimSpeed: speed })
+            }}
+            className={INPUT}
+          >
+            {AIM_SPEEDS.map((speed) => (
+              <option key={speed} value={speed}>
+                {AIM_SPEED_LABELS[speed]}
+              </option>
+            ))}
+          </select>
+        </div>
+        <p className="mt-1 text-sm text-fg-muted">
+          Plus l’arc va vite, plus la visée est difficile. Sans effet en mode « lancer simple ».
         </p>
       </section>
 

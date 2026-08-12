@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import Wheel from './Wheel'
 import type { WheelProps } from './Wheel'
+import { ROTOR_INSET_PERCENT } from './geometry'
 
 /**
  * `AimArc` est `aria-hidden`, sans rôle ni nom : rien n'y désigne un point
@@ -55,5 +56,17 @@ describe('Wheel', () => {
     render(<Wheel {...props({ aiming: false })} />)
 
     expect(screen.queryByRole('region', { name: 'Arc simulé' })).not.toBeInTheDocument()
+  })
+
+  it('rentre le rotor pour libérer la couronne où se pose l’arc de visée', () => {
+    const { container } = render(<Wheel {...props()} />)
+
+    // Même ancrage `.wheel-rotor` que le test ci-dessus, pour la même raison :
+    // aucun rôle ni nom accessible ne désigne le rotor. Cette assertion
+    // rougirait si le retrait `inset` était retiré ou décorrélé de
+    // `ROTOR_INSET_PERCENT` (ex. valeur recopiée en dur dans le style).
+    const rotor = container.querySelector('.wheel-rotor')
+    expect(rotor).toBeInstanceOf(HTMLElement)
+    expect(rotor instanceof HTMLElement ? rotor.style.inset : null).toBe(`${ROTOR_INSET_PERCENT}%`)
   })
 })

@@ -68,18 +68,19 @@ const SCHEMA_VERSION_RECOPIEE = 3
 const CONSONNES = ['S', 'R', 'T', 'N', 'L', 'M', 'D', 'P', 'C', 'V', 'B', 'F', 'G']
 
 /*
- * Un aller (ou un retour) de l'arc dure désormais 1 800 ms (`AIM_SWEEP_MS`,
- * `useAimSweep`) — le double de l'ancienne jauge de puissance, dont la course
- * ne couvrait qu'une barre. Attendre 450 ms avant de figer l'arc, c'est donc
- * s'arrêter à un quart de cette course : largement avant que l'arc n'ait fini
- * son aller et ne fasse demi-tour. Aucun contrôle ci-dessous ne dépend de la
- * valeur exacte de l'angle visé, seulement du fait qu'un lancer a bien eu
- * lieu. Sous `prefers-reduced-motion`, le balayage est ralenti ×2,5 (voir
- * `useAimSweep`) : l'attente est allongée d'autant pour rester à la même
- * proportion de la course, même si rien n'impose cette proportion pour la
- * validité du contrôle.
+ * La durée d'un aller (ou d'un retour) de l'arc est désormais un réglage
+ * persisté à quatre vitesses (`AIM_SWEEP_MS`, `useAimSweep`), modifiable dans
+ * l'écran Réglages ; ce script tourne sur les réglages par défaut, donc sur
+ * la vitesse « Rapide » (`AIM_SWEEP_MS.fast`), 900 ms l'aller. Attendre
+ * 250 ms avant de figer l'arc, c'est donc s'arrêter à un peu plus du quart de
+ * cette course : largement avant que l'arc n'ait fini son aller et ne fasse
+ * demi-tour. Aucun contrôle ci-dessous ne dépend de la valeur exacte de
+ * l'angle visé, seulement du fait qu'un lancer a bien eu lieu. Sous
+ * `prefers-reduced-motion`, le balayage est ralenti ×2,5 (voir `useAimSweep`) :
+ * l'attente est allongée d'autant pour rester à la même proportion de la
+ * course, même si rien n'impose cette proportion pour la validité du contrôle.
  */
-const CHARGE_ARC_MS = 450
+const CHARGE_ARC_MS = 250
 const CHARGE_ARC_RALENTIE_MS = Math.round(CHARGE_ARC_MS * 2.5)
 
 /**
