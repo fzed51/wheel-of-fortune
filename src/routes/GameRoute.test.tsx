@@ -254,12 +254,15 @@ describe('GameRoute', () => {
     }
   })
 
-  it('les deux boutons de lancer gèlent ensemble pendant la rotation', async () => {
+  it('la barre s’estompe et le centre s’efface au même instant pendant la rotation', async () => {
     // Preuve que `spinDisabled` n'est calculé qu'une fois dans `GameRoute` :
     // si la barre d'actions et le centre de la roue en recevaient chacun une
     // copie divergente, l'un pourrait rester actif pendant que l'autre gèle.
-    // Pas d'assertion sur l'état après la rotation : le segment tiré est
-    // aléatoire, et selon qu'il tombe sur une consonne à jouer ou sur un
+    // La barre reste montée et s'estompe (`aria-disabled`) ; le centre, lui,
+    // se démonte entièrement — deux traitements différents sur la même
+    // valeur, dont ce test prouve qu'elle bascule au même instant pour les
+    // deux. Pas d'assertion sur l'état après la rotation : le segment tiré
+    // est aléatoire, et selon qu'il tombe sur une consonne à jouer ou sur un
     // changement de tour, `canSpin` (donc `spinDisabled`) diffère légitimement
     // — seul le gel pendant `spinning` est garanti quel que soit le tirage.
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true })
@@ -272,13 +275,10 @@ describe('GameRoute', () => {
       await user.click(screen.getByRole('button', { name: 'Stop' }))
 
       // Pendant la rotation la visée est déjà retombée (`aiming` redevient
-      // faux), donc les deux boutons affichent « Lancer » — c'est bien leur
-      // état gelé qu'on vérifie ici, pas leur libellé.
+      // faux), donc le bouton de la barre affiche « Lancer » — c'est bien son
+      // état gelé qu'on vérifie ici, pas son libellé.
       expect(screen.getByRole('button', { name: 'Lancer' })).toHaveAttribute('aria-disabled', 'true')
-      expect(screen.getByRole('button', { name: 'Lancer au centre de la roue' })).toHaveAttribute(
-        'aria-disabled',
-        'true',
-      )
+      expect(screen.queryByRole('button', { name: 'Lancer au centre de la roue' })).not.toBeInTheDocument()
     } finally {
       vi.useRealTimers()
     }

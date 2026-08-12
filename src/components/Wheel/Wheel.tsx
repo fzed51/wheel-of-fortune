@@ -21,7 +21,14 @@ export interface WheelProps {
   readonly aimRef: RefObject<HTMLDivElement | null>
   /** Libellé du bouton central : « Lancer », « Stop » ou « Tourner » selon le mode et l'état de visée — décidé par l'appelant. */
   readonly spinLabel: string
-  /** Légalité du lancer, identique à celle du bouton de la barre d'actions : les deux gèlent ensemble. */
+  /**
+   * Légalité du lancer. Sur le bouton de la barre d'actions (`Controls.tsx`),
+   * elle estompe (`aria-disabled`, toujours monté — c'est lui qui porte
+   * l'accessibilité clavier du lancer). Ici, sur le bouton central, elle
+   * pilote le montage : `true` retire le bouton du DOM au lieu de l'estomper.
+   * Calculée une seule fois par `GameRoute` et passée aux deux, pour que la
+   * barre s'estompe et le centre s'efface au même instant.
+   */
   readonly spinDisabled: boolean
   readonly onSpin: () => void
 }
@@ -123,10 +130,19 @@ export default function Wheel({
        * du dépôt deviendrait ambiguë. Le nom accessible contient le libellé
        * visible, ce qu'exige le critère d'accessibilité « Label in Name ».
        *
-       * `aria-disabled`, jamais `disabled` : invariant du projet — un bouton
-       * `disabled` qui porte le focus le perd au profit de `<body>`, et un
-       * lecteur d'écran se tait au moment où le joueur attend une réponse. La
-       * garde précoce dans `onClick` est ce qui bloque réellement le clic.
+       * Pas d'`aria-disabled` ici, contrairement au bouton de la barre
+       * d'actions : quand le lancer est illégal, ce bouton n'existe plus du
+       * tout, la roue reste nue. Un `opacity-0` resterait dans l'ordre de
+       * tabulation et serait quand même annoncé par un lecteur d'écran ; un
+       * `visibility:hidden` perdrait le focus tout en gardant sa place dans
+       * la mise en page. Ce bouton central n'est qu'un raccourci pointeur
+       * redondant avec celui de la barre d'actions — qui reste toujours monté
+       * et `aria-disabled`, lui, et porte seul l'accessibilité clavier du
+       * lancer — son absence ne prive donc personne d'une commande. Coût
+       * assumé : si le focus est sur ce bouton au moment où il se démonte (on
+       * vient de le cliquer), il part sur `<body>`. Les deux live regions de
+       * `LiveRegions.tsx` annoncent le tirage de toute façon, le lecteur
+       * d'écran ne reste pas muet.
        *
        * `h-24 w-24` (96 px) : largement au-delà de la cible tactile minimale
        * de 44 px, et loin des montants écrits à 72 % du rayon du disque
@@ -134,18 +150,16 @@ export default function Wheel({
        * `ring-surface` le détache visuellement de la couleur du secteur sous
        * lui, par un token de thème et non une couleur en dur.
        */}
-      <button
-        type="button"
-        aria-disabled={spinDisabled}
-        aria-label={`${spinLabel} au centre de la roue`}
-        className="absolute top-1/2 left-1/2 z-20 h-24 w-24 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary font-semibold text-on-primary shadow-lg ring-4 ring-surface aria-disabled:opacity-50"
-        onClick={() => {
-          if (spinDisabled) return
-          onSpin()
-        }}
-      >
-        {spinLabel}
-      </button>
+      {!spinDisabled && (
+        <button
+          type="button"
+          aria-label={`${spinLabel} au centre de la roue`}
+          className="absolute top-1/2 left-1/2 z-20 h-24 w-24 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary font-semibold text-on-primary shadow-lg ring-4 ring-surface"
+          onClick={onSpin}
+        >
+          {spinLabel}
+        </button>
+      )}
     </div>
   )
 }

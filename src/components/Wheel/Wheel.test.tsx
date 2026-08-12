@@ -93,16 +93,20 @@ describe('Wheel', () => {
     expect(onSpin).toHaveBeenCalledTimes(1)
   })
 
-  it('un bouton central estompé n’appelle pas onSpin au clic', async () => {
-    const onSpin = vi.fn()
-    const user = userEvent.setup()
-    render(<Wheel {...props({ spinDisabled: true, onSpin })} />)
+  it('retire le bouton central du DOM quand le lancer est illégal', () => {
+    render(<Wheel {...props({ spinDisabled: true, spinLabel: 'Lancer' })} />)
 
-    const bouton = screen.getByRole('button', { name: 'Lancer au centre de la roue' })
-    expect(bouton).toHaveAttribute('aria-disabled', 'true')
-
-    await user.click(bouton)
-
-    expect(onSpin).not.toHaveBeenCalled()
+    // Absent par son nom accessible complet : ce test rougirait si le bouton
+    // redevenait monté avec `aria-disabled` ou `opacity-0` au lieu d'être
+    // retiré du DOM.
+    expect(screen.queryByRole('button', { name: 'Lancer au centre de la roue' })).not.toBeInTheDocument()
+    // Et aucun bouton du tout, quel que soit son nom : la roue doit être nue.
+    // Interroger le nom accessible complet ne suffirait pas — il reste vrai
+    // même sur un bouton monté dont l'`aria-label` aurait disparu, puisque le
+    // nom recherché ne correspondrait plus. Compter les boutons rougit dans
+    // ce cas-là aussi. Le disque, l'aiguille et l'arc sont des `<svg>`
+    // `aria-hidden`, sans rôle : ce compte ne peut désigner que le bouton
+    // central.
+    expect(screen.queryAllByRole('button')).toHaveLength(0)
   })
 })

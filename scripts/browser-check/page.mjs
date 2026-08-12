@@ -54,8 +54,9 @@ window.__h = {
    * centre du disque — mais c'est bien celui de la barre d'actions qui est
    * cliqué ici, et lui seul : \`txt\` privilégie \`aria-label\` sur le texte, et le
    * bouton central en porte un, « … au centre de la roue ». Les deux appellent
-   * de toute façon la même commande et partagent le même \`aria-disabled\`,
-   * calculé une seule fois dans \`GameRoute\`.
+   * de toute façon la même commande, mais seul celui de la barre reste monté
+   * quand le lancer est illégal : le bouton central, lui, est alors simplement
+   * absent du DOM, pas de \`aria-disabled\` à lui comparer.
    */
   clickLancer() {
     for (const nom of ['Lancer', 'Stop', 'Tourner']) {
@@ -128,9 +129,10 @@ window.__h = {
     // libellés est affiché à la fois — c'est \`controls\` ci-dessus qui garde les
     // libellés fixes. L'état relevé est celui du bouton de la barre d'actions :
     // le bouton central de la roue affiche le même libellé mais porte un
-    // \`aria-label\`, que \`txt\` fait primer sur le texte. Les deux gèlent
-    // ensemble de toute façon, \`aria-disabled\` étant calculé une seule fois
-    // dans \`GameRoute\`.
+    // \`aria-label\`, que \`txt\` fait primer sur le texte. Le bouton central n'a
+    // pas d'\`aria-disabled\` : il disparaît simplement du DOM quand le lancer est
+    // illégal, au même instant et sur la même valeur que l'estompage de celui
+    // de la barre.
     const lancerEl = window.__h.byName('Lancer') || window.__h.byName('Stop') || window.__h.byName('Tourner')
     const lancer = {
       nom: lancerEl ? window.__h.txt(lancerEl) : null,
