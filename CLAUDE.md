@@ -92,6 +92,10 @@ graphify update .        # met le graphe à jour, incrémental, sans clé d'API
 
 Un graphe de 1003 nœuds et 2999 arêtes couvre **tout le dépôt** — `src/`, mais aussi `scripts/browser-check/`, les `tsconfig`, `package.json` et `public/theme-init.js`. Il est reconstruit automatiquement par les hooks git après chaque commit et chaque changement de branche ; `graphify update .` n'est à lancer à la main qu'après des modifications non commitées.
 
+**Dans un worktree, les hooks git de graphify ne font rien.** Ils sortent en `exit 0` dès que `git rev-parse --git-dir` diffère de `--git-common-dir`, ce qui est la définition d'un worktree lié — un rebuild depuis là écrirait un graphe partiel dans le dossier partagé. Chaque worktree a donc son propre `graphify-out/`, ignoré par git comme celui de la racine. Il est construit par le hook `CwdChanged` de `.claude/hooks/graphify-worktree.mjs`, déclenché quand la session entre dans le worktree : une reconstruction à froid coûte moins de trois secondes, inutile d'amorcer le cache depuis la racine. Le hook se tait si le graphe est déjà là ; le forcer, c'est `graphify update .` dans le worktree. Son journal vit dans `~/.cache/graphify-worktree.log`.
+
+L'événement `WorktreeCreate`, malgré son nom, ne convient pas : ce n'est pas une notification mais un *fournisseur*, censé créer le worktree lui-même et écrire son chemin sur stdout pour brancher un VCS autre que git. Y mettre `graphify update` ferait lire la sortie de graphify comme un chemin et casserait la création de worktree.
+
 L'outil est le paquet PyPI `graphifyy`, en version 0.9.39, installé dans le venv `~/.venvs/graphify` vers lequel `/opt/homebrew/bin/graphify` est un lien. Le mettre à jour, c'est `~/.venvs/graphify/bin/pip install -U graphifyy` puis `graphify hook install` pour que les hooks git repointent le bon interpréteur.
 
 Le graphe remplace une exploration à l'aveugle, à condition de l'interroger avec **les identifiants du code** — fonctions suffixées de `()`, fichiers avec leur extension. Coûts mesurés :
