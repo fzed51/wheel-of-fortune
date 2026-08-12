@@ -2,6 +2,7 @@
 import { createRef } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import Wheel from './Wheel'
 import type { WheelProps } from './Wheel'
 import { ROTOR_INSET_PERCENT } from './geometry'
@@ -25,6 +26,9 @@ function props(overrides: Partial<WheelProps> = {}): WheelProps {
     onSettled: vi.fn(),
     aiming: false,
     aimRef: createRef<HTMLDivElement | null>(),
+    spinLabel: 'Lancer',
+    spinDisabled: false,
+    onSpin: vi.fn(),
     ...overrides,
   }
 }
@@ -68,5 +72,41 @@ describe('Wheel', () => {
     const rotor = container.querySelector('.wheel-rotor')
     expect(rotor).toBeInstanceOf(HTMLElement)
     expect(rotor instanceof HTMLElement ? rotor.style.inset : null).toBe(`${ROTOR_INSET_PERCENT}%`)
+  })
+
+  it('porte un bouton central dont le nom accessible contient le libellé visible', () => {
+    render(<Wheel {...props({ spinLabel: 'Stop' })} />)
+
+    // Le texte visible seul (« Stop ») ne doit désigner que le bouton de la
+    // barre d'actions ailleurs dans l'appli, jamais celui-ci : le nom
+    // accessible complet lève l'ambiguïté que deux boutons « Stop » créeraient.
+    expect(screen.getByRole('button', { name: 'Stop au centre de la roue' })).toHaveTextContent('Stop')
+  })
+
+  it('un clic sur le bouton central appelle onSpin', async () => {
+    const onSpin = vi.fn()
+    const user = userEvent.setup()
+    render(<Wheel {...props({ onSpin })} />)
+
+    await user.click(screen.getByRole('button', { name: 'Lancer au centre de la roue' }))
+
+    expect(onSpin).toHaveBeenCalledTimes(1)
+  })
+
+  it('retire le bouton central du DOM quand le lancer est illégal', () => {
+    render(<Wheel {...props({ spinDisabled: true, spinLabel: 'Lancer' })} />)
+
+    // Absent par son nom accessible complet : ce test rougirait si le bouton
+    // redevenait monté avec `aria-disabled` ou `opacity-0` au lieu d'être
+    // retiré du DOM.
+    expect(screen.queryByRole('button', { name: 'Lancer au centre de la roue' })).not.toBeInTheDocument()
+    // Et aucun bouton du tout, quel que soit son nom : la roue doit être nue.
+    // Interroger le nom accessible complet ne suffirait pas — il reste vrai
+    // même sur un bouton monté dont l'`aria-label` aurait disparu, puisque le
+    // nom recherché ne correspondrait plus. Compter les boutons rougit dans
+    // ce cas-là aussi. Le disque, l'aiguille et l'arc sont des `<svg>`
+    // `aria-hidden`, sans rôle : ce compte ne peut désigner que le bouton
+    // central.
+    expect(screen.queryAllByRole('button')).toHaveLength(0)
   })
 })

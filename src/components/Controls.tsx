@@ -2,15 +2,20 @@ import { formatEuros } from '../game/announce'
 import { BUTTON_GHOST, BUTTON_PRIMARY } from './classes'
 
 export interface ControlsProps {
-  readonly canSpin: boolean
   readonly canResolve: boolean
   readonly canPass: boolean
   /** Prix d'une voyelle, affiché en indice — l'achat se fait sur le clavier. */
   readonly vowelCost: number
   /** La roue tourne : les commandes sont gelées le temps de l'animation. */
   readonly spinning: boolean
-  /** L'arc de visée balaie le pourtour : le bouton de lancer devient le bouton d'arrêt. */
-  readonly aiming: boolean
+  /**
+   * Légalité du bouton de lancer, déjà tranchée par l'appelant. Remonte dans
+   * `GameRoute` : depuis que la roue porte elle aussi un bouton de lancer (au
+   * centre du disque), la formule doit être calculée une seule fois pour que
+   * les deux boutons gèlent et dégèlent ensemble — l'écrire deux fois la
+   * ferait dériver sans qu'aucun test ne rougisse.
+   */
+  readonly spinDisabled: boolean
   /** Libellé du bouton de lancer : dépend du mode de lancer et de l'état de visée, que ce composant n'a pas à connaître. */
   readonly spinLabel: string
   readonly onSpin: () => void
@@ -26,21 +31,16 @@ export interface ControlsProps {
  * natif pour bloquer le clic.
  */
 export default function Controls({
-  canSpin,
   canResolve,
   canPass,
   vowelCost,
   spinning,
-  aiming,
+  spinDisabled,
   spinLabel,
   onSpin,
   onResolve,
   onPass,
 }: ControlsProps) {
-  // En visée, le bouton devient « Stop » et reste toujours actif : la visée
-  // n'a pu démarrer que sur un lancer légal, et l'arrêter doit toujours être
-  // possible, quoi qu'il arrive par ailleurs à `canSpin`.
-  const spinDisabled = aiming ? false : spinning || !canSpin
   const resolveDisabled = spinning || !canResolve
   const passDisabled = spinning || !canPass
 

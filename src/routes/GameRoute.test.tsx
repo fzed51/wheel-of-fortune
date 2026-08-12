@@ -226,6 +226,64 @@ describe('GameRoute', () => {
     expect(screen.getByRole('status')).not.toHaveTextContent('La roue tourne')
   })
 
+  it('deux clics sur le bouton central de la roue arment puis lancent, comme la barre d’actions', async () => {
+    // Même déroulé que « Lancer » puis « Stop » sur la barre d'actions, mais
+    // en passant uniquement par le bouton posé sur le disque : preuve que ce
+    // second bouton appelle bien la même commande `handleSpin`, pas une copie.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true })
+    try {
+      saveGame(jeu(demarrer({ players: [joueur('Alice')] })))
+      const user = userEvent.setup({ delay: null })
+      monterApp('/jeu')
+
+      // Premier clic : arme la visée.
+      await user.click(screen.getByRole('button', { name: 'Lancer au centre de la roue' }))
+      expect(screen.getByRole('button', { name: 'Stop au centre de la roue' })).toBeInTheDocument()
+      expect(screen.getByRole('status')).not.toHaveTextContent('La roue tourne')
+
+      // Second clic : lance réellement.
+      await user.click(screen.getByRole('button', { name: 'Stop au centre de la roue' }))
+      expect(screen.getByRole('status')).toHaveTextContent('La roue tourne')
+
+      act(() => {
+        vi.advanceTimersByTime(500)
+      })
+      expect(screen.getByRole('status')).not.toHaveTextContent('La roue tourne')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('la barre s’estompe et le centre s’efface au même instant pendant la rotation', async () => {
+    // Preuve que `spinDisabled` n'est calculé qu'une fois dans `GameRoute` :
+    // si la barre d'actions et le centre de la roue en recevaient chacun une
+    // copie divergente, l'un pourrait rester actif pendant que l'autre gèle.
+    // La barre reste montée et s'estompe (`aria-disabled`) ; le centre, lui,
+    // se démonte entièrement — deux traitements différents sur la même
+    // valeur, dont ce test prouve qu'elle bascule au même instant pour les
+    // deux. Pas d'assertion sur l'état après la rotation : le segment tiré
+    // est aléatoire, et selon qu'il tombe sur une consonne à jouer ou sur un
+    // changement de tour, `canSpin` (donc `spinDisabled`) diffère légitimement
+    // — seul le gel pendant `spinning` est garanti quel que soit le tirage.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true })
+    try {
+      saveGame(jeu(demarrer({ players: [joueur('Alice')] })))
+      const user = userEvent.setup({ delay: null })
+      monterApp('/jeu')
+
+      await user.click(screen.getByRole('button', { name: 'Lancer' }))
+      await user.click(screen.getByRole('button', { name: 'Stop' }))
+
+      // Pendant la rotation la visée est déjà retombée (`aiming` redevient
+      // faux), donc le bouton de la barre affiche « Lancer » — c'est bien son
+      // état gelé qu'on vérifie ici, pas son libellé.
+      expect(screen.getByRole('button', { name: 'Lancer' })).toHaveAttribute('aria-disabled', 'true')
+      expect(screen.queryByRole('button', { name: 'Lancer au centre de la roue' })).not.toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   /**
    * L'arc de visée est `aria-hidden`, sans rôle ni nom accessible : aucune
    * requête par rôle ne peut le désigner. Seuls `Wheel.tsx`, `WheelPointer.tsx`
