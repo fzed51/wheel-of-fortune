@@ -367,6 +367,11 @@ describe('GameRoute', () => {
     monterApp('/jeu')
 
     expect(screen.getByRole('heading', { name: 'Manche terminée' })).toBeInTheDocument()
+    // Reproduit le bug #7 : l'en-tête affichait « Manche 0 sur 3 » (repli sur
+    // `history.length`, pas encore alimenté à ce stade) au lieu de la manche
+    // qui vient de se terminer. L'ancre `^` distingue ce heading de « Manche
+    // terminée », qui en est un aussi sur cette même carte.
+    expect(screen.getByRole('heading', { name: /^Manche 1 sur 3/ })).toBeInTheDocument()
     const boutonSuivant = screen.getByRole('button', { name: 'Manche suivante' })
     expect(boutonSuivant).toBeInTheDocument()
 
@@ -539,6 +544,20 @@ describe('GameRoute', () => {
       expect(screen.queryByRole('button', { name: 'Passer la main' })).not.toBeInTheDocument()
       expect(screen.queryByRole('group', { name: 'Clavier des lettres' })).not.toBeInTheDocument()
       expect(screen.queryByText('Catégorie : Test')).not.toBeInTheDocument()
+    })
+
+    /**
+     * `versEtapeBonus` monte la partie avec `roundCount: 1` : l'en-tête doit
+     * donc annoncer « Manche 1 sur 1 », pas la valeur venue de `history`
+     * (vide à ce stade, comme avant `round/next`). Le heading « Question
+     * bonus » confirme que l'état monté est bien celui de l'étape bonus.
+     */
+    it('affiche « Manche 1 sur 1 » dans l’en-tête pendant l’étape bonus', () => {
+      saveGame(jeu(versEtapeBonus({ bonusAnswer: 'la loire' })))
+      monterApp('/jeu')
+
+      expect(screen.getByRole('heading', { name: 'Question bonus' })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: /^Manche 1 sur 1/ })).toBeInTheDocument()
     })
 
     it('ne redirige pas vers /resultats pendant l’étape bonus', () => {

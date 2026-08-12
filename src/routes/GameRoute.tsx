@@ -25,6 +25,7 @@ import {
   bonusPlayerOf,
   canResolve,
   canSpin,
+  displayedRoundNumber,
   isBotTurn,
   isStuck,
   keyState,
@@ -180,17 +181,14 @@ export default function GameRoute() {
     <div className="flex flex-col gap-4">
       <section className={CARD}>
         <h2 className="font-semibold text-fg">
-          {/* `round.index` plutôt que `history.length` : à la fin d'une manche
-              l'historique contient déjà celle qui vient de finir, et l'en-tête
-              annoncerait la manche suivante avant qu'elle ne commence. Pendant
-              l'étape bonus, ce même repli sur `history.length` reste juste :
-              elle ne démarre qu'une fois la dernière manche archivée, donc
-              `history.length` vaut alors `roundCount` — « Manche 3 sur 3 »
-              décrit correctement la dernière manche jouée, celle dont le
-              vainqueur répond maintenant à la question bonus. Un libellé dédié
-              n'apporterait rien que la carte `BonusQuestion` ne dise déjà. */}
-          Manche {round !== null ? round.index + 1 : game.history.length} sur{' '}
-          {game.config.roundCount}
+          {/* `displayedRoundNumber` plutôt que `history.length` : `history`
+              n'est alimenté qu'au `round/next` suivant, donc en `round-over`
+              il ne contient pas encore la manche qui vient de se terminer —
+              c'est ce qui rendait « Manche 0 sur 3 » (issue #7). Pendant
+              l'étape bonus, le helper affiche `roundCount`, ce qui décrit
+              correctement la dernière manche jouée, celle dont le vainqueur
+              répond maintenant à la question bonus — c'est voulu, pas un repli. */}
+          Manche {displayedRoundNumber(game)} sur {game.config.roundCount}
           {round !== null && ` — gains ×${multiplierFor(round.index)}`}
         </h2>
         {round !== null && isQuestion(round.puzzle) && (

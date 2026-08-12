@@ -31,6 +31,38 @@ export function activeRound(game: Game): RoundState | null {
   return game.progress.kind === 'round' ? game.progress.round : null
 }
 
+/**
+ * Numéro de manche à afficher (base 1), dérivé de `game.progress` — jamais de
+ * `game.history.length` : `history` n'est alimenté qu'au démarrage de la
+ * manche suivante (branche `round/next` du reducer), donc en `round-over` la
+ * manche qui vient de se terminer n'y figure pas encore et `history.length`
+ * rendrait un numéro en retard d'une unité.
+ *
+ * En `bonus` et en `game-over`, on rend `roundCount` : ces deux états ne sont
+ * atteints que depuis `round/next`, sous la garde `isFinalRound(summary.index,
+ * roundCount)` (soit `index >= roundCount - 1`). La dernière manche jouée
+ * porte donc l'index `roundCount - 1`, dont le numéro affiché est `roundCount`
+ * — et c'est le bon joueur (le vainqueur de cette dernière manche) qui répond
+ * à la question bonus sous ce numéro.
+ *
+ * Le `switch` est volontairement sans branche `default` : un futur variant de
+ * `GameProgress` doit faire échouer `yarn build`, pas rendre silencieusement
+ * une valeur de repli.
+ */
+export function displayedRoundNumber(game: Game): number {
+  const progress = game.progress
+  switch (progress.kind) {
+    case 'round':
+      return progress.round.index + 1
+    case 'round-over':
+      return progress.summary.index + 1
+    case 'bonus':
+      return game.config.roundCount
+    case 'game-over':
+      return game.config.roundCount
+  }
+}
+
 /** Lettres jamais proposées : le joueur ne sait pas si elles sont dans l'énigme. */
 export function remainingConsonants(round: RoundState): readonly Consonant[] {
   return CONSONANTS.filter((letter) => !round.guessed.includes(letter))
