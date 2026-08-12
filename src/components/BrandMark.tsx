@@ -38,8 +38,9 @@ export default function BrandMark({ className = 'size-8' }: { readonly className
       <path d="M16 18 L4.74 11.5 A13 13 0 0 1 16 5 Z" className="fill-wheel-4" />
 
       {/* Couronne : c'est elle qui détache le disque du fond, d'où `fg` et non
-          `primary` — en thème sombre, `primary` vaut la même valeur que
-          `wheel-4` et la couronne disparaîtrait sur deux des six secteurs. */}
+          `primary` — en thème sombre, `primary` (#c4b5fd) et `wheel-4` (#a78bfa)
+          sont deux violets voisins, à 1,47:1 l'un de l'autre : la couronne
+          s'effacerait sur deux des six secteurs. `fg` y tient 2,42:1. */}
       <circle cx={16} cy={18} r={13} fill="none" className="stroke-fg" strokeWidth={1.5} />
 
       {/* Moyeu : sans lui, les six pointes convergent en un point sale. */}

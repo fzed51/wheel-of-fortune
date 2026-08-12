@@ -26,18 +26,18 @@
   -->
   <circle cx="256" cy="256" r="244" fill="#6d28d9" />
   <g stroke="#ffffff" stroke-width="5" stroke-linejoin="round">
-    <path fill="#fcd34d" d="M256 256 L256 32 A224 224 0 0 1 368 62.01 Z" />
-    <path fill="#6ee7b7" d="M256 256 L368 62.01 A224 224 0 0 1 449.99 144 Z" />
-    <path fill="#7dd3fc" d="M256 256 L449.99 144 A224 224 0 0 1 480 256 Z" />
-    <path fill="#c4b5fd" d="M256 256 L480 256 A224 224 0 0 1 449.99 368 Z" />
-    <path fill="#fda4af" d="M256 256 L449.99 368 A224 224 0 0 1 368 449.99 Z" />
-    <path fill="#e5e7eb" d="M256 256 L368 449.99 A224 224 0 0 1 256 480 Z" />
-    <path fill="#fcd34d" d="M256 256 L256 480 A224 224 0 0 1 144 449.99 Z" />
-    <path fill="#6ee7b7" d="M256 256 L144 449.99 A224 224 0 0 1 62.01 368 Z" />
-    <path fill="#7dd3fc" d="M256 256 L62.01 368 A224 224 0 0 1 32 256 Z" />
-    <path fill="#c4b5fd" d="M256 256 L32 256 A224 224 0 0 1 62.01 144 Z" />
-    <path fill="#fda4af" d="M256 256 L62.01 144 A224 224 0 0 1 144 62.01 Z" />
-    <path fill="#e5e7eb" d="M256 256 L144 62.01 A224 224 0 0 1 256 32 Z" />
+    <path fill="#fbbf24" d="M256 256 L256 32 A224 224 0 0 1 368 62.01 Z" />
+    <path fill="#34d399" d="M256 256 L368 62.01 A224 224 0 0 1 449.99 144 Z" />
+    <path fill="#38bdf8" d="M256 256 L449.99 144 A224 224 0 0 1 480 256 Z" />
+    <path fill="#a78bfa" d="M256 256 L480 256 A224 224 0 0 1 449.99 368 Z" />
+    <path fill="#fb7185" d="M256 256 L449.99 368 A224 224 0 0 1 368 449.99 Z" />
+    <path fill="#d1d5db" d="M256 256 L368 449.99 A224 224 0 0 1 256 480 Z" />
+    <path fill="#fbbf24" d="M256 256 L256 480 A224 224 0 0 1 144 449.99 Z" />
+    <path fill="#34d399" d="M256 256 L144 449.99 A224 224 0 0 1 62.01 368 Z" />
+    <path fill="#38bdf8" d="M256 256 L62.01 368 A224 224 0 0 1 32 256 Z" />
+    <path fill="#a78bfa" d="M256 256 L32 256 A224 224 0 0 1 62.01 144 Z" />
+    <path fill="#fb7185" d="M256 256 L62.01 144 A224 224 0 0 1 144 62.01 Z" />
+    <path fill="#d1d5db" d="M256 256 L144 62.01 A224 224 0 0 1 256 32 Z" />
   </g>
   <circle cx="256" cy="256" r="68" fill="#ffffff" stroke="#6d28d9" stroke-width="5" />
   <circle cx="256" cy="256" r="40" fill="#6d28d9" />

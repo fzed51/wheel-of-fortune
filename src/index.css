@@ -68,15 +68,22 @@
    * teintes selon le thème casserait le seul contraste qui compte ici — celui
    * du libellé sur l'arc. Les six remplissages sont choisis pour qu'une seule
    * encre, `--wof-wheel-ink`, tienne au moins 4,5:1 sur chacun d'eux ; le
-   * rapport mesuré est en réalité d'au moins 9:1 sur les six, ce qui laisse de
-   * la marge pour un futur ajustement de teinte.
+   * rapport mesuré est en réalité d'au moins 6,6:1 sur les six.
+   *
+   * Ces valeurs sont **recopiées dans `public/favicon.svg`**, qu'un SVG statique
+   * ne peut pas lire du CSS. Les changer ici sans l'y répercuter ferait diverger
+   * l'icône de la PWA de la roue qu'elle représente.
+   *
+   * Saturer davantage n'est pas libre : une teinte plus vive est aussi plus
+   * sombre, donc plus proche de l'encre. Le palier suivant (Tailwind 500) a été
+   * mesuré et écarté — son violet `#8b5cf6` tombe à 4,24:1, sous le seuil.
    */
-  --wof-wheel-1: #fcd34d;
-  --wof-wheel-2: #6ee7b7;
-  --wof-wheel-3: #7dd3fc;
-  --wof-wheel-4: #c4b5fd;
-  --wof-wheel-bankrupt: #fda4af;
-  --wof-wheel-pass: #e5e7eb;
+  --wof-wheel-1: #fbbf24;
+  --wof-wheel-2: #34d399;
+  --wof-wheel-3: #38bdf8;
+  --wof-wheel-4: #a78bfa;
+  --wof-wheel-bankrupt: #fb7185;
+  --wof-wheel-pass: #d1d5db;
   --wof-wheel-ink: #1b1033;
   --wof-wheel-edge: #ffffff;
 }
