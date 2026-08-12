@@ -1,6 +1,5 @@
 import { Link, Outlet } from 'react-router'
 import LiveRegions from './components/LiveRegions'
-import ThemeToggle from './components/ThemeToggle'
 import UpdatePrompt from './components/UpdatePrompt'
 import { useApplyTheme } from './hooks/useTheme'
 
@@ -24,11 +23,17 @@ export default function App() {
         Aller au contenu
       </a>
 
-      <header className="mx-auto flex max-w-3xl items-center justify-between gap-4 px-6 py-4">
-        <Link to="/" className="text-lg font-bold text-fg">
+      <header className="mx-auto flex max-w-3xl items-center px-6 py-4">
+        {/*
+          L'icône est décorative : le nom accessible du lien reste le seul titre,
+          sinon un lecteur d'écran annoncerait deux fois la même chose. Elle est
+          servie depuis `public/favicon.svg`, la source unique des icônes de la
+          PWA, plutôt que redessinée ici — une roue de plus à maintenir.
+        */}
+        <Link to="/" className="flex items-center gap-2 text-lg font-bold text-fg">
+          <img src="/favicon.svg" alt="" aria-hidden="true" className="size-7 shrink-0" />
           La Roue de la Fortune
         </Link>
-        <ThemeToggle />
       </header>
 
       <UpdatePrompt />
