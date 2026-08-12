@@ -246,10 +246,14 @@ export default function SettingsRoute() {
 
         {/* Avertissement volontairement visible, pas une note en petits
             caractères : c'est le seul endroit où l'utilisateur apprend que la
-            clé est en clair et que son stockage PWA/Safari diverge sur iOS. */}
+            clé n'est pas protégée et que son stockage PWA/Safari diverge sur
+            iOS. La valeur est bien masquée avant écriture (src/storage/mask.ts),
+            mais cet écran ne le mentionne pas exprès : un masque qui n'est pas
+            un chiffrement, annoncé à l'utilisateur, se lit comme une garantie
+            qu'il n'est pas. */}
         <p className="mt-3 rounded-lg border border-border bg-bg-soft p-3 text-sm text-fg">
-          La clé est stockée <strong>en clair</strong> sur cet appareil : quiconque ouvre les
-          outils de développement du navigateur peut la lire. Les appels à Mistral sont
+          La clé est stockée sur cet appareil <strong>sans protection réelle</strong> : quiconque
+          ouvre les outils de développement du navigateur peut la retrouver. Les appels à Mistral sont
           facturés sur votre compte : utilisez de préférence une clé dédiée, révocable, avec un
           plafond de dépense. Sur iOS, une application installée depuis l’écran d’accueil a un
           stockage <strong>distinct</strong> de celui de Safari : une clé saisie dans l’un

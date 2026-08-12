@@ -252,7 +252,8 @@ const SCENARIOS = [
       { a: 'Regarder comment la clé enregistrée est évoquée à l’écran.', e: 'Ses quatre derniers caractères seulement, précédés de points de suspension. Le champ est de type mot de passe, « Afficher » le bascule en clair.' },
       { a: 'Dans l’onglet Réseau, regarder où voyage la clé pendant « Tester la clé ».', e: 'Dans un en-tête, jamais dans l’URL. Noter seulement « en-tête » ou « URL », sans recopier la valeur.' },
       { a: 'Parcourir la console après ces manipulations.', e: 'Aucune trace de la clé, aucun objet de requête journalisé. Noter le constat, pas le contenu.' },
-      { a: 'Cliquer « Effacer la clé ».', e: 'L’écran repasse en « Aucune clé enregistrée », et l’entrée wof:mistral-key:1 disparaît du localStorage.' }
+      { a: 'Après avoir enregistré la clé valide, inspecter la valeur de l’entrée wof:aux:2 dans le localStorage.', e: 'Elle commence par v2: et ne contient à aucun moment la clé saisie en clair — c’est un masquage, pas un chiffrement, mais rien à l’œil nu ne doit y ressembler.' },
+      { a: 'Cliquer « Effacer la clé ».', e: 'L’écran repasse en « Aucune clé enregistrée », et l’entrée wof:aux:2 disparaît du localStorage.' }
     ]
   },
   {
@@ -348,7 +349,7 @@ const SCENARIOS = [
       { a: 'Créer une question avec son énoncé et sa « Réponse attendue ».', e: 'Enregistrée, visible dans la liste.' },
       { a: 'Exporter, effacer toutes les données, puis réimporter le fichier.', e: 'La question revient, avec sa réponse attendue intacte.' },
       { a: 'Jouer une partie jusqu’à tirer cette question en manche finale (clé requise).', e: 'C’est bien la réponse attendue saisie à l’édition qui sert de référence au jugement.' },
-      { a: 'Vérifier les entrées du localStorage après tout ça.', e: 'Uniquement wof:settings:1, wof:puzzles:1, wof:save:1 et wof:mistral-key:1. Aucune autre clé préfixée wof:.' }
+      { a: 'Vérifier les entrées du localStorage après tout ça.', e: 'Uniquement wof:settings:1, wof:puzzles:1, wof:save:1 et wof:aux:2. Aucune autre clé préfixée wof:.' }
     ]
   },
   {
