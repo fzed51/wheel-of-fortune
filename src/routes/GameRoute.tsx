@@ -92,7 +92,7 @@ export default function GameRoute() {
 
   // Appelé avant les retours conditionnels ci-dessous : un hook ne peut pas
   // être invoqué après un `return` anticipé.
-  const sweep = useAimSweep()
+  const sweep = useAimSweep(settings.aimSpeed)
 
   // Dernier `cancel` de l'arc, lu par l'effet ci-dessous. `sweep.cancel`
   // change d'identité à chaque rendu (nouvelle closure de `useAimSweep`) ;

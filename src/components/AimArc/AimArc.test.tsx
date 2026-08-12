@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { render } from '@testing-library/react'
 import AimArc from './AimArc'
 import { AIM_ARC_DEGREES } from '../../game/wheel'
+import { DISC_RADIUS_ON_BOARD } from '../Wheel/geometry'
 
 /** Reproduit la conversion polaire de `AimArc.tsx`, indépendamment de son import. */
 function point(angleDeg: number, radius: number): { readonly x: number; readonly y: number } {
@@ -51,5 +52,29 @@ describe('AimArc', () => {
     const expected = `M ${start.x} ${start.y} A ${radius} ${radius} 0 0 1 ${end.x} ${end.y}`
 
     expect(d).toBe(expected)
+  })
+
+  it('reste entièrement dans la couronne libre autour du disque, sans être rogné par le bord du carré', () => {
+    const { container } = render(<AimArc arcRef={createRef<HTMLDivElement | null>()} />)
+
+    const path = container.querySelector('path')
+    expect(path).not.toBeNull()
+    const d = path?.getAttribute('d') ?? ''
+
+    const radiusMatch = /A ([\d.]+) [\d.]+/.exec(d)
+    expect(radiusMatch).not.toBeNull()
+    const radius = Number(radiusMatch?.[1])
+
+    // Épaisseur lue sur l'attribut du même `<path>`, pas recopiée à la main :
+    // une constante qui dérive de `STROKE_WIDTH` dans `AimArc.tsx` doit faire
+    // rougir ce test, pas seulement le premier.
+    const strokeWidth = Number(path?.getAttribute('stroke-width'))
+
+    // Borne « dehors » : le bord intérieur de l'arc ne doit plus toucher le
+    // disque rendu (`DISC_RADIUS_ON_BOARD`).
+    expect(radius - strokeWidth / 2).toBeGreaterThan(DISC_RADIUS_ON_BOARD)
+    // Borne « pas rogné » : le bord extérieur de l'arc ne doit pas dépasser
+    // le carré de la roue (50 dans le repère `viewBox="0 0 100 100"`).
+    expect(radius + strokeWidth / 2).toBeLessThanOrEqual(50)
   })
 })

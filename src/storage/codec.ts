@@ -13,12 +13,14 @@ import { SEGMENT_COUNT } from '../game/wheel'
 import { SCHEMA_VERSION } from './keys'
 import type { PersistedBonus, PersistedGame, PersistedPhase, PersistedRound } from './snapshot'
 import {
+  AIM_SPEEDS,
   BOT_LEVELS,
   DEFAULT_SETTINGS,
   MAX_OPPONENTS,
   MAX_ROUND_COUNT,
   THEMES,
   THROW_MODES,
+  type AimSpeed,
   type BotLevel,
   type Settings,
   type Theme,
@@ -294,6 +296,9 @@ export function decodeSettings(raw: string): Decoded<Settings> {
   const throwMode: ThrowMode = isOneOf(stored.throwMode, THROW_MODES)
     ? stored.throwMode
     : DEFAULT_SETTINGS.throwMode
+  const aimSpeed: AimSpeed = isOneOf(stored.aimSpeed, AIM_SPEEDS)
+    ? stored.aimSpeed
+    : DEFAULT_SETTINGS.aimSpeed
 
   return {
     ok: true,
@@ -306,6 +311,7 @@ export function decodeSettings(raw: string): Decoded<Settings> {
       opponents,
       botLevel,
       throwMode,
+      aimSpeed,
     },
   }
 }

@@ -1,14 +1,25 @@
 import { useEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 import { AIM_SPAN_DEGREES, normalizeDegrees } from '../../game/wheel'
+import type { AimSpeed } from '../../storage/settings'
 
 /**
  * Durée d'un aller (ou d'un retour) du balayage de l'arc de visée, en
- * millisecondes. Le double des 900 ms de l'ancienne jauge de puissance : la
- * course couvre désormais un tour complet (`AIM_SPAN_DEGREES`) au lieu d'une
- * simple barre, et à cette vitesse une case de 15° passe sous l'arc en 75 ms.
+ * millisecondes, par vitesse persistée (`Settings.aimSpeed`). L'ancien réglage
+ * unique valait 1800 ms ; il devient `slow`, élargi vers le haut plutôt que
+ * repris tel quel, et le défaut (`fast`) tombe à 900 ms : à 1800 ms, une case
+ * de 15° passe sous l'arc en 75 ms, ce qui laisse largement le temps de
+ * l'anticiper — la trajectoire est si prévisible que figer l'arc sur la case
+ * voulue ne demande aucune adresse. À 900 ms, la même case ne passe qu'en
+ * 37 ms. `slow` reste destinée à qui ne peut pas suivre un mouvement rapide,
+ * et demeure plus lente que l'ancien défaut.
  */
-const AIM_SWEEP_MS = 1800
+export const AIM_SWEEP_MS: Record<AimSpeed, number> = {
+  slow: 2400,
+  normal: 1500,
+  fast: 900,
+  extreme: 550,
+}
 
 /**
  * Facteur appliqué à `AIM_SWEEP_MS` sous mouvement réduit : le garde global
@@ -39,14 +50,19 @@ export interface AimSweep {
  * l'arrête. L'angle sort dans `[0, 360)`, à passer tel quel à `throwFromAim`.
  * Transposition angulaire de l'ancienne `useForceGauge` (`PowerGauge/`) :
  * même machine à deux temps, mêmes précautions de mouvement réduit.
+ *
+ * `speed` vient du réglage persisté : en pratique il ne change jamais en
+ * cours de visée (on ne peut pas être aux Réglages et viser à la fois), mais
+ * il entre quand même dans les dépendances de l'effet ci-dessous — un effet
+ * qui mentirait sur ses dépendances est un piège pour la suite.
  */
-export function useAimSweep(): AimSweep {
+export function useAimSweep(speed: AimSpeed): AimSweep {
   const [aiming, setAiming] = useState(false)
   const arcRef = useRef<HTMLDivElement | null>(null)
   const animationRef = useRef<Animation | null>(null)
   // Mémorisée pour que `fire()` divise `currentTime` par la même durée que
   // celle réellement utilisée par l'effet (mouvement réduit ou non).
-  const sweepMsRef = useRef(AIM_SWEEP_MS)
+  const sweepMsRef = useRef(AIM_SWEEP_MS[speed])
 
   // L'animation ne démarre pas dans `start()` : `AimArc` n'est monté que
   // pendant la visée, donc au moment où `start()` s'exécute le nœud n'est pas
@@ -60,8 +76,9 @@ export function useAimSweep(): AimSweep {
     const arc = arcRef.current
     if (arc === null || typeof arc.animate !== 'function') return
 
+    const base = AIM_SWEEP_MS[speed]
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    const sweepMs = prefersReducedMotion ? AIM_SWEEP_MS * REDUCED_MOTION_SWEEP_FACTOR : AIM_SWEEP_MS
+    const sweepMs = prefersReducedMotion ? base * REDUCED_MOTION_SWEEP_FACTOR : base
     sweepMsRef.current = sweepMs
 
     // Rien à mesurer en pixels, contrairement à l'ancienne jauge : une
@@ -77,7 +94,7 @@ export function useAimSweep(): AimSweep {
       animation.cancel()
       animationRef.current = null
     }
-  }, [aiming])
+  }, [aiming, speed])
 
   function start(): void {
     setAiming(true)

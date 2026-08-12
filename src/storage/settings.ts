@@ -27,6 +27,15 @@ export const MAX_ROUND_COUNT = 10
 export const THROW_MODES = ['gauge', 'simple'] as const
 export type ThrowMode = (typeof THROW_MODES)[number]
 
+/**
+ * Vitesse du balayage de l'arc de visée. Nommée plutôt que chiffrée : un
+ * réglage persisté qui porterait des millisecondes figerait le barème du jour
+ * dans le stockage de l'utilisateur, et le retoucher rendrait sa valeur
+ * mensongère. Les durées vivent dans `useAimSweep`, seul endroit qui animera.
+ */
+export const AIM_SPEEDS = ['slow', 'normal', 'fast', 'extreme'] as const
+export type AimSpeed = (typeof AIM_SPEEDS)[number]
+
 export interface Settings {
   readonly theme: Theme
   /** Modèle interrogé par le juge. La clé, elle, n'est jamais ici. */
@@ -36,6 +45,8 @@ export interface Settings {
   readonly opponents: number
   readonly botLevel: BotLevel
   readonly throwMode: ThrowMode
+  /** Sans effet en mode « lancer simple » : seul le mode « arc de visée » anime quoi que ce soit. */
+  readonly aimSpeed: AimSpeed
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -45,4 +56,5 @@ export const DEFAULT_SETTINGS: Settings = {
   opponents: 0,
   botLevel: 'normal',
   throwMode: 'gauge',
+  aimSpeed: 'fast',
 }

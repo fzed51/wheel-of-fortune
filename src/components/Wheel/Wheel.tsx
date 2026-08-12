@@ -4,6 +4,7 @@ import WheelPointer from './WheelPointer'
 import WheelSegment from './WheelSegment'
 import { useWheelSpin } from './useWheelSpin'
 import { WHEEL } from '../../game/wheel'
+import { ROTOR_INSET_PERCENT } from './geometry'
 import type { SpinLanding } from '../../game/types'
 
 export interface WheelProps {
@@ -28,14 +29,28 @@ export default function Wheel({ angle, spin, highlighted, onSettled, aiming, aim
   const rotorRef = useWheelSpin(angle, spin, onSettled)
 
   return (
-    <div className="relative mx-auto aspect-square w-full max-w-xs">
+    // `max-w-sm` (24rem) et non `max-w-xs` (20rem) : le rotor se rentre de
+    // `ROTOR_INSET_PERCENT` sur ce carré, donc le disque qu'il porte rend à
+    // 24 × 0,84 ≈ 20,16rem — la taille d'avant le retrait. Cette classe et le
+    // retrait ci-dessous forment une paire : changer l'un sans l'autre fait
+    // rétrécir ou grossir le disque visible.
+    <div className="relative mx-auto aspect-square w-full max-w-sm">
       {/*
        * Frère du rotor, jamais un enfant : un enfant du rotor tournerait avec
        * la roue. Position absolue centrée en haut (`inset-x-0` + `mx-auto` sur
-       * une largeur fixe centre un bloc absolu), au-dessus du rotor (`z-10`),
-       * taille fixe et petite pour rester une simple aiguille.
+       * une largeur fixe centre un bloc absolu), au-dessus du rotor et de l'arc
+       * (`z-20` : l'arc balaie sa couronne en `z-10`, et l'aiguille reste le
+       * repère de lecture — c'est elle qui doit passer devant).
+       *
+       * `h-9` et non `h-6` : depuis que le rotor se rentre de
+       * `ROTOR_INSET_PERCENT`, le bord du disque n'est plus au bord du carré
+       * mais 8 % plus bas. Une aiguille de 6 flotterait à une quinzaine de
+       * pixels du disque, séparée de lui par la couronne vide de l'arc ; en 9
+       * elle la traverse et s'arrête juste au-dessus du disque. Le rapport 6/9
+       * de la boîte est celui du `viewBox` de `WheelPointer`, faute de quoi son
+       * triangle serait centré dans le vide au lieu d'être allongé.
        */}
-      <div className="absolute inset-x-0 -top-2 z-10 mx-auto h-6 w-6">
+      <div className="absolute inset-x-0 -top-2 z-20 mx-auto h-9 w-6">
         <WheelPointer />
       </div>
       {/*
@@ -54,7 +69,19 @@ export default function Wheel({ angle, spin, highlighted, onSettled, aiming, aim
        * un rendu React qui réécrirait `transform` provoquerait un saut en
        * pleine animation.
        */}
-      <div ref={rotorRef} className="wheel-rotor h-full w-full">
+      {/*
+       * `inset` en style inline, pas une classe `inset-[8%]` : Tailwind ne
+       * peut pas interpoler `ROTOR_INSET_PERCENT`, et deux copies du chiffre
+       * (une en TS, une en classe) dériveraient sans qu'aucun test ne
+       * rougisse. Ce retrait libère la couronne extérieure où se pose
+       * `AimArc`, sans conflit avec la Web Animations API : elle n'écrit que
+       * `transform` sur ce même nœud, jamais `inset`.
+       */}
+      <div
+        ref={rotorRef}
+        className="wheel-rotor absolute"
+        style={{ inset: `${ROTOR_INSET_PERCENT}%` }}
+      >
         {/*
          * `aria-hidden` + `focusable="false"` : 24 arcs et 24 libellés sont du
          * bruit intégral pour un lecteur d'écran, l'information passe par le

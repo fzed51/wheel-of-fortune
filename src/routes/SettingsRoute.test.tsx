@@ -49,6 +49,32 @@ describe('SettingsRoute', () => {
     ).toBeChecked()
   })
 
+  it('la vitesse de l’arc de visée vaut « Rapide » par défaut', () => {
+    monterApp('/reglages')
+
+    expect(
+      screen.getByRole('combobox', { name: 'Vitesse de l’arc de visée' }),
+    ).toHaveValue('fast')
+  })
+
+  it('changer la vitesse de l’arc de visée persiste le réglage', async () => {
+    const user = userEvent.setup()
+    const premier = monterApp('/reglages')
+
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: 'Vitesse de l’arc de visée' }),
+      'Lente',
+    )
+    // Démonté avant de remonter, comme pour « Lancer simple » ci-dessus :
+    // sans ça, deux instances coexisteraient dans le même `document.body`.
+    premier.unmount()
+
+    monterApp('/reglages')
+    expect(
+      screen.getByRole('combobox', { name: 'Vitesse de l’arc de visée' }),
+    ).toHaveValue('slow')
+  })
+
   it('sans clé enregistrée, rassure : le jeu se joue entièrement sans', () => {
     monterApp('/reglages')
 

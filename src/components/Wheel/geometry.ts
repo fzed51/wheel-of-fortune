@@ -1,9 +1,19 @@
 import { SEGMENT_ANGLE, SEGMENT_COUNT } from '../../game/wheel'
 
 /** Rayon extérieur du disque, dans le repère `viewBox="0 0 100 100"` centré en (50, 50). */
-const RADIUS = 48
+export const RADIUS = 48
 /** Rayon du texte des libellés, à l'intérieur du disque. */
 const LABEL_RADIUS = 36
+/** Retrait du rotor dans le carré de la roue, en pourcentage de son côté. */
+export const ROTOR_INSET_PERCENT = 8
+/**
+ * Rayon du disque **tel qu'il est rendu**, exprimé dans le repère du carré de
+ * la roue — celui de `AimArc`. Le rotor se rentre de `ROTOR_INSET_PERCENT` de
+ * chaque côté, donc de deux fois ce pourcentage en tout : le disque qu'il
+ * contient rétrécit dans la même proportion, quel que soit son `RADIUS`
+ * interne au repère `viewBox="0 0 100 100"` du disque.
+ */
+export const DISC_RADIUS_ON_BOARD = RADIUS * (1 - (2 * ROTOR_INSET_PERCENT) / 100)
 
 /**
  * Convertit un angle mesuré depuis midi, sens horaire, en coordonnées du
