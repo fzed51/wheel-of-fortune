@@ -18,6 +18,34 @@ Il est reconstruit automatiquement par les hooks git après chaque commit et cha
 changement de branche. `graphify update .` n'est à lancer à la main qu'après des
 modifications non commitées.
 
+## Les worktrees ont leur propre graphe
+
+**Dans un worktree, les hooks git de graphify ne font rien.** Ils sortent en `exit 0` dès
+que `git rev-parse --git-dir` diffère de `--git-common-dir`, ce qui est la définition d'un
+worktree lié. C'est volontaire de leur part : un rebuild lancé depuis là écrirait un
+graphe partiel dans le `graphify-out/` partagé de la racine.
+
+Chaque worktree a donc le sien, ignoré par git comme celui de la racine — `/graphify-out/`
+est ancré à la racine du dépôt, donc à celle du worktree. Il est construit par le hook
+`CwdChanged` de `.claude/hooks/graphify-worktree.mjs`, déclenché quand la session entre
+dans le worktree. Une reconstruction à froid coûte moins de trois secondes : inutile
+d'amorcer le cache depuis la racine. Le hook se tait si le graphe est déjà là ; le forcer,
+c'est `graphify update .` dans le worktree. Son journal vit dans
+`~/.cache/graphify-worktree.log`.
+
+Deux détails qui coûtent une demi-heure si on les redécouvre :
+
+- **`GRAPHIFY_OUT` déplace le dossier de sortie**, et existe précisément pour ce cas
+  (`graphify/paths.py`, issue #686). Il accepte un nom relatif ou un chemin absolu, et
+  tous les lecteurs l'honorent — `update`, `explain`, `path`, `affected`, `serve`. Utile
+  pour sortir les artefacts d'un worktree jetable ; il faut alors l'exporter pour **chaque**
+  lecture, sinon `explain` retombe sur `./graphify-out`.
+- **L'événement `WorktreeCreate` de Claude Code ne convient pas**, malgré son nom. Ce n'est
+  pas une notification mais un *fournisseur* : le hook doit créer le worktree lui-même et
+  écrire son chemin sur stdout, pour brancher un VCS autre que git. Y mettre
+  `graphify update` ferait lire `Re-extracting code files in . …` comme un chemin, et
+  casserait la création de worktree.
+
 ## Installation et mise à jour
 
 L'outil est le paquet PyPI `graphifyy`, installé dans le venv `~/.venvs/graphify` vers

@@ -100,6 +100,7 @@ Un graphe de tout le dépôt, reconstruit par les hooks git à chaque commit, re
 - `graphify explain "reduce()"` — source, communauté, voisins directs.
 - `graphify affected "reduce()"` — ce qui casse si on y touche.
 - **Ne jamais lire `graphify-out/graph.json`** : plus d'un million de caractères. Il se requête, il ne se lit pas. Éviter aussi `graphify query`, bruyant et souvent hors sujet.
+- **Dans un worktree, les hooks git ne reconstruisent rien** : le graphe y est construit à l'entrée par `.claude/hooks/graphify-worktree.mjs`, et chaque worktree a le sien.
 - Le reste — installation, mise à jour, pièges vérifiés — vit dans `docs/graphify.md`. Le lire avant de déboguer l'outil, pas avant de s'en servir.
 
 ## Git
