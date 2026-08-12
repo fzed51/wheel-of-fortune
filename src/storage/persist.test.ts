@@ -2,10 +2,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Puzzle } from '../game/types'
 import { cash, demarrer, enigme, jeu, proposer, tourner } from '../test/game'
-import { STORAGE_KEYS } from './keys'
+import { LEGACY_KEYS, STORAGE_KEYS } from './keys'
 import {
   clearAllData,
   clearGame,
+  clearMistralKey,
   loadCustomPuzzles,
   loadGame,
   loadMistralKey,
@@ -103,12 +104,16 @@ describe('clé Mistral', () => {
     expect(loadMistralKey()).toBeNull()
   })
 
-  it('vit sous sa propre clé, jamais dans les réglages ni la sauvegarde', () => {
+  it('vit sous sa propre clé, jamais dans les réglages ni la sauvegarde, et masquée', () => {
     saveMistralKey(CLE)
     saveSettings(DEFAULT_SETTINGS)
     saveGame(jeu(demarrer()))
 
-    expect(localStorage.getItem(STORAGE_KEYS.mistral)).toBe(CLE)
+    const brut = localStorage.getItem(STORAGE_KEYS.mistral) ?? ''
+    // Tout l'intérêt de la tâche : la valeur en stockage ne doit plus égaler
+    // la clé, ni même la contenir en sous-chaîne.
+    expect(brut).not.toBe(CLE)
+    expect(brut).not.toContain(CLE)
     for (const key of [STORAGE_KEYS.settings, STORAGE_KEYS.save, STORAGE_KEYS.puzzles]) {
       expect(localStorage.getItem(key) ?? '', `${key} ne doit pas porter la clé`).not.toContain(CLE)
     }
@@ -122,5 +127,40 @@ describe('clé Mistral', () => {
     expect(loadMistralKey()).toBeNull()
     expect(loadSettings()).toEqual({ ok: false, reason: 'absent' })
     expect(localStorage.length).toBe(0)
+  })
+
+  it('migre une ancienne entrée en clair vers la forme masquée', () => {
+    // Simule une installation d'avant le masquage : la clé traînait en clair
+    // sous l'ancien nom de clé de stockage.
+    localStorage.setItem(LEGACY_KEYS[0], CLE)
+
+    expect(loadMistralKey()).toBe(CLE)
+    expect(localStorage.getItem(LEGACY_KEYS[0])).toBeNull()
+    const migree = localStorage.getItem(STORAGE_KEYS.mistral) ?? ''
+    expect(migree).not.toBe('')
+    expect(migree).not.toContain(CLE)
+  })
+
+  it('rend null sur une nouvelle entrée corrompue, sans lever', () => {
+    localStorage.setItem(STORAGE_KEYS.mistral, 'v2:!!!')
+    expect(() => loadMistralKey()).not.toThrow()
+    expect(loadMistralKey()).toBeNull()
+  })
+
+  it('efface aussi l’ancienne entrée en clair lors de la réinitialisation', () => {
+    localStorage.setItem(LEGACY_KEYS[0], CLE)
+    clearAllData()
+    expect(localStorage.getItem(LEGACY_KEYS[0])).toBeNull()
+    expect(localStorage.length).toBe(0)
+  })
+
+  it('efface les deux entrées, nouvelle et ancienne', () => {
+    saveMistralKey(CLE)
+    localStorage.setItem(LEGACY_KEYS[0], CLE)
+    clearMistralKey()
+
+    expect(localStorage.getItem(STORAGE_KEYS.mistral)).toBeNull()
+    expect(localStorage.getItem(LEGACY_KEYS[0])).toBeNull()
+    expect(loadMistralKey()).toBeNull()
   })
 })

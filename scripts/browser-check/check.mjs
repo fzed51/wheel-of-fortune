@@ -48,8 +48,46 @@ const RACINE = resolve(import.meta.dirname, '..', '..')
  */
 const CLE_FACTICE = 'controle-navigateur-aucune-requete'
 
-/** Nom de clé recopié de `STORAGE_KEYS.mistral` (`src/storage/keys.ts`) : ce script est du JS brut, sans accès au module TypeScript source. */
-const CLE_STOCKAGE_MISTRAL = 'wof:mistral-key:1'
+/** Nom de clé recopié de `STORAGE_KEYS.mistral` (`src/storage/keys.ts`) : ce script est du JS brut, sans accès au module TypeScript source. Le nom est délibérément anodin depuis le masquage de la clé — l'identifiant ne porte plus `mistral`. */
+const CLE_STOCKAGE_MISTRAL = 'wof:aux:2'
+
+/**
+ * Ancienne entrée, migrée en clair vers `CLE_STOCKAGE_MISTRAL` au premier
+ * `loadMistralKey()` : un résidu laissé par un passage antérieur du script (ou par
+ * une session réelle sur ce profil jetable) ressusciterait par cette migration si on
+ * ne l'efface pas ici aussi. Nom recopié de `LEGACY_KEYS[0]` (`src/storage/keys.ts`),
+ * même raison que ci-dessus.
+ */
+const CLE_STOCKAGE_MISTRAL_ANCIENNE = 'wof:mistral-key:1'
+
+/**
+ * Marqueur et sel recopiés de `MARQUEUR` et `SEL` (`src/storage/mask.ts`), même
+ * raison que les noms de clés ci-dessus : ce script est du JS brut, sans accès au
+ * module TypeScript. Ce n'est pas un chiffrement — le sel vit dans le bundle, donc
+ * ici aussi — seulement une forme qui n'est plus lisible à l'œil nu. Sans ce
+ * masquage, la clé factice écrite en clair n'aurait pas le marqueur `v2:` que
+ * `loadMistralKey()` exige, et serait donc rejetée comme si elle n'existait pas :
+ * le contrôle croirait tester `config.bonusEnabled` sans le tester du tout.
+ */
+const MASQUE_MARQUEUR = 'v2:'
+const MASQUE_SEL = 'wof:roue-fortune'
+
+/** Réimplémentation JS brut de `masquer()` (`src/storage/mask.ts`) : XOR octet à octet avec le sel cyclé, puis base64. `btoa` seul lèverait sur un caractère hors Latin-1, d'où le passage par `TextEncoder`. */
+function masquer(clair) {
+  const octetsClair = new TextEncoder().encode(clair)
+  const octetsSel = new TextEncoder().encode(MASQUE_SEL)
+  let binaire = ''
+  for (let i = 0; i < octetsClair.length; i++) {
+    const octetClair = octetsClair[i]
+    const octetSel = octetsSel[i % octetsSel.length]
+    if (octetClair === undefined || octetSel === undefined) continue
+    binaire += String.fromCharCode(octetClair ^ octetSel)
+  }
+  return MASQUE_MARQUEUR + btoa(binaire)
+}
+
+/** Forme masquée de `CLE_FACTICE`, calculée une seule fois : c'est elle qui doit se retrouver en stockage, jamais la clé en clair. */
+const CLE_FACTICE_MASQUEE = masquer(CLE_FACTICE)
 
 /** Nom de clé recopié de `STORAGE_KEYS.settings` (`src/storage/keys.ts`), même raison que ci-dessus. */
 const CLE_STOCKAGE_REGLAGES = 'wof:settings:1'
@@ -695,7 +733,10 @@ async function main() {
   })
 
   await controle('export : téléchargement d’un blob sous CSP', async () => {
-    await evaluate(client, `localStorage.setItem('${CLE_STOCKAGE_MISTRAL}', '${CLE_FACTICE}'); return true`)
+    // Valeur masquée, jamais en clair : une valeur en clair n'a pas le marqueur
+    // `v2:` que `loadMistralKey()` exige, et serait rejetée comme si l'entrée
+    // n'existait pas — le contrôle testerait alors autre chose que ce qu'il croit.
+    await evaluate(client, `localStorage.setItem('${CLE_STOCKAGE_MISTRAL}', '${CLE_FACTICE_MASQUEE}'); return true`)
     await goto(client, `${APP}enigmes`)
     await evaluate(
       client,
@@ -711,6 +752,9 @@ async function main() {
     // L'export ne doit jamais contenir autre chose que des énigmes : ni réglages,
     // ni partie en cours, et surtout pas la clé d'API.
     exiger(!contenu.includes(CLE_FACTICE), 'la clé d’API se retrouve dans l’export !', fichiers[0])
+    // Le masquage ferait passer le contrôle précédent sans rien prouver si l'export
+    // fuitait la forme masquée : c'est elle qui est réellement en stockage.
+    exiger(!contenu.includes(CLE_FACTICE_MASQUEE), 'la forme masquée de la clé d’API se retrouve dans l’export !', fichiers[0])
     exiger(!/mistral|settings|save/i.test(contenu), 'l’export contient autre chose que des énigmes', contenu.slice(0, 200))
     return { fichier: fichiers[0], entrees: JSON.parse(contenu).value.length }
   })
@@ -727,7 +771,12 @@ async function main() {
    * réseau vers Mistral avec cette clé invalide — exactement ce qu'un script
    * de recette ne doit jamais faire par inadvertance.
    */
-  await evaluate(client, `localStorage.removeItem('${CLE_STOCKAGE_MISTRAL}'); return true`)
+  // L'ancienne entrée est effacée aussi : un résidu en clair d'un passage antérieur
+  // ressusciterait par la migration de `loadMistralKey()` sinon.
+  await evaluate(
+    client,
+    `localStorage.removeItem('${CLE_STOCKAGE_MISTRAL}'); localStorage.removeItem('${CLE_STOCKAGE_MISTRAL_ANCIENNE}'); return true`,
+  )
 
   await controle('manifest et icônes', async () => {
     const manifest = await evaluate(

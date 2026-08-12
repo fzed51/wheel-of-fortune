@@ -10,13 +10,27 @@ export const STORAGE_KEYS = {
   settings: 'wof:settings:1',
   puzzles: 'wof:puzzles:1',
   save: 'wof:save:1',
-  mistral: 'wof:mistral-key:1',
+  // Nom anodin, volontairement : « key » attirerait l'œil dans l'inspecteur.
+  // La valeur elle-même est masquée par `mask.ts`, pas seulement renommée.
+  mistral: 'wof:aux:2',
 } as const
 
 export type StorageKey = (typeof STORAGE_KEYS)[keyof typeof STORAGE_KEYS]
 
+/**
+ * Ancienne entrée de la clé d'API, écrite en clair. Conservée pour la
+ * migration (`loadMistralKey`) et pour que « Réinitialiser les données »
+ * l'efface encore.
+ *
+ * Le numéro monte de 1 à 2 : la forme de la valeur change (clair → masquée),
+ * et rien ne permet de distinguer les deux par examen — une clé Mistral fait
+ * 32 caractères alphanumériques, donc `atob` réussit dessus et rend du
+ * binaire quelconque. Le numéro de l'entrée est le seul discriminant fiable.
+ */
+export const LEGACY_KEYS = ['wof:mistral-key:1'] as const
+
 /** Toutes les clés, pour le bouton « Réinitialiser les données » des Réglages. */
-export const ALL_KEYS: readonly StorageKey[] = Object.values(STORAGE_KEYS)
+export const ALL_KEYS: readonly string[] = [...Object.values(STORAGE_KEYS), ...LEGACY_KEYS]
 
 /**
  * Version inscrite **dans** la charge utile, en plus de celle portée par la clé.

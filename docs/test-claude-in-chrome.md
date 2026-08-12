@@ -34,10 +34,10 @@ ces deux points ne peuvent pas être vérifiés sur le serveur de développement
 ## Clé d'API Mistral
 
 Les scénarios 6 et 7 supposent une clé enregistrée. Utilisez une clé dédiée,
-révocable, avec un plafond de dépense — elle sera stockée en clair dans le
-localStorage, et l'agent aura la main sur la page. Le prompt lui interdit
-explicitement de lire ou de recopier `wof:mistral-key:1`. Sans clé, sautez ces deux
-scénarios : le reste du jeu est entièrement testable.
+révocable, avec un plafond de dépense — elle sera stockée masquée dans le
+localStorage sous `wof:aux:2`, et l'agent aura la main sur la page. Le prompt lui
+interdit explicitement de lire ou de recopier cette entrée. Sans clé, sautez ces
+deux scénarios : le reste du jeu est entièrement testable.
 
 ---
 
@@ -60,8 +60,9 @@ code source et tu n'as pas à le demander.
 - **N'écris jamais dans le code, ne lance aucune commande.** Tu agis uniquement dans
   la page : clics, frappes clavier, navigation, et lecture du DOM / de la console.
 - **Ne lis jamais, ne recopie jamais, n'affiche jamais** la valeur de l'entrée de
-  localStorage `wof:mistral-key:1`. Tu peux constater qu'elle existe ou non
-  (`localStorage.getItem('wof:mistral-key:1') !== null`), rien de plus.
+  localStorage `wof:aux:2` (la clé d'API, masquée sous ce nom anodin). Tu peux
+  constater qu'elle existe ou non (`localStorage.getItem('wof:aux:2') !== null`),
+  rien de plus.
 - **Ne quitte pas `localhost`.** Aucun site externe, aucune recherche web.
 - Avant de conclure « ça ne marche pas », **retente une fois** : certaines actions
   attendent une animation (en mode par défaut, l'arc de visée balaie ≈ 1,8 s par
@@ -230,7 +231,8 @@ Sur l'écran de jeu, sans focus dans un champ :
 ### 7. Sécurité de la clé d'API
 
 1. Va dans `Réglages`. Un avertissement visible doit dire que la clé est stockée
-   **en clair** et que le stockage d'une PWA iOS diffère de celui de Safari.
+   **sans protection réelle** — que quiconque ouvre les outils de développement
+   peut la retrouver — et que le stockage d'une PWA iOS diffère de celui de Safari.
 2. Si une clé est enregistrée, l'écran doit l'évoquer par ses **4 derniers caractères
    seulement**, précédés de points de suspension. Vérifie qu'on n'en voit pas plus.
 3. Le champ de saisie doit être de type `password` par défaut, et `Afficher` doit le
@@ -286,7 +288,7 @@ Sur `/enigmes` :
 4. Reviens sur `/resultats` alors qu'une nouvelle partie est en cours : tu dois être
    renvoyé sur `/jeu`.
 5. Vérifie les entrées de localStorage présentes : `wof:settings:1`, `wof:puzzles:1`,
-   `wof:save:1`, `wof:mistral-key:1`. Aucune autre clé `wof:` ne doit exister.
+   `wof:save:1`, `wof:aux:2`. Aucune autre clé `wof:` ne doit exister.
 6. Réglages → `Effacer toutes les données` → `Confirmer l’effacement` : la page se
    recharge et **toutes** les entrées ci-dessus doivent avoir disparu.
 
