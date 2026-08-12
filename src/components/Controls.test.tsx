@@ -11,12 +11,11 @@ import Controls from './Controls'
  */
 function props(overrides: Partial<Parameters<typeof Controls>[0]> = {}) {
   return {
-    canSpin: true,
     canResolve: true,
     canPass: true,
     vowelCost: 250,
     spinning: false,
-    aiming: false,
+    spinDisabled: false,
     spinLabel: 'Lancer',
     onSpin: vi.fn(),
     onResolve: vi.fn(),
@@ -37,23 +36,21 @@ describe('Controls', () => {
     expect(screen.queryByRole('button', { name: 'Tourner' })).not.toBeInTheDocument()
   })
 
-  it('en visée, le bouton de lancer reste actif même quand canSpin est faux', () => {
-    // Preuve que l'arrêt de l'arc n'est jamais bloqué : la visée n'a pu
-    // démarrer que sur un lancer légal, et `canSpin` peut changer sous elle
-    // (par exemple si le tour venait à changer) sans que « Stop » ne se fige.
-    render(<Controls {...props({ aiming: true, canSpin: false, spinning: false, spinLabel: 'Stop' })} />)
-
+  it('le bouton de lancer reflète `spinDisabled` reçu en prop, sans le recalculer', () => {
+    // Le composant ne recalcule plus la légalité du lancer (mode de lancer,
+    // état de visée, `canSpin`) : cette formule vit désormais dans
+    // `GameRoute`, partagée avec le bouton central de la roue. `Controls` se
+    // contente d'afficher `spinDisabled` tel quel, y compris quand il vaut
+    // faux pendant que « Stop » est affiché (visée en cours).
+    const { rerender } = render(<Controls {...props({ spinDisabled: false, spinLabel: 'Stop' })} />)
     expect(screen.getByRole('button', { name: 'Stop' })).toHaveAttribute('aria-disabled', 'false')
-  })
 
-  it('au repos, le bouton de lancer est estompé quand spinning ou canSpin est faux', () => {
-    render(<Controls {...props({ aiming: false, spinning: true })} />)
-
+    rerender(<Controls {...props({ spinDisabled: true })} />)
     expect(screen.getByRole('button', { name: 'Lancer' })).toHaveAttribute('aria-disabled', 'true')
   })
 
   it('aucun bouton ne porte l’attribut natif disabled', () => {
-    render(<Controls {...props({ aiming: false, canSpin: false, canResolve: false, canPass: false })} />)
+    render(<Controls {...props({ spinDisabled: true, canResolve: false, canPass: false })} />)
 
     for (const button of screen.getAllByRole('button')) {
       expect(button).not.toHaveAttribute('disabled')
@@ -63,7 +60,7 @@ describe('Controls', () => {
   it('n’appelle pas onSpin quand le bouton de lancer est estompé', async () => {
     const onSpin = vi.fn()
     const user = userEvent.setup()
-    render(<Controls {...props({ aiming: false, canSpin: false, onSpin })} />)
+    render(<Controls {...props({ spinDisabled: true, onSpin })} />)
 
     await user.click(screen.getByRole('button', { name: 'Lancer' }))
 

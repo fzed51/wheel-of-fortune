@@ -46,10 +46,16 @@ window.__h = {
   /*
    * Le bouton de lancer change de nom selon le mode et l'état de visée —
    * « Lancer » au repos et « Stop » pendant que l'arc de visée balaie en mode
-   * par défaut, « Tourner » en mode lancer simple — mais c'est toujours le même
-   * bouton. Un contrôle qui cherche l'un de ces trois libellés en dur casse dès
-   * qu'il tombe sur un autre état ; celui-ci essaie les trois et clique le
-   * premier trouvé.
+   * par défaut, « Tourner » en mode lancer simple. Un contrôle qui cherche l'un
+   * de ces trois libellés en dur casse dès qu'il tombe sur un autre état ;
+   * celui-ci essaie les trois et clique le premier trouvé.
+   *
+   * Deux boutons portent ce texte visible depuis que la roue a le sien, au
+   * centre du disque — mais c'est bien celui de la barre d'actions qui est
+   * cliqué ici, et lui seul : \`txt\` privilégie \`aria-label\` sur le texte, et le
+   * bouton central en porte un, « … au centre de la roue ». Les deux appellent
+   * de toute façon la même commande et partagent le même \`aria-disabled\`,
+   * calculé une seule fois dans \`GameRoute\`.
    */
   clickLancer() {
     for (const nom of ['Lancer', 'Stop', 'Tourner']) {
@@ -118,8 +124,13 @@ window.__h = {
       controls[nom] = el ? el.getAttribute('aria-disabled') : 'absent'
     }
     // Bouton de lancer à part : son libellé même change (« Lancer », « Stop »,
-    // « Tourner » selon le mode et l'état de visée), un seul de ces trois est
-    // présent à la fois — c'est \`controls\` ci-dessus qui garde les libellés fixes.
+    // « Tourner » selon le mode et l'état de visée), un seul de ces trois
+    // libellés est affiché à la fois — c'est \`controls\` ci-dessus qui garde les
+    // libellés fixes. L'état relevé est celui du bouton de la barre d'actions :
+    // le bouton central de la roue affiche le même libellé mais porte un
+    // \`aria-label\`, que \`txt\` fait primer sur le texte. Les deux gèlent
+    // ensemble de toute façon, \`aria-disabled\` étant calculé une seule fois
+    // dans \`GameRoute\`.
     const lancerEl = window.__h.byName('Lancer') || window.__h.byName('Stop') || window.__h.byName('Tourner')
     const lancer = {
       nom: lancerEl ? window.__h.txt(lancerEl) : null,

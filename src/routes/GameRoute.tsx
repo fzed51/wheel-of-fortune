@@ -180,6 +180,14 @@ export default function GameRoute() {
 
   const spinLabel = simpleThrow ? 'Tourner' : sweep.aiming ? 'Stop' : 'Lancer'
 
+  // Même formule qu'avant, mais remontée ici : les deux boutons de lancer (la
+  // barre d'actions et le centre de la roue) doivent geler et dégeler ensemble.
+  // En visée le bouton devient « Stop » et reste actif quoi qu'il arrive à
+  // `canSpin` : la visée n'a pu démarrer que sur un lancer légal, et l'arrêter
+  // doit toujours rester possible.
+  const spinning = round !== null && round.phase.kind === 'spinning'
+  const spinDisabled = (!simpleThrow && sweep.aiming) ? false : spinning || !canSpin(game) || botTurn
+
   return (
     <div className="flex flex-col gap-4">
       <section className={CARD}>
@@ -223,6 +231,9 @@ export default function GameRoute() {
           // sens même du réglage.
           aiming={!simpleThrow && sweep.aiming}
           aimRef={sweep.arcRef}
+          spinLabel={spinLabel}
+          spinDisabled={spinDisabled}
+          onSpin={handleSpin}
         />
       )}
 
@@ -241,13 +252,11 @@ export default function GameRoute() {
 
       {round !== null && (
         <Controls
-          canSpin={canSpin(game) && !botTurn}
           canResolve={canResolve(game) && !botTurn}
           canPass={isStuck(game) && !botTurn}
           vowelCost={game.config.vowelCost}
-          spinning={round.phase.kind === 'spinning'}
-          // Même double garde que celle passée à `Wheel` ci-dessus.
-          aiming={!simpleThrow && sweep.aiming}
+          spinning={spinning}
+          spinDisabled={spinDisabled}
           spinLabel={spinLabel}
           onSpin={handleSpin}
           onResolve={openResolve}

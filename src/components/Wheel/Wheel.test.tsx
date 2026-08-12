@@ -2,6 +2,7 @@
 import { createRef } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import Wheel from './Wheel'
 import type { WheelProps } from './Wheel'
 import { ROTOR_INSET_PERCENT } from './geometry'
@@ -25,6 +26,9 @@ function props(overrides: Partial<WheelProps> = {}): WheelProps {
     onSettled: vi.fn(),
     aiming: false,
     aimRef: createRef<HTMLDivElement | null>(),
+    spinLabel: 'Lancer',
+    spinDisabled: false,
+    onSpin: vi.fn(),
     ...overrides,
   }
 }
@@ -68,5 +72,37 @@ describe('Wheel', () => {
     const rotor = container.querySelector('.wheel-rotor')
     expect(rotor).toBeInstanceOf(HTMLElement)
     expect(rotor instanceof HTMLElement ? rotor.style.inset : null).toBe(`${ROTOR_INSET_PERCENT}%`)
+  })
+
+  it('porte un bouton central dont le nom accessible contient le libellé visible', () => {
+    render(<Wheel {...props({ spinLabel: 'Stop' })} />)
+
+    // Le texte visible seul (« Stop ») ne doit désigner que le bouton de la
+    // barre d'actions ailleurs dans l'appli, jamais celui-ci : le nom
+    // accessible complet lève l'ambiguïté que deux boutons « Stop » créeraient.
+    expect(screen.getByRole('button', { name: 'Stop au centre de la roue' })).toHaveTextContent('Stop')
+  })
+
+  it('un clic sur le bouton central appelle onSpin', async () => {
+    const onSpin = vi.fn()
+    const user = userEvent.setup()
+    render(<Wheel {...props({ onSpin })} />)
+
+    await user.click(screen.getByRole('button', { name: 'Lancer au centre de la roue' }))
+
+    expect(onSpin).toHaveBeenCalledTimes(1)
+  })
+
+  it('un bouton central estompé n’appelle pas onSpin au clic', async () => {
+    const onSpin = vi.fn()
+    const user = userEvent.setup()
+    render(<Wheel {...props({ spinDisabled: true, onSpin })} />)
+
+    const bouton = screen.getByRole('button', { name: 'Lancer au centre de la roue' })
+    expect(bouton).toHaveAttribute('aria-disabled', 'true')
+
+    await user.click(bouton)
+
+    expect(onSpin).not.toHaveBeenCalled()
   })
 })

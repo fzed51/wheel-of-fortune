@@ -19,13 +19,28 @@ export interface WheelProps {
   /** L'arc de visée balaie le pourtour : `false` hors visée, et en mode « lancer simple ». */
   readonly aiming: boolean
   readonly aimRef: RefObject<HTMLDivElement | null>
+  /** Libellé du bouton central : « Lancer », « Stop » ou « Tourner » selon le mode et l'état de visée — décidé par l'appelant. */
+  readonly spinLabel: string
+  /** Légalité du lancer, identique à celle du bouton de la barre d'actions : les deux gèlent ensemble. */
+  readonly spinDisabled: boolean
+  readonly onSpin: () => void
 }
 
 /**
  * Roue graphique. Aucune règle de jeu ici : `spin` et `highlighted` viennent
  * déjà décidés du reducer, ce composant ne fait que les dessiner et animer.
  */
-export default function Wheel({ angle, spin, highlighted, onSettled, aiming, aimRef }: WheelProps) {
+export default function Wheel({
+  angle,
+  spin,
+  highlighted,
+  onSettled,
+  aiming,
+  aimRef,
+  spinLabel,
+  spinDisabled,
+  onSpin,
+}: WheelProps) {
   const rotorRef = useWheelSpin(angle, spin, onSettled)
 
   return (
@@ -94,6 +109,43 @@ export default function Wheel({ angle, spin, highlighted, onSettled, aiming, aim
           <circle cx={50} cy={50} r={4} className="fill-wheel-ink" />
         </svg>
       </div>
+      {/*
+       * Frère du rotor, jamais un enfant, même raison que l'aiguille et l'arc
+       * ci-dessus : un bouton enfant du rotor tournerait avec la roue et
+       * deviendrait illisible et impossible à viser. Sur un écran court, la
+       * roue et le bouton « Lancer » de la barre d'actions ne tiennent pas
+       * ensemble à l'écran — ce second bouton, posé sur le disque, garantit
+       * que la roue reste visible au moment même où on lance.
+       *
+       * `aria-label` distinct du texte visible : sans lui, ce bouton et celui
+       * de la barre d'actions porteraient tous deux le nom accessible
+       * « Lancer », et toute requête `getByRole('button', { name: 'Lancer' })`
+       * du dépôt deviendrait ambiguë. Le nom accessible contient le libellé
+       * visible, ce qu'exige le critère d'accessibilité « Label in Name ».
+       *
+       * `aria-disabled`, jamais `disabled` : invariant du projet — un bouton
+       * `disabled` qui porte le focus le perd au profit de `<body>`, et un
+       * lecteur d'écran se tait au moment où le joueur attend une réponse. La
+       * garde précoce dans `onClick` est ce qui bloque réellement le clic.
+       *
+       * `h-24 w-24` (96 px) : largement au-delà de la cible tactile minimale
+       * de 44 px, et loin des montants écrits à 72 % du rayon du disque
+       * (`LABEL_RADIUS` dans `geometry.ts`) — le bouton ne les recouvre pas.
+       * `ring-surface` le détache visuellement de la couleur du secteur sous
+       * lui, par un token de thème et non une couleur en dur.
+       */}
+      <button
+        type="button"
+        aria-disabled={spinDisabled}
+        aria-label={`${spinLabel} au centre de la roue`}
+        className="absolute top-1/2 left-1/2 z-20 h-24 w-24 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary font-semibold text-on-primary shadow-lg ring-4 ring-surface aria-disabled:opacity-50"
+        onClick={() => {
+          if (spinDisabled) return
+          onSpin()
+        }}
+      >
+        {spinLabel}
+      </button>
     </div>
   )
 }

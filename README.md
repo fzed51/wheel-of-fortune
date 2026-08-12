@@ -150,7 +150,9 @@ Une `Content-Security-Policy` est injectée en `<meta http-equiv>` **au build se
 
 `style-src-attr 'unsafe-inline'` est une obligation et non un confort : React écrit des attributs `style`, et `commitStyles()` de l'API Web Animations aussi — sans lui, la roue ne garde pas son angle d'arrêt. `frame-ancestors` et `report-to` sont absents volontairement : une balise `<meta>` les ignore, et les écrire donnerait l'illusion d'une protection.
 
-## Quatre choses que le code ne peut pas expliquer seul
+## Cinq choses que le code ne peut pas expliquer seul
+
+**Le lancer a deux boutons « Lancer », pas un seul déplacé.** Sur un écran court, la roue et le bouton de la barre d'actions ne tenaient pas ensemble à l'écran ; un second bouton, rond, posé au centre du disque et immobile pendant qu'il tourne, garantit que la roue reste visible au moment de viser. La barre garde le sien pour rester sous le pouce en bas d'écran, là où on s'attend à trouver un bouton d'action. Les deux commandent exactement la même action et s'estompent ensemble. Leur texte visible est identique (« Lancer », « Stop », « Tourner » selon le mode), mais leur nom accessible diffère — le bouton central ajoute « au centre de la roue » — pour qu'un lecteur d'écran ou un test par rôle et nom puisse encore les distinguer ; deux contrôles portant le même nom accessible seraient indiscernables l'un de l'autre.
 
 **La réponse attendue de la question bonus vit dans l'état de la partie**, donc dans `localStorage` et dans React DevTools, pendant toute la manche finale — exactement comme `puzzle.answer` depuis le début. Ce n'est pas un oubli de sécurité à corriger : le bonus n'a jamais eu la prétention d'être un dispositif anti-triche, et n'en a pas plus besoin que le reste de l'énigme.
 
