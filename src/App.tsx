@@ -1,4 +1,5 @@
 import { Link, Outlet } from 'react-router'
+import BrandMark from './components/BrandMark'
 import LiveRegions from './components/LiveRegions'
 import UpdatePrompt from './components/UpdatePrompt'
 import { useApplyTheme } from './hooks/useTheme'
@@ -23,17 +24,21 @@ export default function App() {
         Aller au contenu
       </a>
 
-      <header className="mx-auto flex max-w-3xl items-center px-6 py-4">
-        {/*
-          L'icône est décorative : le nom accessible du lien reste le seul titre,
-          sinon un lecteur d'écran annoncerait deux fois la même chose. Elle est
-          servie depuis `public/favicon.svg`, la source unique des icônes de la
-          PWA, plutôt que redessinée ici — une roue de plus à maintenir.
-        */}
-        <Link to="/" className="flex items-center gap-2 text-lg font-bold text-fg">
-          <img src="/favicon.svg" alt="" aria-hidden="true" className="size-7 shrink-0" />
-          La Roue de la Fortune
-        </Link>
+      {/*
+        Le filet du bas donne son assise à l'en-tête. Sans lui, le titre flottait
+        au-dessus du contenu sans rien qui l'en sépare — d'autant plus depuis que
+        la bascule de thème est partie et qu'il n'y a plus qu'un seul élément.
+      */}
+      <header className="border-b border-border">
+        <div className="mx-auto flex max-w-3xl items-center px-6 py-3">
+          <Link
+            to="/"
+            className="-mx-2 flex items-center gap-2.5 rounded-lg px-2 py-1 text-lg font-bold tracking-tight text-fg hover:bg-bg-soft"
+          >
+            <BrandMark className="size-8 shrink-0" />
+            La Roue de la Fortune
+          </Link>
+        </div>
       </header>
 
       <UpdatePrompt />
