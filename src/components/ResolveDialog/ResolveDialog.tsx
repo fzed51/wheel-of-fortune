@@ -66,6 +66,10 @@ export default function ResolveDialog({ open, category, onSubmit, onClose }: Res
   const onCloseRef = useRef(onClose)
   onCloseRef.current = onClose
 
+  // Levé quand la fermeture est déjà remontée à la main par `requestClose` :
+  // l'évènement `close` qui suivra n'a alors plus rien à annoncer.
+  const reportedRef = useRef(false)
+
   useEffect(() => {
     const dialog = dialogRef.current
     if (dialog === null) return
@@ -73,6 +77,10 @@ export default function ResolveDialog({ open, category, onSubmit, onClose }: Res
     // `Esc` ferme le dialogue de lui-même côté natif : sans cet écouteur,
     // l'état du parent croirait la boîte encore ouverte.
     function handleClose(): void {
+      if (reportedRef.current) {
+        reportedRef.current = false
+        return
+      }
       onCloseRef.current()
     }
 
@@ -81,6 +89,25 @@ export default function ResolveDialog({ open, category, onSubmit, onClose }: Res
       dialog.removeEventListener('close', handleClose)
     }
   }, [])
+
+  /**
+   * Ferme la boîte **et** remonte la fermeture, sans attendre l'évènement natif.
+   *
+   * `close()` ne déclenche pas `close` sur-le-champ : la spec HTML met
+   * l'évènement en file. Or une bonne réponse fait passer la partie en
+   * `round-over`, et la route démonte alors `ResolveDialog` dans le même flux
+   * de rendu — l'écouteur part avec, l'évènement en file n'atteint plus
+   * personne, et le parent garde son `open` à `true`. La boîte se rouvrait
+   * toute seule à la manche suivante.
+   */
+  function requestClose(): void {
+    const dialog = dialogRef.current
+    if (dialog !== null && dialog.open) {
+      reportedRef.current = true
+      dialog.close()
+    }
+    onClose()
+  }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault()
@@ -96,9 +123,8 @@ export default function ResolveDialog({ open, category, onSubmit, onClose }: Res
     onSubmit(trimmedAttempt)
     // Le verdict est immédiat : soit la manche est gagnée et l'écran change,
     // soit la main passe au joueur suivant. Dans les deux cas la boîte n'a
-    // plus rien à faire ouverte. On passe par le natif `close()` plutôt que
-    // par `onClose` directement pour garder un seul chemin de fermeture.
-    dialogRef.current?.close()
+    // plus rien à faire ouverte.
+    requestClose()
   }
 
   return (
@@ -135,15 +161,10 @@ export default function ResolveDialog({ open, category, onSubmit, onClose }: Res
             Proposer
           </button>
           {/*
-            Ferme via le natif plutôt que d'appeler `onClose` directement :
-            c'est l'évènement `close` qui remonte la fermeture, un seul chemin
-            pour `Esc` et pour ce bouton.
+            Même chemin de fermeture que la soumission : le natif ferme, et la
+            fermeture est remontée sans dépendre de l'évènement `close`.
           */}
-          <button
-            type="button"
-            className={`${BUTTON_GHOST} min-h-11`}
-            onClick={() => dialogRef.current?.close()}
-          >
+          <button type="button" className={`${BUTTON_GHOST} min-h-11`} onClick={requestClose}>
             Annuler
           </button>
         </div>
