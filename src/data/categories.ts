@@ -18,6 +18,8 @@ export const CATEGORIES = [
   'Cuisine',
   'Lieu & monument',
   'Nature & animal',
+  'Musique',
+  'Histoire',
   QUESTION_CATEGORY,
 ] as const
 
