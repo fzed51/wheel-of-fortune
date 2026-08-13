@@ -164,7 +164,7 @@ Une `Content-Security-Policy` est injectée en `<meta http-equiv>` **au build se
 
 ## Tests
 
-832 tests sur 45 fichiers. Le moteur est couvert par des tests unitaires, un scénario de partie scripté et un fuzz d'invariants — c'est la partie du code où une régression est invisible à l'écran.
+848 tests sur 46 fichiers. Le moteur est couvert par des tests unitaires, un scénario de partie scripté et un fuzz d'invariants — c'est la partie du code où une régression est invisible à l'écran.
 
 Doctrine, appliquée sans exception :
 
