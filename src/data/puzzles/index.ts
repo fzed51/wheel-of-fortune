@@ -3,7 +3,9 @@ import type { Puzzle, PuzzleId } from '../../game/types'
 import { CINEMA } from './cinema'
 import { CUISINE } from './cuisine'
 import { EXPRESSIONS } from './expressions'
+import { HISTOIRE } from './histoire'
 import { LIEUX } from './lieux'
+import { MUSIQUE } from './musique'
 import { NATURE } from './nature'
 import { QUESTIONS } from './questions'
 
@@ -24,6 +26,8 @@ export const PACK_PUZZLES: readonly Puzzle[] = [
   ...CUISINE,
   ...LIEUX,
   ...NATURE,
+  ...MUSIQUE,
+  ...HISTOIRE,
 ]
 
 /**

@@ -77,7 +77,7 @@ src/
   game/         moteur : reducer pur, prédicats, roue, bot, comparaison, annonces
   llm/           juge : contrat Judge, connecteur Mistral
   storage/       localStorage versionné : clés, codec, sauvegarde, instantané
-  data/puzzles/  catalogue embarqué (20 énigmes, 5 catégories)
+  data/puzzles/  catalogue embarqué (175 énigmes en 7 catégories, plus 75 questions)
   context/       providers React : partie, réglages, énigmes, thème, annonces
   hooks/         effets de bord de la partie, clavier physique, accès contextes
   components/    affichage pur, un composant par responsabilité
@@ -203,7 +203,7 @@ Honnêtement listé, pour que personne ne le découvre en production :
   - **rechargement pendant l'attente du verdict** : retour à l'attente de réponse, le bonus reste entièrement à gagner ;
   - **partie contre trois bots** : un bot remporte la manche finale, répond — une chance sur deux, sans le moindre appel réseau — et la partie se termine normalement ;
   - **réponse exacte** : acceptée sans le moindre appel réseau, observable dans l'onglet Réseau du navigateur — c'est la confirmation locale de `matchesAnswer` qui joue, jamais le juge ;
-- le catalogue embarqué compte **20 énigmes**, assez pour jouer, pas assez pour ne pas se répéter longtemps ;
+- le catalogue embarqué compte **175 énigmes en 7 catégories** et **75 questions** : de quoi enchaîner les parties sans revoir la même énigme, mais il reste écrit à la main, sans aucune source extérieure ;
 - pas de son, pas de vibration ;
 - pas de multi local : le moteur est déjà écrit autour d'une liste de joueurs, mais rien ne le pilote ;
 - un seul connecteur LLM. Le contrat `Judge` isole le fournisseur : en ajouter un ne touche que `src/llm/`.

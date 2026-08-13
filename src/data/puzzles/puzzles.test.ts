@@ -28,12 +28,25 @@ const FORMAT_ID = /^[a-z]{3}-\d{3}$/
 const ALL_PUZZLES: readonly Puzzle[] = [...PACK_PUZZLES, ...PACK_QUESTIONS]
 
 describe('catalogue', () => {
-  it('compte au moins soixante énigmes', () => {
-    // Seuil relevé de 20 à 60 avec le catalogue : un plancher resté sous le
-    // contenu réel ne protège plus rien, une catégorie entière pourrait
-    // disparaître sans faire rougir personne. Ajouter des énigmes ne le casse
-    // jamais — seule une suppression le fait, et c'est exactement le but.
-    expect(PACK_PUZZLES.length).toBeGreaterThanOrEqual(60)
+  it('compte au moins cent soixante-quinze énigmes', () => {
+    // Seuil relevé avec le catalogue (20, puis 60, puis 175) : un plancher
+    // resté sous le contenu réel ne protège plus rien, une catégorie entière
+    // pourrait disparaître sans faire rougir personne. Ajouter des énigmes ne
+    // le casse jamais — seule une suppression le fait, et c'est exactement le
+    // but.
+    expect(PACK_PUZZLES.length).toBeGreaterThanOrEqual(175)
+  })
+
+  it('compte au moins vingt-cinq énigmes par catégorie jouable', () => {
+    // Le total seul laisserait une catégorie se vider au profit d'une autre :
+    // le tirage annoncerait alors une catégorie que deux manches suffisent à
+    // épuiser. `QUESTION_CATEGORY` est exclue — son réservoir est
+    // `PACK_QUESTIONS`, contrôlé par son propre plancher plus bas.
+    for (const category of CATEGORIES) {
+      if (category === QUESTION_CATEGORY) continue
+      const count = PACK_PUZZLES.filter((puzzle) => puzzle.category === category).length
+      expect(count, `${category} ne compte que ${count} énigmes`).toBeGreaterThanOrEqual(25)
+    }
   })
 
   it('n’a que des identifiants uniques et au format attendu', () => {
@@ -69,10 +82,13 @@ describe('catalogue', () => {
     expect(PACK_PUZZLES.every((puzzle) => puzzle.category !== QUESTION_CATEGORY)).toBe(true)
   })
 
-  it('PACK_QUESTIONS compte au moins vingt questions', () => {
+  it('PACK_QUESTIONS compte au moins soixante-quinze questions', () => {
     // Le contenu de la manche finale : en dessous, une partie longue
-    // reverrait toujours les mêmes questions.
-    expect(PACK_QUESTIONS.length).toBeGreaterThanOrEqual(20)
+    // reverrait toujours les mêmes questions. Une seule question est tirée par
+    // partie, ce réservoir se consomme donc beaucoup plus lentement que
+    // `PACK_PUZZLES` — d'où un plancher qui vise la variété d'une session
+    // entière, pas celle d'une partie.
+    expect(PACK_QUESTIONS.length).toBeGreaterThanOrEqual(75)
   })
 
   it('les identifiants de PACK_QUESTIONS commencent tous par que-', () => {
