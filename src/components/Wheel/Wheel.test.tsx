@@ -93,6 +93,22 @@ describe('Wheel', () => {
     expect(onSpin).toHaveBeenCalledTimes(1)
   })
 
+  it('garde le bouton central hors de l’ordre de tabulation', async () => {
+    const user = userEvent.setup()
+    render(<Wheel {...props()} />)
+
+    await user.tab()
+
+    // `GameRoute` monte la roue avant la grille, les scores et la barre
+    // d'actions : sans `tabIndex={-1}`, ce raccourci pointeur serait le premier
+    // des deux boutons de lancer atteint au clavier, et le focus retomberait
+    // sur `<body>` à chaque lancer puisqu'il se démonte. Ce test rougit dès
+    // qu'on retire l'attribut — le bouton devient alors le seul élément
+    // focalisable de l'arbre rendu ici, donc la cible de ce `tab()`.
+    expect(screen.getByRole('button', { name: 'Lancer au centre de la roue' })).not.toHaveFocus()
+    expect(document.body).toHaveFocus()
+  })
+
   it('retire le bouton central du DOM quand le lancer est illégal', () => {
     render(<Wheel {...props({ spinDisabled: true, spinLabel: 'Lancer' })} />)
 

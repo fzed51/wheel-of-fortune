@@ -144,9 +144,20 @@ export default function Wheel({
        * `LiveRegions.tsx` annoncent le tirage de toute façon, le lecteur
        * d'écran ne reste pas muet.
        *
+       * `tabIndex={-1}` est ce qui rend vraie la phrase ci-dessus. Sans lui, ce
+       * bouton serait atteint à la tabulation *avant* la grille, les scores et
+       * la barre d'actions — `GameRoute` monte la roue en premier — et la voie
+       * clavier tomberait donc systématiquement sur le raccourci plutôt que sur
+       * le bouton qui porte l'accessibilité. Deux Espace plus tard le lancer
+       * part, le bouton se démonte, et le focus retombe sur `<body>` : le coût
+       * assumé pour un clic frapperait la seule voie qui en souffre. Hors de
+       * l'ordre de tabulation, le bouton reste cliquable, atteignable au doigt
+       * et annoncé par un lecteur d'écran.
+       *
        * `h-24 w-24` (96 px) : largement au-delà de la cible tactile minimale
-       * de 44 px, et loin des montants écrits à 72 % du rayon du disque
-       * (`LABEL_RADIUS` dans `geometry.ts`) — le bouton ne les recouvre pas.
+       * de 44 px, et loin des montants écrits à 75 % du rayon du disque
+       * (`LABEL_RADIUS` vaut 36 pour un `RADIUS` de 48, dans `geometry.ts`)
+       * — le bouton ne les recouvre pas.
        * `ring-surface` le détache visuellement de la couleur du secteur sous
        * lui, par un token de thème et non une couleur en dur.
        */}
@@ -154,6 +165,7 @@ export default function Wheel({
         <button
           type="button"
           aria-label={`${spinLabel} au centre de la roue`}
+          tabIndex={-1}
           className="absolute top-1/2 left-1/2 z-20 h-24 w-24 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary font-semibold text-on-primary shadow-lg ring-4 ring-surface"
           onClick={onSpin}
         >
