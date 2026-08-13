@@ -40,6 +40,25 @@ function boutonProposer(): HTMLElement {
   return screen.getByRole('button', { name: 'Proposer' })
 }
 
+/**
+ * Hôte qui démonte la boîte dès la soumission, comme le fait `GameRoute` :
+ * une bonne réponse fait passer la partie en `round-over`, `useRound()` renvoie
+ * alors `null` et le `{round !== null && <ResolveDialog…>}` de la route
+ * disparaît.
+ */
+function HoteQuiDemonte({ onClose }: { readonly onClose: () => void }) {
+  const [enManche, setEnManche] = useState(true)
+  if (!enManche) return null
+  return (
+    <ResolveDialog
+      open
+      category="Objet"
+      onSubmit={() => setEnManche(false)}
+      onClose={onClose}
+    />
+  )
+}
+
 /** Hôte minimal, pour vérifier que le natif rend le focus au déclencheur. */
 function Hote() {
   const [open, setOpen] = useState(false)
@@ -95,6 +114,36 @@ describe('ResolveDialog', () => {
     await user.click(boutonProposer())
 
     expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('remonte la fermeture même quand la manche gagnée démonte la boîte', async () => {
+    /*
+     * Le stub jsdom du haut de fichier émet `close` de façon synchrone, là où
+     * la spec HTML met l'évènement en file d'attente. C'est justement cet écart
+     * qui masquait le défaut : dans un vrai navigateur, la route démontait la
+     * boîte avant que l'évènement n'arrive, l'écouteur partait avec, et le
+     * parent gardait son `open` à `true` — la boîte se rouvrait seule à la
+     * manche suivante. On rétablit donc ici le comportement du navigateur.
+     */
+    const differe = vi
+      .spyOn(HTMLDialogElement.prototype, 'close')
+      .mockImplementation(function (this: HTMLDialogElement): void {
+        this.open = false
+        setTimeout(() => this.dispatchEvent(new Event('close')), 0)
+      })
+
+    try {
+      const user = userEvent.setup()
+      const onClose = vi.fn()
+      render(<HoteQuiDemonte onClose={onClose} />)
+
+      await user.type(champReponse(), 'une chaise')
+      await user.click(boutonProposer())
+
+      expect(onClose).toHaveBeenCalledTimes(1)
+    } finally {
+      differe.mockRestore()
+    }
   })
 
   it('ne ferme pas le dialogue pour une proposition vide', async () => {
